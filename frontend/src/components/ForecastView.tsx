@@ -23,6 +23,20 @@ interface DayForecast {
   hasRain: boolean;
 }
 
+// Helper function to get temperature color for climbing
+function getTempColor(temp: number): string {
+  if (temp >= 45 && temp <= 75) return 'text-green-600'; // Good climbing temps
+  if ((temp >= 35 && temp < 45) || (temp > 75 && temp <= 85)) return 'text-yellow-600'; // Marginal
+  return 'text-red-600'; // Too cold or too hot
+}
+
+// Helper function to get precipitation color for climbing
+function getPrecipColor(precip: number): string {
+  if (precip === 0) return 'text-green-600'; // No rain = good
+  if (precip < 0.1) return 'text-yellow-600'; // Light rain = marginal
+  return 'text-red-600'; // Significant rain = bad
+}
+
 export function ForecastView({ hourlyData, currentWeather }: ForecastViewProps) {
   // Group hourly data by day
   const dailyForecasts: DayForecast[] = [];
@@ -135,13 +149,13 @@ export function ForecastView({ hourlyData, currentWeather }: ForecastViewProps) 
               {/* Temperature range */}
               <div className="flex items-center justify-center gap-2 mb-1">
                 <div className="text-xs text-red-600 font-medium">H</div>
-                <div className="text-lg font-bold text-gray-900">
+                <div className={`text-lg font-bold ${getTempColor(day.high)}`}>
                   {Math.round(day.high)}°
                 </div>
               </div>
               <div className="flex items-center justify-center gap-2">
                 <div className="text-xs text-blue-600 font-medium">L</div>
-                <div className="text-sm text-gray-500">
+                <div className={`text-sm font-semibold ${getTempColor(day.low)}`}>
                   {Math.round(day.low)}°
                 </div>
               </div>
@@ -149,7 +163,7 @@ export function ForecastView({ hourlyData, currentWeather }: ForecastViewProps) 
               {/* Quick stats */}
               <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
                 {/* Precipitation - always show */}
-                <div className="flex items-center justify-center gap-1 text-xs text-blue-600">
+                <div className={`flex items-center justify-center gap-1 text-xs ${getPrecipColor(day.avgPrecip)}`}>
                   {day.hasSnow && day.hasRain ? (
                     <>
                       <Snowflake className="w-3 h-3" />
@@ -160,7 +174,7 @@ export function ForecastView({ hourlyData, currentWeather }: ForecastViewProps) 
                   ) : (
                     <Droplet className="w-3 h-3" />
                   )}
-                  <span>{day.avgPrecip.toFixed(2)}"</span>
+                  <span className="font-semibold">{day.avgPrecip.toFixed(2)}"</span>
                 </div>
 
                 {day.avgWind > 10 && (
@@ -208,8 +222,6 @@ export function ForecastView({ hourlyData, currentWeather }: ForecastViewProps) 
           {/* Hourly data row */}
           <div className="flex gap-6 pb-2">
             {hourlyData.slice(0, 48).map((hour, index) => {
-              const condition = getWeatherCondition(hour);
-              const conditionColor = getConditionColor(condition.level);
               const date = new Date(hour.timestamp);
 
               return (
@@ -230,21 +242,18 @@ export function ForecastView({ hourlyData, currentWeather }: ForecastViewProps) 
                   />
 
                   {/* Temperature */}
-                  <div className="text-sm font-bold text-gray-900 mb-1">
+                  <div className={`text-sm font-bold mb-1 ${getTempColor(hour.temperature)}`}>
                     {Math.round(hour.temperature)}°
                   </div>
 
-                  {/* Condition indicator */}
-                  <div className={`w-2 h-2 rounded-full ${conditionColor} mx-auto mb-2`} />
-
                   {/* Precipitation (average per hour for 3h period) - always show */}
-                  <div className="flex items-center justify-center gap-1 text-xs text-blue-600 mb-1">
+                  <div className={`flex items-center justify-center gap-1 text-xs mb-1 ${getPrecipColor(hour.precipitation / 3)}`}>
                     {hour.temperature <= 32 && hour.precipitation > 0 ? (
                       <Snowflake className="w-3 h-3" />
                     ) : (
                       <Droplet className="w-3 h-3" />
                     )}
-                    <span>{(hour.precipitation / 3).toFixed(2)}"</span>
+                    <span className="font-semibold">{(hour.precipitation / 3).toFixed(2)}"</span>
                   </div>
 
                   {/* Wind */}
