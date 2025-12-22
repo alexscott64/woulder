@@ -1,7 +1,7 @@
 import { WeatherData } from '../types/weather';
 import { getWeatherCondition, getConditionColor, getWeatherIconUrl } from '../utils/weatherConditions';
 import { format, isSameDay } from 'date-fns';
-import { Droplet, Wind } from 'lucide-react';
+import { Droplet, Wind, Snowflake } from 'lucide-react';
 
 interface ForecastViewProps {
   hourlyData: WeatherData[];
@@ -18,20 +18,23 @@ interface DayForecast {
   description: string;
   condition: 'good' | 'marginal' | 'bad';
   hours: WeatherData[];
+  hasSnow: boolean;
+  hasRain: boolean;
 }
 
 export function ForecastView({ hourlyData }: ForecastViewProps) {
   // Group hourly data by day
   const dailyForecasts: DayForecast[] = [];
   const days = new Map<string, WeatherData[]>();
-  const today = format(new Date(), 'yyyy-MM-dd');
+  const now = new Date();
+  const today = format(now, 'yyyy-MM-dd');
 
-  // Group by day (only future data)
+  // Group by day (include current hour and all future data)
   hourlyData.forEach(data => {
     const date = new Date(data.timestamp);
     const dateKey = format(date, 'yyyy-MM-dd');
 
-    // Only include today and future dates
+    // Include today and all future dates
     if (dateKey >= today) {
       if (!days.has(dateKey)) {
         days.set(dateKey, []);
@@ -69,6 +72,10 @@ export function ForecastView({ hourlyData }: ForecastViewProps) {
     if (conditions.some(c => c === 'bad')) condition = 'bad';
     else if (conditions.some(c => c === 'marginal')) condition = 'marginal';
 
+    // Determine if there's snow or rain
+    const hasSnow = hours.some(h => h.temperature <= 32 && h.precipitation > 0);
+    const hasRain = hours.some(h => h.temperature > 32 && h.precipitation > 0);
+
     dailyForecasts.push({
       date,
       dayName: dayCount === 0 ? 'Today' : format(date, 'EEE'),
@@ -80,6 +87,8 @@ export function ForecastView({ hourlyData }: ForecastViewProps) {
       description,
       condition,
       hours,
+      hasSnow,
+      hasRain,
     });
 
     dayCount++;
@@ -131,12 +140,21 @@ export function ForecastView({ hourlyData }: ForecastViewProps) {
 
               {/* Quick stats */}
               <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
-                {day.avgPrecip > 0 && (
-                  <div className="flex items-center justify-center gap-1 text-xs text-blue-600">
+                {/* Precipitation - always show */}
+                <div className="flex items-center justify-center gap-1 text-xs text-blue-600">
+                  {day.hasSnow && day.hasRain ? (
+                    <>
+                      <Snowflake className="w-3 h-3" />
+                      <Droplet className="w-3 h-3" />
+                    </>
+                  ) : day.hasSnow ? (
+                    <Snowflake className="w-3 h-3" />
+                  ) : (
                     <Droplet className="w-3 h-3" />
-                    <span>{day.avgPrecip.toFixed(2)}"</span>
-                  </div>
-                )}
+                  )}
+                  <span>{day.avgPrecip.toFixed(2)}"</span>
+                </div>
+
                 {day.avgWind > 10 && (
                   <div className="flex items-center justify-center gap-1 text-xs text-gray-600">
                     <Wind className="w-3 h-3" />
@@ -211,13 +229,15 @@ export function ForecastView({ hourlyData }: ForecastViewProps) {
                   {/* Condition indicator */}
                   <div className={`w-2 h-2 rounded-full ${conditionColor} mx-auto mb-2`} />
 
-                  {/* Precipitation (average per hour if data is for 3h period) */}
-                  {hour.precipitation > 0 && (
-                    <div className="flex items-center justify-center gap-1 text-xs text-blue-600 mb-1">
+                  {/* Precipitation (average per hour for 3h period) - always show */}
+                  <div className="flex items-center justify-center gap-1 text-xs text-blue-600 mb-1">
+                    {hour.temperature <= 32 && hour.precipitation > 0 ? (
+                      <Snowflake className="w-3 h-3" />
+                    ) : (
                       <Droplet className="w-3 h-3" />
-                      <span>{(hour.precipitation / 3).toFixed(3)}"</span>
-                    </div>
-                  )}
+                    )}
+                    <span>{(hour.precipitation / 3).toFixed(2)}"</span>
+                  </div>
 
                   {/* Wind */}
                   <div className="flex items-center justify-center gap-1 text-xs text-gray-600">

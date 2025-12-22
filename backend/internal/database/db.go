@@ -166,6 +166,50 @@ func (db *Database) GetHistoricalWeather(locationID int, days int) ([]models.Wea
 	return weatherData, nil
 }
 
+// GetForecastWeather retrieves future weather data (forecast) for a location
+func (db *Database) GetForecastWeather(locationID int) ([]models.WeatherData, error) {
+	query := `
+		SELECT id, location_id, timestamp, temperature, feels_like, precipitation,
+			   humidity, wind_speed, wind_direction, cloud_cover, pressure,
+			   description, icon, created_at
+		FROM weather_data
+		WHERE location_id = ? AND timestamp > NOW()
+		ORDER BY timestamp ASC
+	`
+
+	rows, err := db.conn.Query(query, locationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var weatherData []models.WeatherData
+	for rows.Next() {
+		var data models.WeatherData
+		if err := rows.Scan(
+			&data.ID,
+			&data.LocationID,
+			&data.Timestamp,
+			&data.Temperature,
+			&data.FeelsLike,
+			&data.Precipitation,
+			&data.Humidity,
+			&data.WindSpeed,
+			&data.WindDirection,
+			&data.CloudCover,
+			&data.Pressure,
+			&data.Description,
+			&data.Icon,
+			&data.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		weatherData = append(weatherData, data)
+	}
+
+	return weatherData, nil
+}
+
 // CleanOldWeatherData removes weather data older than specified days
 func (db *Database) CleanOldWeatherData(days int) error {
 	query := `DELETE FROM weather_data WHERE timestamp < DATE_SUB(NOW(), INTERVAL ? DAY)`

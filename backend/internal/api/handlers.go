@@ -166,34 +166,78 @@ func (h *Handler) GetAllWeather(c *gin.Context) {
 		return
 	}
 
+	// Check if we should force refresh (query parameter)
+	forceRefresh := c.Query("refresh") == "true"
+
+	// Cache duration: 2 hours
+	cacheDuration := 2 * time.Hour
+
 	var allWeather []models.WeatherForecast
 
 	for _, location := range locations {
-		// Fetch current weather
-		current, err := h.weatherClient.GetCurrentWeather(location.Latitude, location.Longitude)
-		if err != nil {
-			log.Printf("Error fetching weather for location %d: %v", location.ID, err)
-			continue
-		}
-		current.LocationID = location.ID
+		var current *models.WeatherData
+		var forecast []models.WeatherData
+		var shouldFetchNew bool
 
-		// Save to database
-		if err := h.db.SaveWeatherData(current); err != nil {
-			log.Printf("Error saving weather data: %v", err)
+		if !forceRefresh {
+			// Try to get recent cached data (within 2 hours)
+			recentData, err := h.db.GetHistoricalWeather(location.ID, 0)
+			if err == nil && len(recentData) > 0 {
+				// Check if most recent data is fresh enough
+				mostRecent := recentData[0]
+				dataAge := time.Since(mostRecent.Timestamp)
+
+				if dataAge < cacheDuration {
+					// Use cached data
+					current = &mostRecent
+
+					// Get forecast from database (future data)
+					forecast, err = h.db.GetForecastWeather(location.ID)
+					if err != nil || len(forecast) == 0 {
+						shouldFetchNew = true
+					}
+
+					log.Printf("Using cached data for location %d (age: %v)", location.ID, dataAge)
+				} else {
+					shouldFetchNew = true
+				}
+			} else {
+				shouldFetchNew = true
+			}
+		} else {
+			shouldFetchNew = true
 		}
 
-		// Fetch forecast
-		forecast, err := h.weatherClient.GetForecast(location.Latitude, location.Longitude)
-		if err != nil {
-			log.Printf("Error fetching forecast for location %d: %v", location.ID, err)
-			continue
-		}
+		// Fetch new data if needed
+		if shouldFetchNew {
+			log.Printf("Fetching fresh data from API for location %d", location.ID)
 
-		// Save forecast
-		for _, f := range forecast {
-			f.LocationID = location.ID
-			if err := h.db.SaveWeatherData(&f); err != nil {
-				log.Printf("Error saving forecast data: %v", err)
+			// Fetch current weather
+			current, err = h.weatherClient.GetCurrentWeather(location.Latitude, location.Longitude)
+			if err != nil {
+				log.Printf("Error fetching weather for location %d: %v", location.ID, err)
+				continue
+			}
+			current.LocationID = location.ID
+
+			// Save to database
+			if err := h.db.SaveWeatherData(current); err != nil {
+				log.Printf("Error saving weather data: %v", err)
+			}
+
+			// Fetch forecast
+			forecast, err = h.weatherClient.GetForecast(location.Latitude, location.Longitude)
+			if err != nil {
+				log.Printf("Error fetching forecast for location %d: %v", location.ID, err)
+				continue
+			}
+
+			// Save forecast
+			for _, f := range forecast {
+				f.LocationID = location.ID
+				if err := h.db.SaveWeatherData(&f); err != nil {
+					log.Printf("Error saving forecast data: %v", err)
+				}
 			}
 		}
 
