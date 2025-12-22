@@ -10,17 +10,20 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/alexscott64/woulder/backend/internal/weather"
+	"github.com/alexscott64/woulder/backend/internal/rivers"
 )
 
 type Handler struct {
 	db             *database.Database
 	weatherService *weather.WeatherService
+	riverClient    *rivers.USGSClient
 }
 
 func NewHandler(db *database.Database, weatherService *weather.WeatherService) *Handler {
 	return &Handler{
 		db:             db,
 		weatherService: weatherService,
+		riverClient:    rivers.NewUSGSClient(),
 	}
 }
 
@@ -239,4 +242,121 @@ func (h *Handler) GetAllWeather(c *gin.Context) {
 		"weather":    allWeather,
 		"updated_at": time.Now().Format(time.RFC3339),
 	})
+}
+
+// GetRiverDataForLocation returns current river crossing data for a location
+func (h *Handler) GetRiverDataForLocation(c *gin.Context) {
+	locationID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		return
+	}
+
+	// Get all rivers for this location
+	log.Printf("Fetching rivers for location ID: %d", locationID)
+	locationRivers, err := h.db.GetRiversByLocation(locationID)
+	if err != nil {
+		log.Printf("Error fetching rivers for location %d: %v", locationID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch river data"})
+		return
+	}
+
+	log.Printf("Found %d rivers for location %d", len(locationRivers), locationID)
+	if len(locationRivers) == 0 {
+		log.Printf("No rivers found for location %d, returning empty array", locationID)
+		c.JSON(http.StatusOK, gin.H{"rivers": []models.RiverData{}})
+		return
+	}
+
+	// Fetch current data for each river
+	var riverData []models.RiverData
+	for _, river := range locationRivers {
+		gaugeFlowCFS, gaugeHeightFt, timestamp, err := h.riverClient.GetRiverData(river.GaugeID)
+		if err != nil {
+			log.Printf("Error fetching USGS data for gauge %s: %v", river.GaugeID, err)
+			continue
+		}
+
+		// Apply drainage area ratio estimation if needed
+		actualFlowCFS := gaugeFlowCFS
+		if river.IsEstimated && river.DrainageAreaSqMi != nil && river.GaugeDrainageAreaSqMi != nil {
+			actualFlowCFS = rivers.EstimateFlowFromDrainageRatio(
+				gaugeFlowCFS,
+				*river.DrainageAreaSqMi,
+				*river.GaugeDrainageAreaSqMi,
+			)
+			log.Printf("Estimated flow for %s: gauge %.0f CFS -> river %.0f CFS (drainage ratio %.3f)",
+				river.RiverName, gaugeFlowCFS, actualFlowCFS, *river.DrainageAreaSqMi / *river.GaugeDrainageAreaSqMi)
+		}
+
+		status, message, isSafe, percentOfSafe := rivers.CalculateCrossingStatus(river, actualFlowCFS)
+
+		riverData = append(riverData, models.RiverData{
+			River:         river,
+			FlowCFS:       actualFlowCFS,
+			GaugeHeightFt: gaugeHeightFt,
+			IsSafe:        isSafe,
+			Status:        status,
+			StatusMessage: message,
+			Timestamp:     timestamp,
+			PercentOfSafe: percentOfSafe,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"rivers":     riverData,
+		"updated_at": time.Now().Format(time.RFC3339),
+	})
+}
+
+// GetRiverDataByID returns current data for a specific river crossing
+func (h *Handler) GetRiverDataByID(c *gin.Context) {
+	riverID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid river ID"})
+		return
+	}
+
+	// Get river info from database
+	river, err := h.db.GetRiverByID(riverID)
+	if err != nil {
+		log.Printf("Error fetching river %d: %v", riverID, err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "River not found"})
+		return
+	}
+
+	// Fetch current USGS data
+	gaugeFlowCFS, gaugeHeightFt, timestamp, err := h.riverClient.GetRiverData(river.GaugeID)
+	if err != nil {
+		log.Printf("Error fetching USGS data for gauge %s: %v", river.GaugeID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch river data"})
+		return
+	}
+
+	// Apply drainage area ratio estimation if needed
+	actualFlowCFS := gaugeFlowCFS
+	if river.IsEstimated && river.DrainageAreaSqMi != nil && river.GaugeDrainageAreaSqMi != nil {
+		actualFlowCFS = rivers.EstimateFlowFromDrainageRatio(
+			gaugeFlowCFS,
+			*river.DrainageAreaSqMi,
+			*river.GaugeDrainageAreaSqMi,
+		)
+		log.Printf("Estimated flow for %s: gauge %.0f CFS -> river %.0f CFS (drainage ratio %.3f)",
+			river.RiverName, gaugeFlowCFS, actualFlowCFS, *river.DrainageAreaSqMi / *river.GaugeDrainageAreaSqMi)
+	}
+
+	status, message, isSafe, percentOfSafe := rivers.CalculateCrossingStatus(*river, actualFlowCFS)
+
+	riverData := models.RiverData{
+		River:         *river,
+		FlowCFS:       actualFlowCFS,
+		GaugeHeightFt: gaugeHeightFt,
+		IsSafe:        isSafe,
+		Status:        status,
+		StatusMessage: message,
+		Timestamp:     timestamp,
+		PercentOfSafe: percentOfSafe,
+	}
+
+	c.JSON(http.StatusOK, riverData)
 }

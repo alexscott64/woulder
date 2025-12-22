@@ -61,6 +61,8 @@ func main() {
 		apiGroup.GET("/weather/all", handler.GetAllWeather)
 		apiGroup.GET("/weather/:id", handler.GetWeatherForLocation)
 		apiGroup.GET("/weather/coordinates", handler.GetWeatherByCoordinates)
+		apiGroup.GET("/rivers/location/:id", handler.GetRiverDataForLocation)
+		apiGroup.GET("/rivers/:id", handler.GetRiverDataByID)
 	}
 
 	// Get port from environment

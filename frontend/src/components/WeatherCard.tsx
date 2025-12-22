@@ -1,4 +1,5 @@
 import { WeatherForecast } from '../types/weather';
+import { RiverData } from '../types/river';
 import {
   getWeatherCondition,
   getConditionColor,
@@ -8,7 +9,9 @@ import {
   getSnowProbability
 } from '../utils/weatherConditions';
 import { format } from 'date-fns';
-import { Cloud, Droplet, Wind, Snowflake, ChevronDown } from 'lucide-react';
+import { Cloud, Droplet, Wind, Snowflake, ChevronDown, Waves } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { RiverInfoModal } from './RiverInfoModal';
 
 interface WeatherCardProps {
   forecast: WeatherForecast;
@@ -20,6 +23,56 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const { location, current, hourly, historical } = forecast;
   const condition = getWeatherCondition(current);
   const conditionColor = getConditionColor(condition.level);
+
+  // River crossing state
+  const [showRiverModal, setShowRiverModal] = useState(false);
+  const [riverData, setRiverData] = useState<RiverData[]>([]);
+  const [loadingRivers, setLoadingRivers] = useState(false);
+  const [hasRivers, setHasRivers] = useState(false);
+
+  // Fetch river data when component mounts
+  useEffect(() => {
+    const fetchRiverData = async () => {
+      try {
+        console.log(`[${location.name}] Fetching river data for location ID: ${location.id}`);
+        const response = await fetch(`http://localhost:8080/api/rivers/location/${location.id}`);
+        console.log(`[${location.name}] Response status: ${response.status}`);
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`[${location.name}] Response data:`, data);
+          if (data.rivers && data.rivers.length > 0) {
+            console.log(`[${location.name}] Found ${data.rivers.length} rivers`);
+            setRiverData(data.rivers);
+            setHasRivers(true);
+          } else {
+            console.log(`[${location.name}] No rivers found in response`);
+          }
+        } else {
+          console.log(`[${location.name}] Response not OK`);
+        }
+      } catch (error) {
+        console.error(`[${location.name}] Error fetching river data:`, error);
+      }
+    };
+
+    fetchRiverData();
+  }, [location.id, location.name]);
+
+  const handleRiverClick = async () => {
+    setLoadingRivers(true);
+    try {
+      const response = await fetch(`http://localhost:8080/api/rivers/location/${location.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setRiverData(data.rivers);
+        setShowRiverModal(true);
+      }
+    } catch (error) {
+      console.error('Error fetching river data:', error);
+    } finally {
+      setLoadingRivers(false);
+    }
+  };
 
   // Safely handle potentially null/undefined arrays
   const safeHistorical = historical || [];
@@ -74,7 +127,28 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
               {format(new Date(current.timestamp), 'MMM d, h:mm a')}
             </p>
           </div>
-          <div className={`w-4 h-4 rounded-full ${conditionColor} shadow-sm`} title={condition.level} />
+          <div className="flex items-center gap-2">
+            {/* River Crossing Icon */}
+            {hasRivers && (
+              <button
+                onClick={handleRiverClick}
+                disabled={loadingRivers}
+                className="relative p-2 hover:bg-blue-50 rounded-full transition-colors group"
+                title="River Crossing Info"
+              >
+                <Waves className={`w-5 h-5 text-blue-600 ${loadingRivers ? 'animate-pulse' : ''}`} />
+                {/* Status indicator dot */}
+                {riverData.length > 0 && (
+                  <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${
+                    riverData.every(r => r.is_safe) ? 'bg-green-500' :
+                    riverData.some(r => r.status === 'unsafe') ? 'bg-red-500' :
+                    'bg-yellow-500'
+                  }`} />
+                )}
+              </button>
+            )}
+            <div className={`w-4 h-4 rounded-full ${conditionColor} shadow-sm`} title={condition.level} />
+          </div>
         </div>
 
         {/* Current Weather */}
@@ -200,7 +274,16 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           <ChevronDown className="w-4 h-4" />
           Show 6-Day Forecast
         </>
-</button>
+      </button>
+
+      {/* River Info Modal */}
+      {showRiverModal && (
+        <RiverInfoModal
+          rivers={riverData}
+          locationName={location.name}
+          onClose={() => setShowRiverModal(false)}
+        />
+      )}
     </div>
   );
 }

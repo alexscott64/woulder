@@ -216,3 +216,48 @@ func (db *Database) CleanOldWeatherData(days int) error {
 	_, err := db.conn.Exec(query, days)
 	return err
 }
+
+// GetRiversByLocation retrieves all rivers for a location
+func (db *Database) GetRiversByLocation(locationID int) ([]models.River, error) {
+	query := `SELECT id, location_id, gauge_id, river_name, safe_crossing_cfs, caution_crossing_cfs,
+			  drainage_area_sq_mi, gauge_drainage_area_sq_mi, is_estimated, description, created_at, updated_at
+			  FROM rivers WHERE location_id = ? ORDER BY river_name`
+
+	rows, err := db.conn.Query(query, locationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rivers []models.River
+	for rows.Next() {
+		var river models.River
+		if err := rows.Scan(&river.ID, &river.LocationID, &river.GaugeID, &river.RiverName,
+			&river.SafeCrossingCFS, &river.CautionCrossingCFS, &river.DrainageAreaSqMi,
+			&river.GaugeDrainageAreaSqMi, &river.IsEstimated, &river.Description,
+			&river.CreatedAt, &river.UpdatedAt); err != nil {
+			return nil, err
+		}
+		rivers = append(rivers, river)
+	}
+
+	return rivers, nil
+}
+
+// GetRiverByID retrieves a specific river by ID
+func (db *Database) GetRiverByID(riverID int) (*models.River, error) {
+	query := `SELECT id, location_id, gauge_id, river_name, safe_crossing_cfs, caution_crossing_cfs,
+			  drainage_area_sq_mi, gauge_drainage_area_sq_mi, is_estimated, description, created_at, updated_at
+			  FROM rivers WHERE id = ?`
+
+	var river models.River
+	err := db.conn.QueryRow(query, riverID).Scan(&river.ID, &river.LocationID, &river.GaugeID,
+		&river.RiverName, &river.SafeCrossingCFS, &river.CautionCrossingCFS, &river.DrainageAreaSqMi,
+		&river.GaugeDrainageAreaSqMi, &river.IsEstimated, &river.Description,
+		&river.CreatedAt, &river.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &river, nil
+}

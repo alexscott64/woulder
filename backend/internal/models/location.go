@@ -4,13 +4,29 @@ import "time"
 
 // Location represents a saved weather location
 type Location struct {
-	ID         int       `json:"id" db:"id"`
-	Name       string    `json:"name" db:"name"`
-	Latitude   float64   `json:"latitude" db:"latitude"`
-	Longitude  float64   `json:"longitude" db:"longitude"`
-	ElevationFt int      `json:"elevation_ft" db:"elevation_ft"` // Elevation in feet above sea level
-	CreatedAt  time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at" db:"updated_at"`
+	ID          int       `json:"id" db:"id"`
+	Name        string    `json:"name" db:"name"`
+	Latitude    float64   `json:"latitude" db:"latitude"`
+	Longitude   float64   `json:"longitude" db:"longitude"`
+	ElevationFt int       `json:"elevation_ft" db:"elevation_ft"` // Elevation in feet above sea level
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// River represents a river crossing associated with a location
+type River struct {
+	ID                     int       `json:"id" db:"id"`
+	LocationID             int       `json:"location_id" db:"location_id"`
+	GaugeID                string    `json:"gauge_id" db:"gauge_id"`                               // USGS river gauge station ID (may be nearby if no direct gauge)
+	RiverName              string    `json:"river_name" db:"river_name"`                           // Name of the river/creek for crossing
+	SafeCrossingCFS        int       `json:"safe_crossing_cfs" db:"safe_crossing_cfs"`             // Safe crossing threshold in CFS
+	CautionCrossingCFS     int       `json:"caution_crossing_cfs" db:"caution_crossing_cfs"`       // Caution threshold in CFS
+	DrainageAreaSqMi       *float64  `json:"drainage_area_sq_mi" db:"drainage_area_sq_mi"`         // Drainage area for flow estimation
+	GaugeDrainageAreaSqMi  *float64  `json:"gauge_drainage_area_sq_mi" db:"gauge_drainage_area_sq_mi"` // Reference gauge drainage area
+	IsEstimated            bool      `json:"is_estimated" db:"is_estimated"`                       // TRUE if flow is estimated using drainage area ratio
+	Description            *string   `json:"description" db:"description"`                         // Additional notes about the crossing
+	CreatedAt              time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // WeatherData represents weather information for a location
@@ -38,4 +54,16 @@ type WeatherForecast struct {
 	Current    WeatherData   `json:"current"`
 	Hourly     []WeatherData `json:"hourly"`
 	Historical []WeatherData `json:"historical"`
+}
+
+// RiverData represents river gauge information with current conditions
+type RiverData struct {
+	River           River   `json:"river"`             // River crossing info from database
+	FlowCFS         float64 `json:"flow_cfs"`          // Current flow in cubic feet per second
+	GaugeHeightFt   float64 `json:"gauge_height_ft"`   // Current gauge height in feet
+	IsSafe          bool    `json:"is_safe"`           // Whether it's safe to cross
+	Status          string  `json:"status"`            // "safe", "caution", "unsafe"
+	StatusMessage   string  `json:"status_message"`    // Human-readable status message
+	Timestamp       string  `json:"timestamp"`         // When the data was recorded
+	PercentOfSafe   float64 `json:"percent_of_safe"`   // Current flow as percentage of safe threshold
 }
