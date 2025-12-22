@@ -1,0 +1,11 @@
+{
+  "name": "woulder-scripts",
+  "version": "1.0.0",
+  "description": "Utility scripts for Woulder",
+  "scripts": {
+    "init-db": "node init-db.js"
+  },
+  "dependencies": {
+    "mysql2": "^3.6.5"
+  }
+}
