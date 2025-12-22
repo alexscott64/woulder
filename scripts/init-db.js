@@ -1,3 +1,4 @@
+require('dotenv').config({ path: require('path').join(__dirname, '..', 'backend', '.env') });
 const mysql = require('mysql2/promise');
 const fs = require('fs');
 const path = require('path');
@@ -5,13 +6,23 @@ const path = require('path');
 async function initDatabase() {
   console.log('Connecting to database...');
 
+  // Validate required environment variables
+  const required = ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
+  const missing = required.filter(key => !process.env[key]);
+
+  if (missing.length > 0) {
+    console.error(`Error: Missing required environment variables: ${missing.join(', ')}`);
+    console.error('Make sure backend/.env file exists and contains all required variables.');
+    process.exit(1);
+  }
+
   try {
     const connection = await mysql.createConnection({
-      host: 'leasecalcs-development.c0xbv45gqu40.us-west-2.rds.amazonaws.com',
-      port: 3306,
-      user: 'woulder',
-      password: 'j32JgmxzycbaoLet9F#9C%wFfN*RF98O',
-      database: 'woulder',
+      host: process.env.DB_HOST,
+      port: parseInt(process.env.DB_PORT),
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
       multipleStatements: true
     });
 
