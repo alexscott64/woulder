@@ -269,4 +269,4 @@ Alex Scott - [alexscott.io](https://alexscott.io)
 
 ---
 
-**Built with ❤️ for climbers**
+**Built for the v0 crushers**
