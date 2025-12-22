@@ -21,7 +21,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const condition = getWeatherCondition(current);
   const conditionColor = getConditionColor(condition.level);
 
-  // Calculate past 48-hour rain (average per day)
+  // Calculate past 48-hour rain (total)
   const allData = [...historical, ...hourly].sort((a, b) =>
     new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
@@ -31,8 +31,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
     const fortyEightHoursAgo = now.getTime() - 48 * 60 * 60 * 1000;
     return time >= fortyEightHoursAgo && time <= now.getTime();
   });
-  const totalRainLast48h = past48h.reduce((sum, d) => sum + d.precipitation, 0);
-  const rainLast48h = totalRainLast48h / 2; // Average per day
+  const rainLast48h = past48h.reduce((sum, d) => sum + d.precipitation, 0);
 
   // Calculate next 48-hour rain forecast (average per day)
   const next48h = hourly.filter(d => {
@@ -55,9 +54,9 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const hasSnowNext48h = next48h.some(d => d.temperature <= 32 && d.precipitation > 0);
   const hasRainNext48h = next48h.some(d => d.temperature > 32 && d.precipitation > 0);
 
-  // Determine if rain is bad
-  const rainLast48hBad = rainLast48h > 1;
-  const rainNext48hBad = rainNext48h > 1;
+  // Determine if rain is bad (for last 48h total, for next 48h avg per day)
+  const rainLast48hBad = rainLast48h > 2; // Total over 2 days
+  const rainNext48hBad = rainNext48h > 1; // Average per day
 
   return (
     <div className="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow duration-200 border border-gray-200">
