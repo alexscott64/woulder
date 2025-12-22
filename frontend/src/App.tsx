@@ -50,10 +50,21 @@ function Dashboard() {
     refetch();
   };
 
-  // Sort weather data with Skykomish first
+  // Sort weather data: Skykomish locations first, then Index, then alphabetically
   const sortedWeather = data?.weather.sort((a, b) => {
-    if (a.location.name === 'Skykomish') return -1;
-    if (b.location.name === 'Skykomish') return 1;
+    // Skykomish - Money Creek first
+    if (a.location.name === 'Skykomish - Money Creek') return -1;
+    if (b.location.name === 'Skykomish - Money Creek') return 1;
+
+    // Skykomish - Paradise second
+    if (a.location.name === 'Skykomish - Paradise') return -1;
+    if (b.location.name === 'Skykomish - Paradise') return 1;
+
+    // Index third
+    if (a.location.name === 'Index') return -1;
+    if (b.location.name === 'Index') return 1;
+
+    // Rest alphabetically
     return a.location.name.localeCompare(b.location.name);
   });
 
@@ -166,6 +177,8 @@ function Dashboard() {
                           <ForecastView
                             hourlyData={sortedWeather.find(f => f.location_id === expandedLocationId)?.hourly || []}
                             currentWeather={sortedWeather.find(f => f.location_id === expandedLocationId)?.current}
+                            historicalData={sortedWeather.find(f => f.location_id === expandedLocationId)?.historical || []}
+                            elevationFt={sortedWeather.find(f => f.location_id === expandedLocationId)?.location.elevation_ft || 0}
                           />
                         </div>
                         <button

@@ -3,6 +3,7 @@ export interface Location {
   name: string;
   latitude: number;
   longitude: number;
+  elevation_ft: number; // Elevation in feet above sea level
   created_at: string;
   updated_at: string;
 }

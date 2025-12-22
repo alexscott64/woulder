@@ -35,10 +35,11 @@ CREATE TABLE IF NOT EXISTS weather_data (
 
 -- Insert default locations
 INSERT INTO locations (name, latitude, longitude) VALUES
-('Skykomish', 47.70000522, -121.46672102),
+('Skykomish - Money Creek', 47.69727769, -121.47884640),
+('Skykomish - Paradise', 47.64074805, -121.37822668),
 ('Index', 47.82083333, -121.55611111),
 ('Gold Bar', 47.85555556, -121.69694444),
-('Bellingham', 48.75969444, -122.48847222),
 ('Icicle Creek (Leavenworth)', 47.59527778, -120.78361111),
-('Squamish', 49.70147778, -123.15572222)
+('Squamish', 49.70147778, -123.15572222),
+('Bellingham', 48.75969444, -122.48847222)
 ON DUPLICATE KEY UPDATE name=name;

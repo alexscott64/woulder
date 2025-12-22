@@ -13,14 +13,14 @@ import (
 )
 
 type Handler struct {
-	db            *database.Database
-	weatherClient *weather.Client
+	db             *database.Database
+	weatherService *weather.WeatherService
 }
 
-func NewHandler(db *database.Database, weatherClient *weather.Client) *Handler {
+func NewHandler(db *database.Database, weatherService *weather.WeatherService) *Handler {
 	return &Handler{
-		db:            db,
-		weatherClient: weatherClient,
+		db:             db,
+		weatherService: weatherService,
 	}
 }
 
@@ -64,7 +64,7 @@ func (h *Handler) GetWeatherForLocation(c *gin.Context) {
 	}
 
 	// Fetch current weather
-	current, err := h.weatherClient.GetCurrentWeather(location.Latitude, location.Longitude)
+	current, err := h.weatherService.GetCurrentWeather(location.Latitude, location.Longitude)
 	if err != nil {
 		log.Printf("Error fetching current weather for location %d: %v", locationID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch current weather"})
@@ -78,7 +78,7 @@ func (h *Handler) GetWeatherForLocation(c *gin.Context) {
 	}
 
 	// Fetch forecast
-	forecast, err := h.weatherClient.GetForecast(location.Latitude, location.Longitude)
+	forecast, err := h.weatherService.GetForecast(location.Latitude, location.Longitude)
 	if err != nil {
 		log.Printf("Error fetching forecast for location %d: %v", locationID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch forecast"})
@@ -134,7 +134,7 @@ func (h *Handler) GetWeatherByCoordinates(c *gin.Context) {
 	}
 
 	// Fetch current weather
-	current, err := h.weatherClient.GetCurrentWeather(lat, lon)
+	current, err := h.weatherService.GetCurrentWeather(lat, lon)
 	if err != nil {
 		log.Printf("Error fetching weather for coordinates (%.6f, %.6f): %v", lat, lon, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch weather"})
@@ -142,7 +142,7 @@ func (h *Handler) GetWeatherByCoordinates(c *gin.Context) {
 	}
 
 	// Fetch forecast
-	forecast, err := h.weatherClient.GetForecast(lat, lon)
+	forecast, err := h.weatherService.GetForecast(lat, lon)
 	if err != nil {
 		log.Printf("Error fetching forecast for coordinates (%.6f, %.6f): %v", lat, lon, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch forecast"})
@@ -172,7 +172,7 @@ func (h *Handler) GetAllWeather(c *gin.Context) {
 		log.Printf("Fetching fresh data from API for location %d", location.ID)
 
 		// Fetch current weather
-		current, err := h.weatherClient.GetCurrentWeather(location.Latitude, location.Longitude)
+		current, err := h.weatherService.GetCurrentWeather(location.Latitude, location.Longitude)
 		if err != nil {
 			log.Printf("Error fetching weather for location %d: %v", location.ID, err)
 			continue
@@ -185,7 +185,7 @@ func (h *Handler) GetAllWeather(c *gin.Context) {
 		}
 
 		// Fetch forecast
-		forecast, err := h.weatherClient.GetForecast(location.Latitude, location.Longitude)
+		forecast, err := h.weatherService.GetForecast(location.Latitude, location.Longitude)
 		if err != nil {
 			log.Printf("Error fetching forecast for location %d: %v", location.ID, err)
 			continue

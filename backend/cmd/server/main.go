@@ -27,11 +27,11 @@ func main() {
 	}
 	defer db.Close()
 
-	// Initialize weather client
-	weatherClient := weather.NewClient()
+	// Initialize weather service (Open-Meteo with OpenWeatherMap fallback)
+	weatherService := weather.NewWeatherService()
 
 	// Initialize API handler
-	handler := api.NewHandler(db, weatherClient)
+	handler := api.NewHandler(db, weatherService)
 
 	// Set Gin mode
 	ginMode := os.Getenv("GIN_MODE")

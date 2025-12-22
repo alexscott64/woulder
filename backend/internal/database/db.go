@@ -50,7 +50,7 @@ func (db *Database) Close() error {
 
 // GetAllLocations retrieves all saved locations
 func (db *Database) GetAllLocations() ([]models.Location, error) {
-	query := `SELECT id, name, latitude, longitude, created_at, updated_at FROM locations ORDER BY name`
+	query := `SELECT id, name, latitude, longitude, elevation_ft, created_at, updated_at FROM locations ORDER BY name`
 
 	rows, err := db.conn.Query(query)
 	if err != nil {
@@ -61,7 +61,7 @@ func (db *Database) GetAllLocations() ([]models.Location, error) {
 	var locations []models.Location
 	for rows.Next() {
 		var loc models.Location
-		if err := rows.Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude, &loc.CreatedAt, &loc.UpdatedAt); err != nil {
+		if err := rows.Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude, &loc.ElevationFt, &loc.CreatedAt, &loc.UpdatedAt); err != nil {
 			return nil, err
 		}
 		locations = append(locations, loc)
@@ -72,10 +72,10 @@ func (db *Database) GetAllLocations() ([]models.Location, error) {
 
 // GetLocation retrieves a location by ID
 func (db *Database) GetLocation(id int) (*models.Location, error) {
-	query := `SELECT id, name, latitude, longitude, created_at, updated_at FROM locations WHERE id = ?`
+	query := `SELECT id, name, latitude, longitude, elevation_ft, created_at, updated_at FROM locations WHERE id = ?`
 
 	var loc models.Location
-	err := db.conn.QueryRow(query, id).Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude, &loc.CreatedAt, &loc.UpdatedAt)
+	err := db.conn.QueryRow(query, id).Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude, &loc.ElevationFt, &loc.CreatedAt, &loc.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
