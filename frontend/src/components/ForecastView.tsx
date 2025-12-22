@@ -24,21 +24,28 @@ export function ForecastView({ hourlyData }: ForecastViewProps) {
   // Group hourly data by day
   const dailyForecasts: DayForecast[] = [];
   const days = new Map<string, WeatherData[]>();
+  const today = format(new Date(), 'yyyy-MM-dd');
 
-  // Group by day
+  // Group by day (only future data)
   hourlyData.forEach(data => {
     const date = new Date(data.timestamp);
     const dateKey = format(date, 'yyyy-MM-dd');
 
-    if (!days.has(dateKey)) {
-      days.set(dateKey, []);
+    // Only include today and future dates
+    if (dateKey >= today) {
+      if (!days.has(dateKey)) {
+        days.set(dateKey, []);
+      }
+      days.get(dateKey)!.push(data);
     }
-    days.get(dateKey)!.push(data);
   });
+
+  // Sort days by date
+  const sortedDays = Array.from(days.entries()).sort((a, b) => a[0].localeCompare(b[0]));
 
   // Calculate daily summaries (limit to 7 days)
   let dayCount = 0;
-  for (const [dateKey, hours] of days.entries()) {
+  for (const [dateKey, hours] of sortedDays) {
     if (dayCount >= 7) break;
 
     const date = new Date(dateKey);
@@ -151,28 +158,41 @@ export function ForecastView({ hourlyData }: ForecastViewProps) {
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <h3 className="text-lg font-bold text-gray-900 mb-4">Hourly Forecast</h3>
         <div className="overflow-x-auto">
+          {/* Day labels row */}
+          <div className="flex gap-6 mb-2">
+            {hourlyData.slice(0, 48).map((hour, index) => {
+              const date = new Date(hour.timestamp);
+              const prevDate = index > 0 ? new Date(hourlyData[index - 1].timestamp) : null;
+              const showDayLabel = !prevDate || format(date, 'yyyy-MM-dd') !== format(prevDate, 'yyyy-MM-dd');
+
+              return (
+                <div key={`day-${index}`} className="flex-shrink-0 w-20 text-center">
+                  {showDayLabel ? (
+                    <div className="text-xs font-bold text-gray-900 pb-1 border-b border-gray-300">
+                      {format(date, 'EEEE')}
+                    </div>
+                  ) : (
+                    <div className="h-5"></div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Hourly data row */}
           <div className="flex gap-6 pb-2">
             {hourlyData.slice(0, 48).map((hour, index) => {
               const condition = getWeatherCondition(hour);
               const conditionColor = getConditionColor(condition.level);
               const date = new Date(hour.timestamp);
-              const prevDate = index > 0 ? new Date(hourlyData[index - 1].timestamp) : null;
-              const showDayLabel = !prevDate || format(date, 'yyyy-MM-dd') !== format(prevDate, 'yyyy-MM-dd');
 
               return (
                 <div
                   key={index}
                   className="flex-shrink-0 w-20 text-center"
                 >
-                  {/* Day label (show when day changes) */}
-                  {showDayLabel && (
-                    <div className="text-xs font-bold text-gray-900 mb-1 pb-1 border-b border-gray-300">
-                      {format(date, 'EEEE')}
-                    </div>
-                  )}
-
                   {/* Time */}
-                  <div className="text-xs font-medium text-gray-700 mb-1 mt-1">
+                  <div className="text-xs font-medium text-gray-700 mb-1">
                     {format(date, 'ha')}
                   </div>
 
@@ -191,11 +211,11 @@ export function ForecastView({ hourlyData }: ForecastViewProps) {
                   {/* Condition indicator */}
                   <div className={`w-2 h-2 rounded-full ${conditionColor} mx-auto mb-2`} />
 
-                  {/* Precipitation */}
+                  {/* Precipitation (average per hour if data is for 3h period) */}
                   {hour.precipitation > 0 && (
                     <div className="flex items-center justify-center gap-1 text-xs text-blue-600 mb-1">
                       <Droplet className="w-3 h-3" />
-                      <span>{hour.precipitation.toFixed(2)}"</span>
+                      <span>{(hour.precipitation / 3).toFixed(3)}"</span>
                     </div>
                   )}
 

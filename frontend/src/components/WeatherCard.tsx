@@ -21,7 +21,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const condition = getWeatherCondition(current);
   const conditionColor = getConditionColor(condition.level);
 
-  // Calculate past 48-hour rain
+  // Calculate past 48-hour rain (average per day)
   const allData = [...historical, ...hourly].sort((a, b) =>
     new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
@@ -31,19 +31,29 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
     const fortyEightHoursAgo = now.getTime() - 48 * 60 * 60 * 1000;
     return time >= fortyEightHoursAgo && time <= now.getTime();
   });
-  const rainLast48h = past48h.reduce((sum, d) => sum + d.precipitation, 0);
+  const totalRainLast48h = past48h.reduce((sum, d) => sum + d.precipitation, 0);
+  const rainLast48h = totalRainLast48h / 2; // Average per day
 
-  // Calculate next 48-hour rain forecast
+  // Calculate next 48-hour rain forecast (average per day)
   const next48h = hourly.filter(d => {
     const time = new Date(d.timestamp).getTime();
     const fortyEightHoursFromNow = now.getTime() + 48 * 60 * 60 * 1000;
     return time > now.getTime() && time <= fortyEightHoursFromNow;
   });
-  const rainNext48h = next48h.reduce((sum, d) => sum + d.precipitation, 0);
+  const totalRainNext48h = next48h.reduce((sum, d) => sum + d.precipitation, 0);
+  const rainNext48h = totalRainNext48h / 2; // Average per day
 
   // Check for snow on ground (use recent historical data)
   const recentData = [...historical].reverse().slice(0, 8); // Last 24 hours
   const snowInfo = getSnowProbability(recentData);
+
+  // Determine precipitation type for last 48h
+  const hasSnowLast48h = past48h.some(d => d.temperature <= 32 && d.precipitation > 0);
+  const hasRainLast48h = past48h.some(d => d.temperature > 32 && d.precipitation > 0);
+
+  // Determine precipitation type for next 48h
+  const hasSnowNext48h = next48h.some(d => d.temperature <= 32 && d.precipitation > 0);
+  const hasRainNext48h = next48h.some(d => d.temperature > 32 && d.precipitation > 0);
 
   // Determine if rain is bad
   const rainLast48hBad = rainLast48h > 1;
@@ -97,18 +107,36 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
         {/* Metrics Grid - 3 columns */}
         <div className="grid grid-cols-3 gap-3 mb-4">
-          {/* Last 48h Rain */}
+          {/* Last 48h Rain/Snow */}
           <div className="flex flex-col items-center text-center">
-            <Droplet className={`w-5 h-5 mb-1 ${rainLast48hBad ? 'text-red-500' : 'text-blue-500'}`} />
+            {hasSnowLast48h && hasRainLast48h ? (
+              <div className="relative w-5 h-5 mb-1">
+                <Snowflake className={`w-3 h-3 absolute top-0 left-0 ${rainLast48hBad ? 'text-red-500' : 'text-blue-400'}`} />
+                <Droplet className={`w-3 h-3 absolute bottom-0 right-0 ${rainLast48hBad ? 'text-red-500' : 'text-blue-500'}`} />
+              </div>
+            ) : hasSnowLast48h ? (
+              <Snowflake className={`w-5 h-5 mb-1 ${rainLast48hBad ? 'text-red-500' : 'text-blue-400'}`} />
+            ) : (
+              <Droplet className={`w-5 h-5 mb-1 ${rainLast48hBad ? 'text-red-500' : 'text-blue-500'}`} />
+            )}
             <div className="text-xs text-gray-500 mb-1">Last 48h</div>
             <div className={`text-sm font-semibold ${rainLast48hBad ? 'text-red-900' : 'text-gray-900'}`}>
               {rainLast48h.toFixed(2)}"
             </div>
           </div>
 
-          {/* Next 48h Rain */}
+          {/* Next 48h Rain/Snow */}
           <div className="flex flex-col items-center text-center">
-            <Droplet className={`w-5 h-5 mb-1 ${rainNext48hBad ? 'text-red-500' : 'text-blue-400'}`} />
+            {hasSnowNext48h && hasRainNext48h ? (
+              <div className="relative w-5 h-5 mb-1">
+                <Snowflake className={`w-3 h-3 absolute top-0 left-0 ${rainNext48hBad ? 'text-red-500' : 'text-blue-400'}`} />
+                <Droplet className={`w-3 h-3 absolute bottom-0 right-0 ${rainNext48hBad ? 'text-red-500' : 'text-blue-500'}`} />
+              </div>
+            ) : hasSnowNext48h ? (
+              <Snowflake className={`w-5 h-5 mb-1 ${rainNext48hBad ? 'text-red-500' : 'text-blue-400'}`} />
+            ) : (
+              <Droplet className={`w-5 h-5 mb-1 ${rainNext48hBad ? 'text-red-500' : 'text-blue-400'}`} />
+            )}
             <div className="text-xs text-gray-500 mb-1">Next 48h</div>
             <div className={`text-sm font-semibold ${rainNext48hBad ? 'text-red-900' : 'text-gray-900'}`}>
               {rainNext48h.toFixed(2)}"
