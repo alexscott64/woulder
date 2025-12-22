@@ -5,6 +5,7 @@ import { Droplet, Wind, Snowflake } from 'lucide-react';
 
 interface ForecastViewProps {
   hourlyData: WeatherData[];
+  currentWeather?: WeatherData;
 }
 
 interface DayForecast {
@@ -22,20 +23,27 @@ interface DayForecast {
   hasRain: boolean;
 }
 
-export function ForecastView({ hourlyData }: ForecastViewProps) {
+export function ForecastView({ hourlyData, currentWeather }: ForecastViewProps) {
   // Group hourly data by day
   const dailyForecasts: DayForecast[] = [];
   const days = new Map<string, WeatherData[]>();
+
+  // Use local timezone to get today's date
   const now = new Date();
-  const today = format(now, 'yyyy-MM-dd');
+  const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayStr = format(localToday, 'yyyy-MM-dd');
+
+  // Include current weather in the data if provided
+  const allData = currentWeather ? [currentWeather, ...hourlyData] : hourlyData;
 
   // Group by day (include current hour and all future data)
-  hourlyData.forEach(data => {
-    const date = new Date(data.timestamp);
-    const dateKey = format(date, 'yyyy-MM-dd');
+  allData.forEach(data => {
+    const timestamp = new Date(data.timestamp);
+    const dateOnly = new Date(timestamp.getFullYear(), timestamp.getMonth(), timestamp.getDate());
+    const dateKey = format(dateOnly, 'yyyy-MM-dd');
 
-    // Include today and all future dates
-    if (dateKey >= today) {
+    // Include all data from today onwards
+    if (dateKey >= todayStr) {
       if (!days.has(dateKey)) {
         days.set(dateKey, []);
       }
@@ -46,12 +54,11 @@ export function ForecastView({ hourlyData }: ForecastViewProps) {
   // Sort days by date
   const sortedDays = Array.from(days.entries()).sort((a, b) => a[0].localeCompare(b[0]));
 
-  // Calculate daily summaries (limit to 7 days)
-  let dayCount = 0;
-  for (const [dateKey, hours] of sortedDays) {
-    if (dayCount >= 7) break;
+  // Calculate daily summaries (show up to 6 days)
+  for (let i = 0; i < Math.min(sortedDays.length, 6); i++) {
+    const [dateKey, hours] = sortedDays[i];
 
-    const date = new Date(dateKey);
+    const date = new Date(dateKey + 'T00:00:00');
     const temps = hours.map(h => h.temperature);
     const high = Math.max(...temps);
     const low = Math.min(...temps);
@@ -76,9 +83,12 @@ export function ForecastView({ hourlyData }: ForecastViewProps) {
     const hasSnow = hours.some(h => h.temperature <= 32 && h.precipitation > 0);
     const hasRain = hours.some(h => h.temperature > 32 && h.precipitation > 0);
 
+    // Check if this date is today
+    const isToday = dateKey === todayStr;
+
     dailyForecasts.push({
       date,
-      dayName: dayCount === 0 ? 'Today' : format(date, 'EEE'),
+      dayName: isToday ? 'Today' : format(date, 'EEE'),
       high,
       low,
       avgPrecip: totalPrecip,
@@ -90,8 +100,6 @@ export function ForecastView({ hourlyData }: ForecastViewProps) {
       hasSnow,
       hasRain,
     });
-
-    dayCount++;
   }
 
   return (

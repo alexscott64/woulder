@@ -159,11 +159,14 @@ function Dashboard() {
                       <div className="mt-6 bg-white rounded-xl shadow-md border border-gray-200">
                         <div className="p-6 border-b border-gray-200">
                           <h3 className="text-xl font-bold text-gray-900">
-                            {sortedWeather.find(f => f.location_id === expandedLocationId)?.location.name} - 7-Day Forecast
+                            {sortedWeather.find(f => f.location_id === expandedLocationId)?.location.name} - 6-Day Forecast
                           </h3>
                         </div>
                         <div className="bg-gray-50 p-6">
-                          <ForecastView hourlyData={sortedWeather.find(f => f.location_id === expandedLocationId)?.hourly || []} />
+                          <ForecastView
+                            hourlyData={sortedWeather.find(f => f.location_id === expandedLocationId)?.hourly || []}
+                            currentWeather={sortedWeather.find(f => f.location_id === expandedLocationId)?.current}
+                          />
                         </div>
                         <button
                           onClick={() => setExpandedLocationId(null)}

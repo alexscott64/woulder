@@ -44,6 +44,9 @@ type owmResponse struct {
 		Rain struct {
 			ThreeH float64 `json:"3h"`
 		} `json:"rain"`
+		Snow struct {
+			ThreeH float64 `json:"3h"`
+		} `json:"snow"`
 		Pop float64 `json:"pop"` // Probability of precipitation
 	} `json:"list"`
 }
@@ -143,11 +146,14 @@ func (c *Client) GetForecast(lat, lon float64) ([]models.WeatherData, error) {
 
 	var forecast []models.WeatherData
 	for _, item := range data.List {
+		// Combine rain and snow into total precipitation
+		totalPrecip := (item.Rain.ThreeH + item.Snow.ThreeH) / 25.4 // Convert mm to inches
+
 		weather := models.WeatherData{
 			Timestamp:     time.Unix(item.Dt, 0),
 			Temperature:   item.Main.Temp,
 			FeelsLike:     item.Main.FeelsLike,
-			Precipitation: item.Rain.ThreeH / 25.4, // Convert mm to inches
+			Precipitation: totalPrecip,
 			Humidity:      item.Main.Humidity,
 			WindSpeed:     item.Wind.Speed,
 			WindDirection: item.Wind.Deg,

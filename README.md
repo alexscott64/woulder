@@ -78,10 +78,6 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 
 - **[QUICKSTART.md](QUICKSTART.md)** - Quick start guide
 - **[SUMMARY.md](SUMMARY.md)** - Project summary and overview
-- **[notes/project-plan.md](notes/project-plan.md)** - Full architecture and plan
-- **[notes/setup-instructions.md](notes/setup-instructions.md)** - Detailed setup
-- **[notes/technical-implementation.md](notes/technical-implementation.md)** - Implementation details
-- **[notes/deployment-guide.md](notes/deployment-guide.md)** - Deployment to Namecheap
 
 ---
 
@@ -145,13 +141,7 @@ woulder/
 │
 ├── scripts/                    # Utility scripts
 │   └── init-db.js              # Database initialization
-│
-├── notes/                      # Documentation
-│   ├── project-plan.md
-│   ├── setup-instructions.md
-│   ├── technical-implementation.md
-│   └── deployment-guide.md
-│
+|
 ├── README.md                   # This file
 ├── QUICKSTART.md               # Quick start guide
 └── SUMMARY.md                  # Project summary
@@ -200,8 +190,6 @@ cd frontend
 npm run build
 # Output: dist/
 ```
-
-See [notes/deployment-guide.md](notes/deployment-guide.md) for full deployment instructions.
 
 ---
 

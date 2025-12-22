@@ -195,9 +195,9 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
       >
         <>
           <ChevronDown className="w-4 h-4" />
-          Show 7-Day Forecast
+          Show 6-Day Forecast
         </>
-      </button>
+</button>
     </div>
   );
 }
