@@ -224,9 +224,9 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
         <div className="overflow-x-auto">
           {/* Day labels row */}
           <div className="flex gap-6 mb-2">
-            {allData.slice(0, 48).map((hour, index) => {
+            {hourlyData.slice(0, 48).map((hour, index) => {
               const date = new Date(hour.timestamp);
-              const prevDate = index > 0 ? new Date(allData[index - 1].timestamp) : null;
+              const prevDate = index > 0 ? new Date(hourlyData[index - 1].timestamp) : null;
               const showDayLabel = !prevDate || format(date, 'yyyy-MM-dd') !== format(prevDate, 'yyyy-MM-dd');
 
               return (
@@ -245,9 +245,11 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
 
           {/* Hourly data row */}
           <div className="flex gap-6 pb-2">
-            {allData.slice(0, 48).map((hour, index) => {
+            {hourlyData.slice(0, 48).map((hour, index) => {
               const date = new Date(hour.timestamp);
-              const isCurrentHour = currentWeather && index === 0;
+              // Check if this hour matches the current weather timestamp
+              const isCurrentHour = currentWeather &&
+                Math.abs(new Date(hour.timestamp).getTime() - new Date(currentWeather.timestamp).getTime()) < 60 * 60 * 1000;
 
               return (
                 <div
@@ -271,7 +273,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                     {Math.round(hour.temperature)}°
                   </div>
 
-                  {/* Precipitation - always show */}
+                  {/* Precipitation (3-hour total) - always show */}
                   <div className={`flex items-center justify-center gap-1 text-xs mb-1 ${getPrecipColor(hour.precipitation)}`}>
                     {hour.temperature <= 32 && hour.precipitation > 0 ? (
                       <Snowflake className="w-3 h-3" />

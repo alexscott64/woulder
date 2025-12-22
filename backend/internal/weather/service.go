@@ -22,6 +22,29 @@ func NewWeatherService() *WeatherService {
 	}
 }
 
+// GetCurrentAndForecast fetches both current weather and forecast in a single API call
+func (s *WeatherService) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, error) {
+	if s.preferOpenMeteo {
+		current, forecast, err := s.openMeteo.GetCurrentAndForecast(lat, lon)
+		if err == nil {
+			log.Printf("Successfully fetched current + forecast from Open-Meteo for (%.6f, %.6f) - %d hours", lat, lon, len(forecast))
+			return current, forecast, nil
+		}
+		log.Printf("Open-Meteo failed for current+forecast (%.6f, %.6f): %v, falling back to separate calls", lat, lon, err)
+	}
+
+	// Fallback to separate calls
+	current, err := s.GetCurrentWeather(lat, lon)
+	if err != nil {
+		return nil, nil, err
+	}
+	forecast, err := s.GetForecast(lat, lon)
+	if err != nil {
+		return nil, nil, err
+	}
+	return current, forecast, nil
+}
+
 // GetCurrentWeather fetches current weather with fallback
 func (s *WeatherService) GetCurrentWeather(lat, lon float64) (*models.WeatherData, error) {
 	if s.preferOpenMeteo {

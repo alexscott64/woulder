@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -59,9 +60,10 @@ func NewOpenMeteoClient() *OpenMeteoClient {
 	}
 }
 
-// GetCurrentWeather fetches current weather observations
+// GetCurrentWeather fetches current weather with both current conditions and hourly forecast
 func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherData, error) {
-	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto",
+	// Fetch both current and hourly data to get accurate precipitation
+	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=precipitation,rain,snowfall&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=1",
 		openMeteoForecastURL, lat, lon)
 
 	resp, err := c.httpClient.Get(url)
@@ -84,17 +86,27 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 		return nil, fmt.Errorf("no current weather data returned from Open-Meteo")
 	}
 
-	// Parse current weather timestamp
-	timestamp, err := time.Parse(time.RFC3339, data.Current.Time)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse timestamp: %w", err)
+	if len(data.Hourly.Time) == 0 {
+		return nil, fmt.Errorf("no hourly data returned from Open-Meteo")
 	}
 
+	// Parse current weather timestamp (Open-Meteo current uses ISO8601 without timezone info)
+	// Try RFC3339 first, then fall back to simpler format
+	timestamp, err := time.Parse(time.RFC3339, data.Current.Time)
+	if err != nil {
+		// Try parsing without timezone (e.g., "2025-12-21T23:15")
+		timestamp, err = time.Parse("2006-01-02T15:04", data.Current.Time)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse timestamp: %w", err)
+		}
+	}
+
+	// Use current conditions but get precipitation from the matching hourly forecast
 	weather := &models.WeatherData{
 		Timestamp:     timestamp,
 		Temperature:   data.Current.Temperature2m,
 		FeelsLike:     data.Current.ApparentTemperature,
-		Precipitation: data.Current.Rain + data.Current.Snowfall, // Combine rain and snow
+		Precipitation: data.Hourly.Rain[0] + data.Hourly.Snowfall[0], // Use hourly forecast for precipitation
 		Humidity:      data.Current.RelativeHumidity2m,
 		WindSpeed:     data.Current.WindSpeed10m,
 		WindDirection: data.Current.WindDirection10m,
@@ -105,6 +117,91 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 	}
 
 	return weather, nil
+}
+
+// GetCurrentAndForecast fetches both current weather and forecast in a single API call
+func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, error) {
+	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=16",
+		openMeteoForecastURL, lat, lon)
+
+	resp, err := c.httpClient.Get(url)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch weather from Open-Meteo: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, nil, fmt.Errorf("Open-Meteo API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var data openMeteoResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, nil, fmt.Errorf("failed to decode Open-Meteo response: %w", err)
+	}
+
+	if data.Current == nil {
+		return nil, nil, fmt.Errorf("no current weather data returned from Open-Meteo")
+	}
+
+	if len(data.Hourly.Time) == 0 {
+		return nil, nil, fmt.Errorf("no hourly data returned from Open-Meteo")
+	}
+
+	// Parse current weather timestamp
+	timestamp, err := time.Parse(time.RFC3339, data.Current.Time)
+	if err != nil {
+		timestamp, err = time.Parse("2006-01-02T15:04", data.Current.Time)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse timestamp: %w", err)
+		}
+	}
+
+	// Create current weather data
+	current := &models.WeatherData{
+		Timestamp:     timestamp,
+		Temperature:   data.Current.Temperature2m,
+		FeelsLike:     data.Current.ApparentTemperature,
+		Precipitation: data.Hourly.Rain[0] + data.Hourly.Snowfall[0],
+		Humidity:      data.Current.RelativeHumidity2m,
+		WindSpeed:     data.Current.WindSpeed10m,
+		WindDirection: data.Current.WindDirection10m,
+		CloudCover:    data.Current.CloudCover,
+		Pressure:      int(data.Current.Pressure),
+		Description:   getWeatherDescription(data.Current.WeatherCode),
+		Icon:          getWeatherIcon(data.Current.WeatherCode),
+	}
+
+	// Parse forecast data (3-hour intervals)
+	var forecast []models.WeatherData
+	for i := 0; i < len(data.Hourly.Time); i += 3 {
+		timestamp, err := time.Parse(time.RFC3339, data.Hourly.Time[i])
+		if err != nil {
+			timestamp, err = time.Parse("2006-01-02T15:04", data.Hourly.Time[i])
+			if err != nil {
+				log.Printf("Failed to parse hourly timestamp '%s': %v", data.Hourly.Time[i], err)
+				continue
+			}
+		}
+
+		weather := models.WeatherData{
+			Timestamp:     timestamp,
+			Temperature:   data.Hourly.Temperature2m[i],
+			FeelsLike:     data.Hourly.ApparentTemperature[i],
+			Precipitation: data.Hourly.Rain[i] + data.Hourly.Snowfall[i],
+			Humidity:      data.Hourly.RelativeHumidity2m[i],
+			WindSpeed:     data.Hourly.WindSpeed10m[i],
+			WindDirection: data.Hourly.WindDirection10m[i],
+			CloudCover:    data.Hourly.CloudCover[i],
+			Pressure:      int(data.Hourly.Pressure[i]),
+			Description:   getWeatherDescription(data.Hourly.WeatherCode[i]),
+			Icon:          getWeatherIcon(data.Hourly.WeatherCode[i]),
+		}
+
+		forecast = append(forecast, weather)
+	}
+
+	return current, forecast, nil
 }
 
 // GetForecast fetches hourly forecast data
@@ -129,10 +226,17 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 	}
 
 	var forecast []models.WeatherData
-	for i := range data.Hourly.Time {
+	// Only return every 3rd hour (3-hour intervals) to match previous behavior
+	for i := 0; i < len(data.Hourly.Time); i += 3 {
+		// Try RFC3339 first, then fall back to simpler format
 		timestamp, err := time.Parse(time.RFC3339, data.Hourly.Time[i])
 		if err != nil {
-			continue
+			// Try parsing without timezone (e.g., "2025-12-21T23:00")
+			timestamp, err = time.Parse("2006-01-02T15:04", data.Hourly.Time[i])
+			if err != nil {
+				log.Printf("Failed to parse hourly timestamp '%s': %v", data.Hourly.Time[i], err)
+				continue
+			}
 		}
 
 		weather := models.WeatherData{
@@ -181,9 +285,15 @@ func (c *OpenMeteoClient) GetHistoricalWeather(lat, lon float64, days int) ([]mo
 
 	var historical []models.WeatherData
 	for i := range data.Hourly.Time {
+		// Try RFC3339 first, then fall back to simpler format
 		timestamp, err := time.Parse(time.RFC3339, data.Hourly.Time[i])
 		if err != nil {
-			continue
+			// Try parsing without timezone (e.g., "2025-12-21T23:00")
+			timestamp, err = time.Parse("2006-01-02T15:04", data.Hourly.Time[i])
+			if err != nil {
+				log.Printf("Failed to parse historical timestamp '%s': %v", data.Hourly.Time[i], err)
+				continue
+			}
 		}
 
 		weather := models.WeatherData{

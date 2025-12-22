@@ -36,7 +36,7 @@ export function calculateSnowAccumulation(
   allData.forEach((hour) => {
     // Elevation-adjusted temperature (lapse rate: -3.5°F per 1000 ft)
     const temp = hour.temperature - (elevationFt / 1000) * 3.5;
-    const precip = hour.precipitation;
+    const precip = hour.precipitation; // This is a 3-hour total
     const windSpeed = hour.wind_speed;
     const humidity = hour.humidity;
 
@@ -45,7 +45,7 @@ export function calculateSnowAccumulation(
 
     if (precip > 0) {
       if (snowFraction > 0) {
-        // Snowfall portion
+        // Snowfall portion (precip is 3-hour total)
         const snowPrecip = precip * snowFraction;
         snowSWE += snowPrecip;
         const newSnowDensity = getNewSnowDensity(temp);
@@ -65,27 +65,27 @@ export function calculateSnowAccumulation(
       }
     }
 
-    // --- Temperature-based melt ---
+    // --- Temperature-based melt (multiply by 3 for 3-hour period) ---
     if (temp > 34 && snowSWE > 0) {
-      const melt = calculateSWEMelt(temp);
+      const melt = calculateSWEMelt(temp) * 3; // 3-hour period
       snowSWE = Math.max(0, snowSWE - melt);
     }
 
-    // --- Wind-enhanced melt and sublimation ---
+    // --- Wind-enhanced melt and sublimation (multiply by 3 for 3-hour period) ---
     if (windSpeed > 10 && snowSWE > 0) {
-      const windMelt = (windSpeed - 10) * 0.002;
+      const windMelt = (windSpeed - 10) * 0.002 * 3; // 3-hour period
       snowSWE = Math.max(0, snowSWE - windMelt);
     }
 
-    // --- Humidity-based sublimation (dry air = more sublimation) ---
+    // --- Humidity-based sublimation (multiply by 3 for 3-hour period) ---
     if (humidity < 60 && snowSWE > 0) {
-      const sublimation = (60 - humidity) * 0.0001;
+      const sublimation = (60 - humidity) * 0.0001 * 3; // 3-hour period
       snowSWE = Math.max(0, snowSWE - sublimation);
     }
 
-    // --- Compaction / settling ---
+    // --- Compaction / settling (multiply by 3 for 3-hour period) ---
     if (snowSWE > 0) {
-      snowDensity = Math.min(0.4, snowDensity + getCompactionRate(temp));
+      snowDensity = Math.min(0.4, snowDensity + getCompactionRate(temp) * 3);
     }
 
     // --- Derive depth ---

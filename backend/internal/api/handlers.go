@@ -63,11 +63,11 @@ func (h *Handler) GetWeatherForLocation(c *gin.Context) {
 		return
 	}
 
-	// Fetch current weather
-	current, err := h.weatherService.GetCurrentWeather(location.Latitude, location.Longitude)
+	// Fetch current weather and forecast in a single API call
+	current, forecast, err := h.weatherService.GetCurrentAndForecast(location.Latitude, location.Longitude)
 	if err != nil {
-		log.Printf("Error fetching current weather for location %d: %v", locationID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch current weather"})
+		log.Printf("Error fetching weather for location %d: %v", locationID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch weather"})
 		return
 	}
 	current.LocationID = locationID
@@ -75,14 +75,6 @@ func (h *Handler) GetWeatherForLocation(c *gin.Context) {
 	// Save current weather to database
 	if err := h.db.SaveWeatherData(current); err != nil {
 		log.Printf("Error saving current weather: %v", err)
-	}
-
-	// Fetch forecast
-	forecast, err := h.weatherService.GetForecast(location.Latitude, location.Longitude)
-	if err != nil {
-		log.Printf("Error fetching forecast for location %d: %v", locationID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch forecast"})
-		return
 	}
 
 	// Save forecast to database
@@ -166,53 +158,81 @@ func (h *Handler) GetAllWeather(c *gin.Context) {
 		return
 	}
 
-	var allWeather []models.WeatherForecast
+	// Fetch weather for all locations in parallel with concurrency limit
+	type result struct {
+		forecast models.WeatherForecast
+		err      error
+		index    int
+	}
 
-	for _, location := range locations {
-		log.Printf("Fetching fresh data from API for location %d", location.ID)
+	results := make(chan result, len(locations))
+	// Limit to 3 concurrent requests to avoid rate limiting
+	semaphore := make(chan struct{}, 3)
 
-		// Fetch current weather
-		current, err := h.weatherService.GetCurrentWeather(location.Latitude, location.Longitude)
-		if err != nil {
-			log.Printf("Error fetching weather for location %d: %v", location.ID, err)
-			continue
-		}
-		current.LocationID = location.ID
+	for i, location := range locations {
+		go func(loc models.Location, idx int) {
+			semaphore <- struct{}{} // Acquire
+			defer func() { <-semaphore }() // Release
+			log.Printf("Fetching fresh data from API for location %d", loc.ID)
 
-		// Save to database
-		if err := h.db.SaveWeatherData(current); err != nil {
-			log.Printf("Error saving weather data: %v", err)
-		}
-
-		// Fetch forecast
-		forecast, err := h.weatherService.GetForecast(location.Latitude, location.Longitude)
-		if err != nil {
-			log.Printf("Error fetching forecast for location %d: %v", location.ID, err)
-			continue
-		}
-
-		// Save forecast
-		for _, f := range forecast {
-			f.LocationID = location.ID
-			if err := h.db.SaveWeatherData(&f); err != nil {
-				log.Printf("Error saving forecast data: %v", err)
+			// Fetch current weather and forecast in a single API call
+			current, forecast, err := h.weatherService.GetCurrentAndForecast(loc.Latitude, loc.Longitude)
+			if err != nil {
+				log.Printf("Error fetching weather for location %d: %v", loc.ID, err)
+				results <- result{err: err, index: idx}
+				return
 			}
-		}
+			current.LocationID = loc.ID
 
-		// Get historical
-		historical, err := h.db.GetHistoricalWeather(location.ID, 7)
-		if err != nil {
-			log.Printf("Error fetching historical weather: %v", err)
-			historical = []models.WeatherData{}
-		}
+			// Save current weather to database
+			if err := h.db.SaveWeatherData(current); err != nil {
+				log.Printf("Error saving weather data: %v", err)
+			}
 
-		allWeather = append(allWeather, models.WeatherForecast{
-			LocationID: location.ID,
-			Location:   location,
-			Current:    *current,
-			Hourly:     forecast,
-			Historical: historical,
-		})
+			// Save forecast
+			for _, f := range forecast {
+				f.LocationID = loc.ID
+				if err := h.db.SaveWeatherData(&f); err != nil {
+					log.Printf("Error saving forecast data: %v", err)
+				}
+			}
+
+			// Get historical
+			historical, err := h.db.GetHistoricalWeather(loc.ID, 7)
+			if err != nil {
+				log.Printf("Error fetching historical weather: %v", err)
+				historical = []models.WeatherData{}
+			}
+
+			results <- result{
+				forecast: models.WeatherForecast{
+					LocationID: loc.ID,
+					Location:   loc,
+					Current:    *current,
+					Hourly:     forecast,
+					Historical: historical,
+				},
+				index: idx,
+			}
+		}(location, i)
+	}
+
+	// Collect results maintaining order
+	allWeather := make([]models.WeatherForecast, 0, len(locations))
+	resultMap := make(map[int]models.WeatherForecast)
+
+	for i := 0; i < len(locations); i++ {
+		res := <-results
+		if res.err == nil {
+			resultMap[res.index] = res.forecast
+		}
+	}
+
+	// Maintain original order
+	for i := 0; i < len(locations); i++ {
+		if forecast, ok := resultMap[i]; ok {
+			allWeather = append(allWeather, forecast)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

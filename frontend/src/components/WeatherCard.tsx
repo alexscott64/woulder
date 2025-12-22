@@ -21,8 +21,12 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const condition = getWeatherCondition(current);
   const conditionColor = getConditionColor(condition.level);
 
+  // Safely handle potentially null/undefined arrays
+  const safeHistorical = historical || [];
+  const safeHourly = hourly || [];
+
   // Calculate past 48-hour rain (total)
-  const allData = [...historical, ...hourly].sort((a, b) =>
+  const allData = [...safeHistorical, ...safeHourly].sort((a, b) =>
     new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
   const now = new Date();
@@ -34,7 +38,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const rainLast48h = past48h.reduce((sum, d) => sum + d.precipitation, 0);
 
   // Calculate next 48-hour rain forecast (average per day)
-  const next48h = hourly.filter(d => {
+  const next48h = safeHourly.filter(d => {
     const time = new Date(d.timestamp).getTime();
     const fortyEightHoursFromNow = now.getTime() + 48 * 60 * 60 * 1000;
     return time > now.getTime() && time <= fortyEightHoursFromNow;
@@ -43,7 +47,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const rainNext48h = totalRainNext48h / 2; // Average per day
 
   // Check for snow on ground (use recent historical data)
-  const recentData = [...historical].reverse().slice(0, 8); // Last 24 hours
+  const recentData = [...safeHistorical].reverse().slice(0, 8); // Last 24 hours
   const snowInfo = getSnowProbability(recentData);
 
   // Determine precipitation type for last 48h
