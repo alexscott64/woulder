@@ -245,14 +245,14 @@ npm run dev
 
 ## 📝 License
 
-MIT License - see [LICENSE](LICENSE) for details
+GNU License - see [LICENSE](LICENSE) for details
 
 ---
 
 ## 🙏 Credits
 
 - **Inspiration:** [toorainy.com](https://toorainy.com) by Miles Crawford
-- **Weather Data:** [OpenWeatherMap](https://openweathermap.org/)
+- **Weather Data:** [Open-Meteo](https://open-meteo.com/) with a fallback to [OpenWeatherMap](https://openweathermap.org/)
 - **Icons:** [Lucide](https://lucide.dev/)
 
 ---
