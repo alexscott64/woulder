@@ -266,6 +266,55 @@ func (db *Database) CleanOldWeatherData(days int) error {
 	return err
 }
 
+// GetCurrentWeather retrieves the most recent weather data for a location (closest to now)
+func (db *Database) GetCurrentWeather(locationID int) (*models.WeatherData, error) {
+	query := `
+		SELECT id, location_id, timestamp, temperature, feels_like, precipitation,
+			   humidity, wind_speed, wind_direction, cloud_cover, pressure,
+			   description, icon, created_at
+		FROM weather_data
+		WHERE location_id = ? AND timestamp <= datetime('now', '+1 hour')
+		ORDER BY ABS(julianday(timestamp) - julianday('now')) ASC
+		LIMIT 1
+	`
+
+	var data models.WeatherData
+	err := db.conn.QueryRow(query, locationID).Scan(
+		&data.ID,
+		&data.LocationID,
+		&data.Timestamp,
+		&data.Temperature,
+		&data.FeelsLike,
+		&data.Precipitation,
+		&data.Humidity,
+		&data.WindSpeed,
+		&data.WindDirection,
+		&data.CloudCover,
+		&data.Pressure,
+		&data.Description,
+		&data.Icon,
+		&data.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &data, nil
+}
+
+// GetLastRefreshTime returns the most recent weather data timestamp for any location
+func (db *Database) GetLastRefreshTime() (string, error) {
+	query := `SELECT MAX(created_at) FROM weather_data`
+	var lastRefresh sql.NullString
+	err := db.conn.QueryRow(query).Scan(&lastRefresh)
+	if err != nil {
+		return "", err
+	}
+	if !lastRefresh.Valid {
+		return "", nil
+	}
+	return lastRefresh.String, nil
+}
+
 // GetRiversByLocation retrieves all rivers for a location
 func (db *Database) GetRiversByLocation(locationID int) ([]models.River, error) {
 	query := `SELECT id, location_id, gauge_id, river_name, safe_crossing_cfs, caution_crossing_cfs,

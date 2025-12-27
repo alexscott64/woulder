@@ -33,6 +33,9 @@ func main() {
 	// Initialize API handler
 	handler := api.NewHandler(db, weatherService)
 
+	// Start background weather refresh (every 2 hours)
+	handler.StartBackgroundRefresh(2 * time.Hour)
+
 	// Set Gin mode
 	ginMode := os.Getenv("GIN_MODE")
 	if ginMode == "" {
@@ -61,6 +64,7 @@ func main() {
 		apiGroup.GET("/weather/all", handler.GetAllWeather)
 		apiGroup.GET("/weather/:id", handler.GetWeatherForLocation)
 		apiGroup.GET("/weather/coordinates", handler.GetWeatherByCoordinates)
+		apiGroup.POST("/weather/refresh", handler.RefreshWeather)
 		apiGroup.GET("/rivers/location/:id", handler.GetRiverDataForLocation)
 		apiGroup.GET("/rivers/:id", handler.GetRiverDataByID)
 	}

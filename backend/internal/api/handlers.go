@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,14 +18,98 @@ type Handler struct {
 	db             *database.Database
 	weatherService *weather.WeatherService
 	riverClient    *rivers.USGSClient
+	refreshMutex   sync.Mutex
+	lastRefresh    time.Time
+	isRefreshing   bool
 }
 
 func NewHandler(db *database.Database, weatherService *weather.WeatherService) *Handler {
-	return &Handler{
+	h := &Handler{
 		db:             db,
 		weatherService: weatherService,
 		riverClient:    rivers.NewUSGSClient(),
 	}
+	return h
+}
+
+// StartBackgroundRefresh starts a goroutine that refreshes weather data periodically
+func (h *Handler) StartBackgroundRefresh(interval time.Duration) {
+	// Do initial refresh on startup
+	go func() {
+		log.Println("Starting initial weather data refresh...")
+		h.refreshAllWeatherData()
+	}()
+
+	// Start periodic refresh
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			log.Println("Starting scheduled weather data refresh...")
+			h.refreshAllWeatherData()
+		}
+	}()
+
+	log.Printf("Background weather refresh scheduled every %v", interval)
+}
+
+// refreshAllWeatherData fetches fresh weather data for all locations
+func (h *Handler) refreshAllWeatherData() {
+	h.refreshMutex.Lock()
+	if h.isRefreshing {
+		h.refreshMutex.Unlock()
+		log.Println("Refresh already in progress, skipping")
+		return
+	}
+	h.isRefreshing = true
+	h.refreshMutex.Unlock()
+
+	defer func() {
+		h.refreshMutex.Lock()
+		h.isRefreshing = false
+		h.lastRefresh = time.Now()
+		h.refreshMutex.Unlock()
+	}()
+
+	locations, err := h.db.GetAllLocations()
+	if err != nil {
+		log.Printf("Error fetching locations for refresh: %v", err)
+		return
+	}
+
+	// Fetch sequentially with delay to avoid rate limiting
+	for _, location := range locations {
+		log.Printf("Refreshing weather data for location %d (%s)", location.ID, location.Name)
+
+		current, forecast, err := h.weatherService.GetCurrentAndForecast(location.Latitude, location.Longitude)
+		if err != nil {
+			log.Printf("Error refreshing weather for location %d: %v", location.ID, err)
+			continue
+		}
+
+		current.LocationID = location.ID
+		if err := h.db.SaveWeatherData(current); err != nil {
+			log.Printf("Error saving current weather: %v", err)
+		}
+
+		for _, f := range forecast {
+			f.LocationID = location.ID
+			if err := h.db.SaveWeatherData(&f); err != nil {
+				log.Printf("Error saving forecast data: %v", err)
+			}
+		}
+
+		// Small delay between locations to be nice to the API
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Clean old data
+	if err := h.db.CleanOldWeatherData(14); err != nil {
+		log.Printf("Error cleaning old weather data: %v", err)
+	}
+
+	log.Println("Weather data refresh complete")
 }
 
 // HealthCheck returns API health status
@@ -152,7 +237,7 @@ func (h *Handler) GetWeatherByCoordinates(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// GetAllWeather returns weather for all locations (convenient for dashboard)
+// GetAllWeather returns weather for all locations from cache (fast response)
 func (h *Handler) GetAllWeather(c *gin.Context) {
 	locations, err := h.db.GetAllLocations()
 	if err != nil {
@@ -161,86 +246,78 @@ func (h *Handler) GetAllWeather(c *gin.Context) {
 		return
 	}
 
-	// Fetch weather for all locations in parallel with concurrency limit
-	type result struct {
-		forecast models.WeatherForecast
-		err      error
-		index    int
-	}
-
-	results := make(chan result, len(locations))
-	// Limit to 3 concurrent requests to avoid rate limiting
-	semaphore := make(chan struct{}, 3)
-
-	for i, location := range locations {
-		go func(loc models.Location, idx int) {
-			semaphore <- struct{}{} // Acquire
-			defer func() { <-semaphore }() // Release
-			log.Printf("Fetching fresh data from API for location %d", loc.ID)
-
-			// Fetch current weather and forecast in a single API call
-			current, forecast, err := h.weatherService.GetCurrentAndForecast(loc.Latitude, loc.Longitude)
-			if err != nil {
-				log.Printf("Error fetching weather for location %d: %v", loc.ID, err)
-				results <- result{err: err, index: idx}
-				return
-			}
-			current.LocationID = loc.ID
-
-			// Save current weather to database
-			if err := h.db.SaveWeatherData(current); err != nil {
-				log.Printf("Error saving weather data: %v", err)
-			}
-
-			// Save forecast
-			for _, f := range forecast {
-				f.LocationID = loc.ID
-				if err := h.db.SaveWeatherData(&f); err != nil {
-					log.Printf("Error saving forecast data: %v", err)
-				}
-			}
-
-			// Get historical
-			historical, err := h.db.GetHistoricalWeather(loc.ID, 7)
-			if err != nil {
-				log.Printf("Error fetching historical weather: %v", err)
-				historical = []models.WeatherData{}
-			}
-
-			results <- result{
-				forecast: models.WeatherForecast{
-					LocationID: loc.ID,
-					Location:   loc,
-					Current:    *current,
-					Hourly:     forecast,
-					Historical: historical,
-				},
-				index: idx,
-			}
-		}(location, i)
-	}
-
-	// Collect results maintaining order
+	// Serve data from cache/database immediately
 	allWeather := make([]models.WeatherForecast, 0, len(locations))
-	resultMap := make(map[int]models.WeatherForecast)
 
-	for i := 0; i < len(locations); i++ {
-		res := <-results
-		if res.err == nil {
-			resultMap[res.index] = res.forecast
+	for _, location := range locations {
+		// Get current weather from database
+		current, err := h.db.GetCurrentWeather(location.ID)
+		if err != nil {
+			log.Printf("No cached weather for location %d: %v", location.ID, err)
+			continue
 		}
+
+		// Get forecast from database
+		forecast, err := h.db.GetForecastWeather(location.ID)
+		if err != nil {
+			log.Printf("Error fetching forecast for location %d: %v", location.ID, err)
+			forecast = []models.WeatherData{}
+		}
+
+		// Get historical data
+		historical, err := h.db.GetHistoricalWeather(location.ID, 7)
+		if err != nil {
+			log.Printf("Error fetching historical weather: %v", err)
+			historical = []models.WeatherData{}
+		}
+
+		allWeather = append(allWeather, models.WeatherForecast{
+			LocationID: location.ID,
+			Location:   location,
+			Current:    *current,
+			Hourly:     forecast,
+			Historical: historical,
+		})
 	}
 
-	// Maintain original order
-	for i := 0; i < len(locations); i++ {
-		if forecast, ok := resultMap[i]; ok {
-			allWeather = append(allWeather, forecast)
-		}
+	// Get last refresh time
+	h.refreshMutex.Lock()
+	lastRefresh := h.lastRefresh
+	isRefreshing := h.isRefreshing
+	h.refreshMutex.Unlock()
+
+	updatedAt := lastRefresh.Format(time.RFC3339)
+	if lastRefresh.IsZero() {
+		updatedAt = "refreshing..."
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"weather":    allWeather,
-		"updated_at": time.Now().Format(time.RFC3339),
+		"weather":      allWeather,
+		"updated_at":   updatedAt,
+		"is_refreshing": isRefreshing,
+	})
+}
+
+// RefreshWeather triggers a manual refresh of weather data (runs in background)
+func (h *Handler) RefreshWeather(c *gin.Context) {
+	h.refreshMutex.Lock()
+	isRefreshing := h.isRefreshing
+	h.refreshMutex.Unlock()
+
+	if isRefreshing {
+		c.JSON(http.StatusAccepted, gin.H{
+			"message": "Refresh already in progress",
+			"status":  "in_progress",
+		})
+		return
+	}
+
+	// Trigger refresh in background
+	go h.refreshAllWeatherData()
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"message": "Refresh started",
+		"status":  "started",
 	})
 }
 
