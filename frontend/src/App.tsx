@@ -74,13 +74,13 @@ function Dashboard() {
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                Woulder
-              </h1>
-              <p className="text-sm text-gray-600 mt-1">
-                Weather conditions for climbing locations
-              </p>
+            <div className="flex items-center gap-3">
+              <img src="/woulder-logo.svg" alt="woulder logo" className="w-12 h-12" />
+              <div>
+                <h1 className="text-4xl text-gray-900" style={{ fontFamily: "'Righteous', cursive" }}>
+                  woulder
+                </h1>
+              </div>
             </div>
 
             <div className="flex items-center gap-4">
@@ -251,7 +251,7 @@ function Dashboard() {
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <p className="text-center text-sm text-gray-600">
-            Woulder - Weather dashboard for climbers | Powered by OpenWeatherMap
+            woulder - Weather dashboard for climbers
           </p>
         </div>
       </footer>
