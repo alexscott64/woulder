@@ -172,14 +172,14 @@ func (db *Database) SaveWeatherData(data *models.WeatherData) error {
 	return err
 }
 
-// GetHistoricalWeather retrieves historical weather data for a location
+// GetHistoricalWeather retrieves historical weather data for a location (past only, not future)
 func (db *Database) GetHistoricalWeather(locationID int, days int) ([]models.WeatherData, error) {
 	query := `
 		SELECT id, location_id, timestamp, temperature, feels_like, precipitation,
 			   humidity, wind_speed, wind_direction, cloud_cover, pressure,
 			   description, icon, created_at
 		FROM weather_data
-		WHERE location_id = ? AND timestamp >= datetime('now', ? || ' days')
+		WHERE location_id = ? AND timestamp >= datetime('now', ? || ' days') AND timestamp <= datetime('now')
 		ORDER BY timestamp ASC
 	`
 
