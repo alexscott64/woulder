@@ -23,7 +23,8 @@ type River struct {
 	CautionCrossingCFS     int       `json:"caution_crossing_cfs" db:"caution_crossing_cfs"`       // Caution threshold in CFS
 	DrainageAreaSqMi       *float64  `json:"drainage_area_sq_mi" db:"drainage_area_sq_mi"`         // Drainage area for flow estimation
 	GaugeDrainageAreaSqMi  *float64  `json:"gauge_drainage_area_sq_mi" db:"gauge_drainage_area_sq_mi"` // Reference gauge drainage area
-	IsEstimated            bool      `json:"is_estimated" db:"is_estimated"`                       // TRUE if flow is estimated using drainage area ratio
+	FlowDivisor            *float64  `json:"flow_divisor" db:"flow_divisor"`                       // Simple divisor for gauge value (e.g., 2.0 means gauge/2)
+	IsEstimated            bool      `json:"is_estimated" db:"is_estimated"`                       // TRUE if flow is estimated
 	Description            *string   `json:"description" db:"description"`                         // Additional notes about the crossing
 	CreatedAt              time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt              time.Time `json:"updated_at" db:"updated_at"`

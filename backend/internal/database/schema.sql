@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS rivers (
     caution_crossing_cfs INTEGER NOT NULL,
     drainage_area_sq_mi REAL,
     gauge_drainage_area_sq_mi REAL,
+    flow_divisor REAL,
     is_estimated INTEGER DEFAULT 0,
     description TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

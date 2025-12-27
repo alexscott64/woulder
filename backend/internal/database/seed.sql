@@ -19,9 +19,10 @@ SELECT id, '12131500', 'Money Creek (estimated)', 60, 90, 18.0, 355.0, 1,
 FROM locations WHERE name = 'Skykomish - Money Creek';
 
 -- Index - North Fork Skykomish estimated from Gold Bar gauge (12134500)
-INSERT OR IGNORE INTO rivers (location_id, gauge_id, river_name, safe_crossing_cfs, caution_crossing_cfs, drainage_area_sq_mi, gauge_drainage_area_sq_mi, is_estimated, description)
-SELECT id, '12134500', 'North Fork Skykomish River', 1500, 2000, 357.0, 535.0, 1,
-       'Flow estimated from Skykomish River at Gold Bar. North Fork drainage area.'
+-- Per local bouldering guide: divide gauge reading by 2 for North Fork flow
+INSERT OR IGNORE INTO rivers (location_id, gauge_id, river_name, safe_crossing_cfs, caution_crossing_cfs, flow_divisor, is_estimated, description)
+SELECT id, '12134500', 'North Fork Skykomish River', 800, 900, 2.0, 1,
+       'River crossing to Sasquatch Boulders. Flow estimated as gauge reading / 2. Below 800 CFS is safe, 800-900 CFS use caution, above 900 CFS is dangerous.'
 FROM locations WHERE name = 'Index';
 
 -- Gold Bar - direct gauge reading (12134500)

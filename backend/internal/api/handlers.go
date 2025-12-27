@@ -354,16 +354,24 @@ func (h *Handler) GetRiverDataForLocation(c *gin.Context) {
 			continue
 		}
 
-		// Apply drainage area ratio estimation if needed
+		// Apply flow estimation if needed
 		actualFlowCFS := gaugeFlowCFS
-		if river.IsEstimated && river.DrainageAreaSqMi != nil && river.GaugeDrainageAreaSqMi != nil {
-			actualFlowCFS = rivers.EstimateFlowFromDrainageRatio(
-				gaugeFlowCFS,
-				*river.DrainageAreaSqMi,
-				*river.GaugeDrainageAreaSqMi,
-			)
-			log.Printf("Estimated flow for %s: gauge %.0f CFS -> river %.0f CFS (drainage ratio %.3f)",
-				river.RiverName, gaugeFlowCFS, actualFlowCFS, *river.DrainageAreaSqMi / *river.GaugeDrainageAreaSqMi)
+		if river.IsEstimated {
+			if river.FlowDivisor != nil && *river.FlowDivisor > 0 {
+				// Simple divisor method (e.g., gauge / 2 for North Fork at Index)
+				actualFlowCFS = gaugeFlowCFS / *river.FlowDivisor
+				log.Printf("Estimated flow for %s: gauge %.0f CFS / %.1f = river %.0f CFS",
+					river.RiverName, gaugeFlowCFS, *river.FlowDivisor, actualFlowCFS)
+			} else if river.DrainageAreaSqMi != nil && river.GaugeDrainageAreaSqMi != nil {
+				// Drainage area ratio method
+				actualFlowCFS = rivers.EstimateFlowFromDrainageRatio(
+					gaugeFlowCFS,
+					*river.DrainageAreaSqMi,
+					*river.GaugeDrainageAreaSqMi,
+				)
+				log.Printf("Estimated flow for %s: gauge %.0f CFS -> river %.0f CFS (drainage ratio %.3f)",
+					river.RiverName, gaugeFlowCFS, actualFlowCFS, *river.DrainageAreaSqMi / *river.GaugeDrainageAreaSqMi)
+			}
 		}
 
 		status, message, isSafe, percentOfSafe := rivers.CalculateCrossingStatus(river, actualFlowCFS)
@@ -410,16 +418,24 @@ func (h *Handler) GetRiverDataByID(c *gin.Context) {
 		return
 	}
 
-	// Apply drainage area ratio estimation if needed
+	// Apply flow estimation if needed
 	actualFlowCFS := gaugeFlowCFS
-	if river.IsEstimated && river.DrainageAreaSqMi != nil && river.GaugeDrainageAreaSqMi != nil {
-		actualFlowCFS = rivers.EstimateFlowFromDrainageRatio(
-			gaugeFlowCFS,
-			*river.DrainageAreaSqMi,
-			*river.GaugeDrainageAreaSqMi,
-		)
-		log.Printf("Estimated flow for %s: gauge %.0f CFS -> river %.0f CFS (drainage ratio %.3f)",
-			river.RiverName, gaugeFlowCFS, actualFlowCFS, *river.DrainageAreaSqMi / *river.GaugeDrainageAreaSqMi)
+	if river.IsEstimated {
+		if river.FlowDivisor != nil && *river.FlowDivisor > 0 {
+			// Simple divisor method (e.g., gauge / 2 for North Fork at Index)
+			actualFlowCFS = gaugeFlowCFS / *river.FlowDivisor
+			log.Printf("Estimated flow for %s: gauge %.0f CFS / %.1f = river %.0f CFS",
+				river.RiverName, gaugeFlowCFS, *river.FlowDivisor, actualFlowCFS)
+		} else if river.DrainageAreaSqMi != nil && river.GaugeDrainageAreaSqMi != nil {
+			// Drainage area ratio method
+			actualFlowCFS = rivers.EstimateFlowFromDrainageRatio(
+				gaugeFlowCFS,
+				*river.DrainageAreaSqMi,
+				*river.GaugeDrainageAreaSqMi,
+			)
+			log.Printf("Estimated flow for %s: gauge %.0f CFS -> river %.0f CFS (drainage ratio %.3f)",
+				river.RiverName, gaugeFlowCFS, actualFlowCFS, *river.DrainageAreaSqMi / *river.GaugeDrainageAreaSqMi)
+		}
 	}
 
 	status, message, isSafe, percentOfSafe := rivers.CalculateCrossingStatus(*river, actualFlowCFS)

@@ -350,7 +350,7 @@ func (db *Database) GetLastRefreshTime() (string, error) {
 // GetRiversByLocation retrieves all rivers for a location
 func (db *Database) GetRiversByLocation(locationID int) ([]models.River, error) {
 	query := `SELECT id, location_id, gauge_id, river_name, safe_crossing_cfs, caution_crossing_cfs,
-			  drainage_area_sq_mi, gauge_drainage_area_sq_mi, is_estimated, description, created_at, updated_at
+			  drainage_area_sq_mi, gauge_drainage_area_sq_mi, flow_divisor, is_estimated, description, created_at, updated_at
 			  FROM rivers WHERE location_id = ? ORDER BY river_name`
 
 	rows, err := db.conn.Query(query, locationID)
@@ -365,7 +365,7 @@ func (db *Database) GetRiversByLocation(locationID int) ([]models.River, error) 
 		var isEstimated int
 		if err := rows.Scan(&river.ID, &river.LocationID, &river.GaugeID, &river.RiverName,
 			&river.SafeCrossingCFS, &river.CautionCrossingCFS, &river.DrainageAreaSqMi,
-			&river.GaugeDrainageAreaSqMi, &isEstimated, &river.Description,
+			&river.GaugeDrainageAreaSqMi, &river.FlowDivisor, &isEstimated, &river.Description,
 			&river.CreatedAt, &river.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -379,14 +379,14 @@ func (db *Database) GetRiversByLocation(locationID int) ([]models.River, error) 
 // GetRiverByID retrieves a specific river by ID
 func (db *Database) GetRiverByID(riverID int) (*models.River, error) {
 	query := `SELECT id, location_id, gauge_id, river_name, safe_crossing_cfs, caution_crossing_cfs,
-			  drainage_area_sq_mi, gauge_drainage_area_sq_mi, is_estimated, description, created_at, updated_at
+			  drainage_area_sq_mi, gauge_drainage_area_sq_mi, flow_divisor, is_estimated, description, created_at, updated_at
 			  FROM rivers WHERE id = ?`
 
 	var river models.River
 	var isEstimated int
 	err := db.conn.QueryRow(query, riverID).Scan(&river.ID, &river.LocationID, &river.GaugeID,
 		&river.RiverName, &river.SafeCrossingCFS, &river.CautionCrossingCFS, &river.DrainageAreaSqMi,
-		&river.GaugeDrainageAreaSqMi, &isEstimated, &river.Description,
+		&river.GaugeDrainageAreaSqMi, &river.FlowDivisor, &isEstimated, &river.Description,
 		&river.CreatedAt, &river.UpdatedAt)
 	if err != nil {
 		return nil, err
