@@ -8,6 +8,12 @@ backend/*.test
 backend/*.out
 backend/.env
 
+# SQLite Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # Frontend (Node)
 frontend/node_modules
 frontend/dist

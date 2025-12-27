@@ -2,29 +2,49 @@ package database
 
 import (
 	"database/sql"
+	_ "embed"
 	"fmt"
 	"log"
 	"os"
-	"time"
+	"path/filepath"
 
-	_ "github.com/go-sql-driver/mysql"
+	_ "modernc.org/sqlite"
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
+
+//go:embed schema.sql
+var schemaSQL string
+
+//go:embed seed.sql
+var seedSQL string
 
 type Database struct {
 	conn *sql.DB
 }
 
 func New() (*Database, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&loc=Local",
-		os.Getenv("DB_USER"),
-		os.Getenv("DB_PASSWORD"),
-		os.Getenv("DB_HOST"),
-		os.Getenv("DB_PORT"),
-		os.Getenv("DB_NAME"),
-	)
+	// Get database path from env or use default
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "woulder.db"
+	}
 
-	db, err := sql.Open("mysql", dsn)
+	// Ensure directory exists
+	dir := filepath.Dir(dbPath)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create database directory: %w", err)
+		}
+	}
+
+	// Check if database exists (for initialization)
+	isNewDB := false
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		isNewDB = true
+	}
+
+	// Open SQLite database
+	db, err := sql.Open("sqlite", dbPath+"?_foreign_keys=on&_journal_mode=WAL")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -34,14 +54,43 @@ func New() (*Database, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// Set connection pool settings
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	// SQLite connection settings
+	db.SetMaxOpenConns(1) // SQLite works best with single writer
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0) // Connections don't expire
 
-	log.Println("Database connection established")
+	database := &Database{conn: db}
 
-	return &Database{conn: db}, nil
+	// Initialize schema if new database
+	if isNewDB {
+		log.Println("New database detected, initializing schema...")
+		if err := database.initSchema(); err != nil {
+			return nil, fmt.Errorf("failed to initialize schema: %w", err)
+		}
+		log.Println("Database schema initialized")
+
+		log.Println("Seeding initial data...")
+		if err := database.seedData(); err != nil {
+			return nil, fmt.Errorf("failed to seed data: %w", err)
+		}
+		log.Println("Initial data seeded")
+	}
+
+	log.Printf("Database connection established: %s", dbPath)
+
+	return database, nil
+}
+
+// initSchema creates the database tables
+func (db *Database) initSchema() error {
+	_, err := db.conn.Exec(schemaSQL)
+	return err
+}
+
+// seedData inserts initial location and river data
+func (db *Database) seedData() error {
+	_, err := db.conn.Exec(seedSQL)
+	return err
 }
 
 func (db *Database) Close() error {
@@ -91,17 +140,17 @@ func (db *Database) SaveWeatherData(data *models.WeatherData) error {
 			humidity, wind_speed, wind_direction, cloud_cover, pressure,
 			description, icon
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE
-			temperature = VALUES(temperature),
-			feels_like = VALUES(feels_like),
-			precipitation = VALUES(precipitation),
-			humidity = VALUES(humidity),
-			wind_speed = VALUES(wind_speed),
-			wind_direction = VALUES(wind_direction),
-			cloud_cover = VALUES(cloud_cover),
-			pressure = VALUES(pressure),
-			description = VALUES(description),
-			icon = VALUES(icon)
+		ON CONFLICT(location_id, timestamp) DO UPDATE SET
+			temperature = excluded.temperature,
+			feels_like = excluded.feels_like,
+			precipitation = excluded.precipitation,
+			humidity = excluded.humidity,
+			wind_speed = excluded.wind_speed,
+			wind_direction = excluded.wind_direction,
+			cloud_cover = excluded.cloud_cover,
+			pressure = excluded.pressure,
+			description = excluded.description,
+			icon = excluded.icon
 	`
 
 	_, err := db.conn.Exec(query,
@@ -129,11 +178,11 @@ func (db *Database) GetHistoricalWeather(locationID int, days int) ([]models.Wea
 			   humidity, wind_speed, wind_direction, cloud_cover, pressure,
 			   description, icon, created_at
 		FROM weather_data
-		WHERE location_id = ? AND timestamp >= DATE_SUB(NOW(), INTERVAL ? DAY)
+		WHERE location_id = ? AND timestamp >= datetime('now', ? || ' days')
 		ORDER BY timestamp ASC
 	`
 
-	rows, err := db.conn.Query(query, locationID, days)
+	rows, err := db.conn.Query(query, locationID, -days)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +222,7 @@ func (db *Database) GetForecastWeather(locationID int) ([]models.WeatherData, er
 			   humidity, wind_speed, wind_direction, cloud_cover, pressure,
 			   description, icon, created_at
 		FROM weather_data
-		WHERE location_id = ? AND timestamp > NOW()
+		WHERE location_id = ? AND timestamp > datetime('now')
 		ORDER BY timestamp ASC
 	`
 
@@ -212,8 +261,8 @@ func (db *Database) GetForecastWeather(locationID int) ([]models.WeatherData, er
 
 // CleanOldWeatherData removes weather data older than specified days
 func (db *Database) CleanOldWeatherData(days int) error {
-	query := `DELETE FROM weather_data WHERE timestamp < DATE_SUB(NOW(), INTERVAL ? DAY)`
-	_, err := db.conn.Exec(query, days)
+	query := `DELETE FROM weather_data WHERE timestamp < datetime('now', ? || ' days')`
+	_, err := db.conn.Exec(query, -days)
 	return err
 }
 
@@ -232,12 +281,14 @@ func (db *Database) GetRiversByLocation(locationID int) ([]models.River, error) 
 	var rivers []models.River
 	for rows.Next() {
 		var river models.River
+		var isEstimated int
 		if err := rows.Scan(&river.ID, &river.LocationID, &river.GaugeID, &river.RiverName,
 			&river.SafeCrossingCFS, &river.CautionCrossingCFS, &river.DrainageAreaSqMi,
-			&river.GaugeDrainageAreaSqMi, &river.IsEstimated, &river.Description,
+			&river.GaugeDrainageAreaSqMi, &isEstimated, &river.Description,
 			&river.CreatedAt, &river.UpdatedAt); err != nil {
 			return nil, err
 		}
+		river.IsEstimated = isEstimated == 1
 		rivers = append(rivers, river)
 	}
 
@@ -251,13 +302,15 @@ func (db *Database) GetRiverByID(riverID int) (*models.River, error) {
 			  FROM rivers WHERE id = ?`
 
 	var river models.River
+	var isEstimated int
 	err := db.conn.QueryRow(query, riverID).Scan(&river.ID, &river.LocationID, &river.GaugeID,
 		&river.RiverName, &river.SafeCrossingCFS, &river.CautionCrossingCFS, &river.DrainageAreaSqMi,
-		&river.GaugeDrainageAreaSqMi, &river.IsEstimated, &river.Description,
+		&river.GaugeDrainageAreaSqMi, &isEstimated, &river.Description,
 		&river.CreatedAt, &river.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
+	river.IsEstimated = isEstimated == 1
 
 	return &river, nil
 }

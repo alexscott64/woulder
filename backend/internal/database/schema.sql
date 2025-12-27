@@ -1,45 +1,55 @@
--- Woulder Database Schema
+-- Woulder SQLite Schema
+-- This file is tracked in git and used to initialize the database
 
 -- Locations table
 CREATE TABLE IF NOT EXISTS locations (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    latitude DECIMAL(10, 8) NOT NULL,
-    longitude DECIMAL(11, 8) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_coordinates (latitude, longitude)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    elevation_ft INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 
--- Weather data table (stores both current and historical data)
+-- Weather data table
 CREATE TABLE IF NOT EXISTS weather_data (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    location_id INT NOT NULL,
-    timestamp TIMESTAMP NOT NULL,
-    temperature DECIMAL(5, 2) NOT NULL COMMENT 'Temperature in Fahrenheit',
-    feels_like DECIMAL(5, 2) NOT NULL COMMENT 'Feels like temperature in Fahrenheit',
-    precipitation DECIMAL(6, 3) DEFAULT 0 COMMENT 'Precipitation in inches',
-    humidity TINYINT NOT NULL COMMENT 'Humidity percentage (0-100)',
-    wind_speed DECIMAL(5, 2) NOT NULL COMMENT 'Wind speed in mph',
-    wind_direction SMALLINT NOT NULL COMMENT 'Wind direction in degrees (0-360)',
-    cloud_cover TINYINT NOT NULL COMMENT 'Cloud cover percentage (0-100)',
-    pressure SMALLINT NOT NULL COMMENT 'Atmospheric pressure in hPa',
-    description VARCHAR(255) NOT NULL COMMENT 'Weather description',
-    icon VARCHAR(10) NOT NULL COMMENT 'OpenWeatherMap icon code',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    location_id INTEGER NOT NULL,
+    timestamp DATETIME NOT NULL,
+    temperature REAL NOT NULL,
+    feels_like REAL NOT NULL,
+    precipitation REAL DEFAULT 0,
+    humidity INTEGER DEFAULT 0,
+    wind_speed REAL DEFAULT 0,
+    wind_direction INTEGER DEFAULT 0,
+    cloud_cover INTEGER DEFAULT 0,
+    pressure INTEGER DEFAULT 0,
+    description TEXT DEFAULT '',
+    icon TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE CASCADE,
-    INDEX idx_location_timestamp (location_id, timestamp),
-    INDEX idx_timestamp (timestamp),
-    UNIQUE KEY unique_location_time (location_id, timestamp)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    UNIQUE(location_id, timestamp)
+);
 
--- Insert default locations
-INSERT INTO locations (name, latitude, longitude) VALUES
-('Skykomish - Money Creek', 47.69727769, -121.47884640),
-('Skykomish - Paradise', 47.64074805, -121.37822668),
-('Index', 47.82083333, -121.55611111),
-('Gold Bar', 47.85555556, -121.69694444),
-('Icicle Creek (Leavenworth)', 47.59527778, -120.78361111),
-('Squamish', 49.70147778, -123.15572222),
-('Bellingham', 48.75969444, -122.48847222)
-ON DUPLICATE KEY UPDATE name=name;
+-- Rivers table
+CREATE TABLE IF NOT EXISTS rivers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    location_id INTEGER NOT NULL,
+    gauge_id TEXT NOT NULL,
+    river_name TEXT NOT NULL,
+    safe_crossing_cfs INTEGER NOT NULL,
+    caution_crossing_cfs INTEGER NOT NULL,
+    drainage_area_sq_mi REAL,
+    gauge_drainage_area_sq_mi REAL,
+    is_estimated INTEGER DEFAULT 0,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE CASCADE
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_weather_data_location_timestamp ON weather_data(location_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_weather_data_timestamp ON weather_data(timestamp);
+CREATE INDEX IF NOT EXISTS idx_rivers_location ON rivers(location_id);
