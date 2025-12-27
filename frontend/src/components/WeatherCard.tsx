@@ -5,7 +5,6 @@ import {
   getConditionColor,
   getWindDirection,
   getWeatherIconUrl,
-  calculate48HourRain,
   getSnowProbability
 } from '../utils/weatherConditions';
 import { format } from 'date-fns';

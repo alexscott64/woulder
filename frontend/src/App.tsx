@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { weatherApi } from './services/api';
 import { WeatherCard } from './components/WeatherCard';
@@ -142,7 +142,7 @@ function Dashboard() {
         {sortedWeather && sortedWeather.length > 0 && (
           <div className="space-y-6">
             {(() => {
-              const rows: JSX.Element[] = [];
+              const rows: React.JSX.Element[] = [];
               const expandedIndex = sortedWeather.findIndex(f => f.location_id === expandedLocationId);
 
               // Group cards into rows of 3
