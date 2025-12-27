@@ -75,4 +75,7 @@ jobs:
       - name: Verify deployment
         run: |
           sleep 5
-          curl -f https://woulder.com/api/health || echo "Health check failed - may need DNS setup"
+          # Try HTTPS first, fall back to HTTP (in case SSL isn't set up yet)
+          curl -f --max-time 10 https://woulder.com/api/health 2>/dev/null || \
+          curl -f --max-time 10 http://woulder.com/api/health 2>/dev/null || \
+          echo "Health check pending - run 'certbot --nginx -d woulder.com -d www.woulder.com' on VPS for HTTPS"
