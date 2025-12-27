@@ -8,7 +8,7 @@ import {
   getSnowProbability
 } from '../utils/weatherConditions';
 import { format } from 'date-fns';
-import { Cloud, Droplet, Wind, Snowflake, ChevronDown, Waves } from 'lucide-react';
+import { Cloud, Droplet, Wind, Snowflake, ChevronDown, ChevronUp, Waves } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { RiverInfoModal } from './RiverInfoModal';
 
@@ -269,10 +269,17 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
         onClick={() => onToggleExpand(!isExpanded)}
         className="w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
       >
-        <>
-          <ChevronDown className="w-4 h-4" />
-          Show 6-Day Forecast
-        </>
+        {isExpanded ? (
+          <>
+            <ChevronUp className="w-4 h-4" />
+            Hide Forecast
+          </>
+        ) : (
+          <>
+            <ChevronDown className="w-4 h-4" />
+            Show 6-Day Forecast
+          </>
+        )}
       </button>
 
       {/* River Info Modal */}
