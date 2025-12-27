@@ -77,10 +77,17 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const safeHistorical = historical || [];
   const safeHourly = hourly || [];
 
-  // Calculate past 48-hour rain (total)
-  const allData = [...safeHistorical, ...safeHourly].sort((a, b) =>
+  // Combine and deduplicate by timestamp (historical and hourly can overlap)
+  const allDataMap = new Map<string, typeof safeHistorical[0]>();
+  [...safeHistorical, ...safeHourly].forEach(d => {
+    // Use timestamp as key - later entries (hourly/forecast) will overwrite earlier ones
+    allDataMap.set(d.timestamp.toString(), d);
+  });
+  const allData = Array.from(allDataMap.values()).sort((a, b) =>
     new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
+
+  // Calculate past 48-hour rain (total)
   const now = new Date();
   const past48h = allData.filter(d => {
     const time = new Date(d.timestamp).getTime();

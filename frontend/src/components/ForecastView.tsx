@@ -31,7 +31,6 @@ interface DayForecast {
 export function ForecastView({ hourlyData, currentWeather, historicalData, elevationFt = 0 }: ForecastViewProps) {
   // Group hourly data by day
   const dailyForecasts: DayForecast[] = [];
-  const days = new Map<string, WeatherData[]>();
 
   // Use local timezone to get today's date
   const now = new Date();
@@ -44,26 +43,24 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
   // Calculate snow accumulation across all data with elevation adjustment
   const snowDepthByDay = calculateSnowAccumulation(historicalData || [], allData, elevationFt);
 
-  // Group by day (include past hours from today, current hour, and all future data)
-  // First, include today's historical data if available
+  // Deduplicate all data by timestamp before grouping
+  const deduplicatedMap = new Map<string, WeatherData>();
+
+  // First add historical data
   if (historicalData) {
     historicalData.forEach(data => {
-      const timestamp = new Date(data.timestamp);
-      const dateOnly = new Date(timestamp.getFullYear(), timestamp.getMonth(), timestamp.getDate());
-      const dateKey = format(dateOnly, 'yyyy-MM-dd');
-
-      // Only include historical data from today
-      if (dateKey === todayStr) {
-        if (!days.has(dateKey)) {
-          days.set(dateKey, []);
-        }
-        days.get(dateKey)!.push(data);
-      }
+      deduplicatedMap.set(data.timestamp.toString(), data);
     });
   }
 
-  // Then add current and future data
+  // Then add current/hourly data (overwrites any duplicates from historical)
   allData.forEach(data => {
+    deduplicatedMap.set(data.timestamp.toString(), data);
+  });
+
+  // Group deduplicated data by day
+  const days = new Map<string, WeatherData[]>();
+  Array.from(deduplicatedMap.values()).forEach(data => {
     const timestamp = new Date(data.timestamp);
     const dateOnly = new Date(timestamp.getFullYear(), timestamp.getMonth(), timestamp.getDate());
     const dateKey = format(dateOnly, 'yyyy-MM-dd');
