@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 	"github.com/alexscott64/woulder/backend/internal/models"
@@ -268,37 +269,68 @@ func (db *Database) CleanOldWeatherData(days int) error {
 
 // GetCurrentWeather retrieves the most recent weather data for a location (closest to now)
 func (db *Database) GetCurrentWeather(locationID int) (*models.WeatherData, error) {
+	// Get the weather data point closest to the current time
+	now := time.Now().UTC()
+
+	// Get all weather data for this location and find the closest in Go
+	// This is more reliable than trying to handle RFC3339 parsing in SQLite
 	query := `
 		SELECT id, location_id, timestamp, temperature, feels_like, precipitation,
 			   humidity, wind_speed, wind_direction, cloud_cover, pressure,
 			   description, icon, created_at
 		FROM weather_data
-		WHERE location_id = ? AND timestamp <= datetime('now', '+1 hour')
-		ORDER BY ABS(julianday(timestamp) - julianday('now')) ASC
-		LIMIT 1
+		WHERE location_id = ?
+		ORDER BY timestamp
 	`
 
-	var data models.WeatherData
-	err := db.conn.QueryRow(query, locationID).Scan(
-		&data.ID,
-		&data.LocationID,
-		&data.Timestamp,
-		&data.Temperature,
-		&data.FeelsLike,
-		&data.Precipitation,
-		&data.Humidity,
-		&data.WindSpeed,
-		&data.WindDirection,
-		&data.CloudCover,
-		&data.Pressure,
-		&data.Description,
-		&data.Icon,
-		&data.CreatedAt,
-	)
+	rows, err := db.conn.Query(query, locationID)
 	if err != nil {
 		return nil, err
 	}
-	return &data, nil
+	defer rows.Close()
+
+	var closest *models.WeatherData
+	var minDiff time.Duration = 1<<63 - 1 // Max duration
+
+	for rows.Next() {
+		var data models.WeatherData
+		if err := rows.Scan(
+			&data.ID,
+			&data.LocationID,
+			&data.Timestamp,
+			&data.Temperature,
+			&data.FeelsLike,
+			&data.Precipitation,
+			&data.Humidity,
+			&data.WindSpeed,
+			&data.WindDirection,
+			&data.CloudCover,
+			&data.Pressure,
+			&data.Description,
+			&data.Icon,
+			&data.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+
+		// Calculate time difference
+		diff := now.Sub(data.Timestamp)
+		if diff < 0 {
+			diff = -diff
+		}
+
+		if diff < minDiff {
+			minDiff = diff
+			dataCopy := data // Make a copy since data gets reused
+			closest = &dataCopy
+		}
+	}
+
+	if closest == nil {
+		return nil, fmt.Errorf("no weather data found for location %d", locationID)
+	}
+
+	return closest, nil
 }
 
 // GetLastRefreshTime returns the most recent weather data timestamp for any location
