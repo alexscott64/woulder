@@ -140,63 +140,104 @@ function Dashboard() {
         )}
 
         {sortedWeather && sortedWeather.length > 0 && (
-          <div className="space-y-6">
-            {(() => {
-              const rows: React.JSX.Element[] = [];
-              const expandedIndex = sortedWeather.findIndex(f => f.location_id === expandedLocationId);
-
-              // Group cards into rows of 3
-              for (let i = 0; i < sortedWeather.length; i += 3) {
-                const rowForecasts = sortedWeather.slice(i, i + 3);
-                const rowNumber = i / 3;
-                const expandedInThisRow = expandedIndex >= i && expandedIndex < i + 3;
-
-                rows.push(
-                  <div key={`row-${rowNumber}`}>
-                    {/* Card row */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {rowForecasts.map((forecast) => (
-                        <WeatherCard
-                          key={forecast.location_id}
-                          forecast={forecast}
-                          isExpanded={expandedLocationId === forecast.location_id}
-                          onToggleExpand={(expanded) => setExpandedLocationId(expanded ? forecast.location_id : null)}
-                        />
-                      ))}
-                    </div>
-
-                    {/* Expanded forecast after this row */}
-                    {expandedInThisRow && expandedLocationId && (
-                      <div className="mt-6 bg-white rounded-xl shadow-md border border-gray-200">
-                        <div className="p-6 border-b border-gray-200">
-                          <h3 className="text-xl font-bold text-gray-900">
-                            {sortedWeather.find(f => f.location_id === expandedLocationId)?.location.name} - 6-Day Forecast
-                          </h3>
-                        </div>
-                        <div className="bg-gray-50 p-6">
-                          <ForecastView
-                            hourlyData={sortedWeather.find(f => f.location_id === expandedLocationId)?.hourly || []}
-                            currentWeather={sortedWeather.find(f => f.location_id === expandedLocationId)?.current}
-                            historicalData={sortedWeather.find(f => f.location_id === expandedLocationId)?.historical || []}
-                            elevationFt={sortedWeather.find(f => f.location_id === expandedLocationId)?.location.elevation_ft || 0}
-                          />
-                        </div>
-                        <button
-                          onClick={() => setExpandedLocationId(null)}
-                          className="w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                        >
-                          <ChevronUp className="w-4 h-4" />
-                          Hide Forecast
-                        </button>
+          <>
+            {/* Mobile Layout - Single column with inline forecast */}
+            <div className="md:hidden space-y-6">
+              {sortedWeather.map((forecast) => (
+                <div key={forecast.location_id}>
+                  <WeatherCard
+                    forecast={forecast}
+                    isExpanded={expandedLocationId === forecast.location_id}
+                    onToggleExpand={(expanded) => setExpandedLocationId(expanded ? forecast.location_id : null)}
+                  />
+                  {/* Expanded forecast directly after this card on mobile */}
+                  {expandedLocationId === forecast.location_id && (
+                    <div className="mt-4 bg-white rounded-xl shadow-md border border-gray-200">
+                      <div className="p-4 border-b border-gray-200">
+                        <h3 className="text-lg font-bold text-gray-900">
+                          {forecast.location.name} - 6-Day Forecast
+                        </h3>
                       </div>
-                    )}
-                  </div>
-                );
-              }
+                      <div className="bg-gray-50 p-4">
+                        <ForecastView
+                          hourlyData={forecast.hourly || []}
+                          currentWeather={forecast.current}
+                          historicalData={forecast.historical || []}
+                          elevationFt={forecast.location.elevation_ft || 0}
+                        />
+                      </div>
+                      <button
+                        onClick={() => setExpandedLocationId(null)}
+                        className="w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                        Hide Forecast
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
 
-              return rows;
-            })()}
-          </div>
+            {/* Desktop Layout - Grid with row-based forecast */}
+            <div className="hidden md:block space-y-6">
+              {(() => {
+                const rows: React.JSX.Element[] = [];
+                const expandedIndex = sortedWeather.findIndex(f => f.location_id === expandedLocationId);
+
+                // Group cards into rows of 3 for lg, 2 for md
+                for (let i = 0; i < sortedWeather.length; i += 3) {
+                  const rowForecasts = sortedWeather.slice(i, i + 3);
+                  const rowNumber = i / 3;
+                  const expandedInThisRow = expandedIndex >= i && expandedIndex < i + 3;
+
+                  rows.push(
+                    <div key={`row-${rowNumber}`}>
+                      {/* Card row */}
+                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
+                        {rowForecasts.map((forecast) => (
+                          <WeatherCard
+                            key={forecast.location_id}
+                            forecast={forecast}
+                            isExpanded={expandedLocationId === forecast.location_id}
+                            onToggleExpand={(expanded) => setExpandedLocationId(expanded ? forecast.location_id : null)}
+                          />
+                        ))}
+                      </div>
+
+                      {/* Expanded forecast after this row */}
+                      {expandedInThisRow && expandedLocationId && (
+                        <div className="mt-6 bg-white rounded-xl shadow-md border border-gray-200">
+                          <div className="p-6 border-b border-gray-200">
+                            <h3 className="text-xl font-bold text-gray-900">
+                              {sortedWeather.find(f => f.location_id === expandedLocationId)?.location.name} - 6-Day Forecast
+                            </h3>
+                          </div>
+                          <div className="bg-gray-50 p-6">
+                            <ForecastView
+                              hourlyData={sortedWeather.find(f => f.location_id === expandedLocationId)?.hourly || []}
+                              currentWeather={sortedWeather.find(f => f.location_id === expandedLocationId)?.current}
+                              historicalData={sortedWeather.find(f => f.location_id === expandedLocationId)?.historical || []}
+                              elevationFt={sortedWeather.find(f => f.location_id === expandedLocationId)?.location.elevation_ft || 0}
+                            />
+                          </div>
+                          <button
+                            onClick={() => setExpandedLocationId(null)}
+                            className="w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                          >
+                            <ChevronUp className="w-4 h-4" />
+                            Hide Forecast
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                return rows;
+              })()}
+            </div>
+          </>
         )}
 
         {!isLoading && !error && (!data || data.weather.length === 0) && (
