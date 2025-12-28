@@ -258,10 +258,10 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
           return (
             <div
               key={index}
-              className="bg-white rounded-lg border-2 border-gray-200 p-4 text-center hover:shadow-md transition-shadow"
+              className="bg-white dark:bg-gray-800 rounded-lg border-2 border-gray-200 dark:border-gray-700 p-4 text-center hover:shadow-md transition-shadow"
             >
               {/* Day name */}
-              <div className="text-sm font-bold text-gray-900 mb-1">{day.dayName}</div>
+              <div className="text-sm font-bold text-gray-900 dark:text-white mb-1">{day.dayName}</div>
 
               {/* Condition badge */}
               <div className="flex justify-center mb-2">
@@ -272,7 +272,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
               </div>
 
               {/* Date */}
-              <div className="text-xs text-gray-500 mb-2">
+              <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
                 {format(day.date, 'MMM d')}
               </div>
 
@@ -298,7 +298,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
               </div>
 
               {/* Quick stats */}
-              <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+              <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 space-y-1">
                 {/* Precipitation - always show */}
                 <div className={`flex items-center justify-center gap-1 text-xs ${getPrecipColor(day.avgPrecip)}`}>
                   {day.hasSnow && day.hasRain ? (
@@ -323,7 +323,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                 )}
 
                 {day.avgWind > 10 && (
-                  <div className="flex items-center justify-center gap-1 text-xs text-gray-600">
+                  <div className="flex items-center justify-center gap-1 text-xs text-gray-600 dark:text-gray-400">
                     <Wind className="w-3 h-3" />
                     <span>{Math.round(day.avgWind)} mph</span>
                   </div>
@@ -332,14 +332,14 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
 
               {/* Sunrise/Sunset and Sun Hours */}
               {day.sunrise && day.sunset && (
-                <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
-                  <div className="flex items-center justify-center gap-2 text-xs text-gray-600">
+                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 space-y-1">
+                  <div className="flex items-center justify-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                     <div className="flex items-center gap-0.5">
                       <Sunrise className="w-3 h-3 text-orange-400" />
                       <span>{formatSunTime(day.sunrise)}</span>
                     </div>
                     <div className="flex items-center gap-0.5">
-                      <Sunset className="w-3 h-3 text-orange-600" />
+                      <Sunset className="w-3 h-3 text-orange-600 dark:text-orange-500" />
                       <span>{formatSunTime(day.sunset)}</span>
                     </div>
                   </div>
@@ -355,7 +355,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
               {/* Pest Activity */}
               {day.pestLevel && (
                 <div
-                  className="mt-2 pt-2 border-t border-gray-100"
+                  className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700"
                   title={`Mosquitoes: ${getPestLevelText(day.mosquitoLevel || 'low')}, Outdoor Pests: ${getPestLevelText(day.outdoorPestLevel || 'low')}`}
                 >
                   <div className={`flex items-center justify-center gap-1 text-xs ${getPestLevelColor(day.pestLevel)}`}>
@@ -366,7 +366,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
               )}
 
               {/* Description */}
-              <div className="text-xs text-gray-600 mt-2 capitalize truncate">
+              <div className="text-xs text-gray-600 dark:text-gray-400 mt-2 capitalize truncate">
                 {day.description}
               </div>
             </div>
@@ -375,8 +375,8 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       </div>
 
       {/* Hourly Details (scrollable) */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">Hourly Forecast</h3>
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Hourly Forecast</h3>
         <div className="overflow-x-auto">
           {/* Day labels row */}
           <div className="flex gap-6 mb-2">
@@ -388,7 +388,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
               return (
                 <div key={`day-${index}`} className="flex-shrink-0 w-20 text-center">
                   {showDayLabel ? (
-                    <div className="text-xs font-bold text-gray-900 pb-1 border-b border-gray-300">
+                    <div className="text-xs font-bold text-gray-900 dark:text-white pb-1 border-b border-gray-300 dark:border-gray-600">
                       {format(date, 'EEEE')}
                     </div>
                   ) : (
@@ -410,10 +410,10 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
               return (
                 <div
                   key={index}
-                  className={`flex-shrink-0 w-20 text-center ${isCurrentHour ? 'bg-blue-50 rounded-lg p-2 -m-2' : ''}`}
+                  className={`flex-shrink-0 w-20 text-center ${isCurrentHour ? 'bg-blue-50 dark:bg-blue-900/30 rounded-lg p-2 -m-2' : ''}`}
                 >
                   {/* Time */}
-                  <div className={`text-xs font-medium mb-1 ${isCurrentHour ? 'text-blue-700 font-bold' : 'text-gray-700'}`}>
+                  <div className={`text-xs font-medium mb-1 ${isCurrentHour ? 'text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-700 dark:text-gray-300'}`}>
                     {isCurrentHour ? 'Now' : format(date, 'ha')}
                   </div>
 
@@ -440,7 +440,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                   </div>
 
                   {/* Wind */}
-                  <div className="flex items-center justify-center gap-1 text-xs text-gray-600">
+                  <div className="flex items-center justify-center gap-1 text-xs text-gray-600 dark:text-gray-400">
                     <Wind className="w-3 h-3" />
                     <span>{Math.round(hour.wind_speed)}</span>
                   </div>

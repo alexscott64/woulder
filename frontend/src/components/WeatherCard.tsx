@@ -149,7 +149,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const rainNext48hBad = rainNext48h > 1; // Average per day
 
   return (
-    <div className={`bg-white shadow-md hover:shadow-lg transition-all duration-200 border border-gray-200 ${
+    <div className={`bg-white dark:bg-gray-800 shadow-md hover:shadow-lg transition-all duration-200 border border-gray-200 dark:border-gray-700 ${
       isExpanded
         ? 'rounded-t-xl rounded-b-none border-b-0'
         : 'rounded-xl'
@@ -160,7 +160,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
         <div className="mb-4">
           {/* Title row with condition badge */}
           <div className="flex items-center justify-between gap-2 mb-1">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">{location.name}</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{location.name}</h2>
             <div
               className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${conditionBadge.bg} ${conditionBadge.text} ${conditionBadge.border} flex items-center gap-1.5 flex-shrink-0`}
               title={condition.reasons.join(', ')}
@@ -171,7 +171,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           </div>
           {/* Date and info icons row */}
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               {format(new Date(current.timestamp), 'MMM d, h:mm a')}
             </p>
             {/* Info Icons */}
@@ -181,11 +181,11 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
                 {pestConditions && (
                   <button
                     onClick={() => setShowPestModal(true)}
-                    className="relative p-1.5 hover:bg-amber-50 active:bg-amber-100 rounded-full transition-colors"
+                    className="relative p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/30 active:bg-amber-100 dark:active:bg-amber-900/50 rounded-full transition-colors"
                     title="Pest Activity Info"
                   >
                     <Bug className={`w-5 h-5 ${getPestLevelColor(pestConditions.mosquitoLevel)}`} />
-                    <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                    <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-gray-800 ${
                       pestConditions.mosquitoScore >= 60 || pestConditions.outdoorPestScore >= 60 ? 'bg-red-500' :
                       pestConditions.mosquitoScore >= 40 || pestConditions.outdoorPestScore >= 40 ? 'bg-yellow-500' :
                       'bg-green-500'
@@ -197,12 +197,12 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
                   <button
                     onClick={handleRiverClick}
                     disabled={loadingRivers}
-                    className="relative p-1.5 hover:bg-blue-50 active:bg-blue-100 rounded-full transition-colors"
+                    className="relative p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 dark:active:bg-blue-900/50 rounded-full transition-colors"
                     title="River Crossing Info"
                   >
-                    <Waves className={`w-5 h-5 text-blue-600 ${loadingRivers ? 'animate-pulse' : ''}`} />
+                    <Waves className={`w-5 h-5 text-blue-600 dark:text-blue-400 ${loadingRivers ? 'animate-pulse' : ''}`} />
                     {riverData.length > 0 && (
-                      <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                      <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-gray-800 ${
                         riverData.every(r => r.is_safe) ? 'bg-green-500' :
                         riverData.some(r => r.status === 'unsafe') ? 'bg-red-500' :
                         'bg-yellow-500'
@@ -223,22 +223,22 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
             className="w-20 h-20"
           />
           <div className="flex-1">
-            <div className="text-4xl font-bold text-gray-900">
+            <div className="text-4xl font-bold text-gray-900 dark:text-white">
               {Math.round(current.temperature)}°F
             </div>
-            <div className="text-sm text-gray-600 capitalize mt-1">
+            <div className="text-sm text-gray-600 dark:text-gray-400 capitalize mt-1">
               {current.description}
             </div>
           </div>
           {/* Sunrise/Sunset */}
           {(sunrise || sunset) && (
-            <div className="flex flex-col gap-1 text-xs text-gray-600">
+            <div className="flex flex-col gap-1 text-xs text-gray-600 dark:text-gray-400">
               <div className="flex items-center gap-1">
                 <Sunrise className="w-4 h-4 text-orange-400" />
                 <span>{formatSunTime(sunrise)}</span>
               </div>
               <div className="flex items-center gap-1">
-                <Sunset className="w-4 h-4 text-orange-600" />
+                <Sunset className="w-4 h-4 text-orange-600 dark:text-orange-500" />
                 <span>{formatSunTime(sunset)}</span>
               </div>
             </div>
@@ -247,10 +247,10 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
         {/* Rain Alert */}
         {(rainLast48hBad || rainNext48hBad) && (
-          <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+          <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
             <div className="flex items-center gap-2">
-              <Droplet className="w-4 h-4 text-red-600" />
-              <span className="text-sm font-semibold text-red-900">
+              <Droplet className="w-4 h-4 text-red-600 dark:text-red-400" />
+              <span className="text-sm font-semibold text-red-900 dark:text-red-200">
                 {rainLast48hBad && `${rainLast48h.toFixed(2)}" last 48h`}
                 {rainLast48hBad && rainNext48hBad && ' • '}
                 {rainNext48hBad && `${rainNext48h.toFixed(2)}" next 48h`}
@@ -273,8 +273,8 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
             ) : (
               <Droplet className={`w-5 h-5 mb-1 ${rainLast48hBad ? 'text-red-500' : 'text-blue-500'}`} />
             )}
-            <div className="text-xs text-gray-500 mb-1">Last 48h</div>
-            <div className={`text-sm font-semibold ${rainLast48hBad ? 'text-red-900' : 'text-gray-900'}`}>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Last 48h</div>
+            <div className={`text-sm font-semibold ${rainLast48hBad ? 'text-red-900 dark:text-red-300' : 'text-gray-900 dark:text-white'}`}>
               {rainLast48h.toFixed(2)}"
             </div>
           </div>
@@ -291,8 +291,8 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
             ) : (
               <Droplet className={`w-5 h-5 mb-1 ${rainNext48hBad ? 'text-red-500' : 'text-blue-400'}`} />
             )}
-            <div className="text-xs text-gray-500 mb-1">Next 48h</div>
-            <div className={`text-sm font-semibold ${rainNext48hBad ? 'text-red-900' : 'text-gray-900'}`}>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Next 48h</div>
+            <div className={`text-sm font-semibold ${rainNext48hBad ? 'text-red-900 dark:text-red-300' : 'text-gray-900 dark:text-white'}`}>
               {rainNext48h.toFixed(2)}"
             </div>
           </div>
@@ -300,43 +300,43 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           {/* Snow on Ground */}
           <div className="flex flex-col items-center text-center">
             <Snowflake className="w-5 h-5 mb-1 text-blue-400" />
-            <div className="text-xs text-gray-500 mb-1">Snow</div>
-            <div className="text-sm font-semibold text-gray-900">
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Snow</div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">
               {snowInfo.probability}
             </div>
           </div>
 
           {/* Wind */}
           <div className="flex flex-col items-center text-center">
-            <Wind className="w-5 h-5 mb-1 text-gray-600" />
-            <div className="text-xs text-gray-500 mb-1">Wind</div>
-            <div className="text-sm font-semibold text-gray-900">
+            <Wind className="w-5 h-5 mb-1 text-gray-600 dark:text-gray-400" />
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Wind</div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">
               {Math.round(current.wind_speed)} {getWindDirection(current.wind_direction)}
             </div>
           </div>
 
           {/* Humidity */}
           <div className="flex flex-col items-center text-center">
-            <Droplet className="w-5 h-5 mb-1 text-cyan-500" />
-            <div className="text-xs text-gray-500 mb-1">Humid</div>
-            <div className="text-sm font-semibold text-gray-900">
+            <Droplet className="w-5 h-5 mb-1 text-cyan-500 dark:text-cyan-400" />
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Humid</div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">
               {current.humidity}%
             </div>
           </div>
 
           {/* Cloud Cover */}
           <div className="flex flex-col items-center text-center">
-            <Cloud className="w-5 h-5 mb-1 text-gray-500" />
-            <div className="text-xs text-gray-500 mb-1">Clouds</div>
-            <div className="text-sm font-semibold text-gray-900">
+            <Cloud className="w-5 h-5 mb-1 text-gray-500 dark:text-gray-400" />
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Clouds</div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">
               {current.cloud_cover}%
             </div>
           </div>
         </div>
 
         {/* Condition Reasons */}
-        <div className="border-t border-gray-200 pt-4">
-          <div className="text-xs text-gray-600">
+        <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+          <div className="text-xs text-gray-600 dark:text-gray-400">
             {condition.reasons.join(' • ')}
           </div>
         </div>
@@ -345,10 +345,10 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
       {/* Expandable Forecast Section */}
       <button
         onClick={() => onToggleExpand(!isExpanded)}
-        className={`w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+        className={`w-full px-6 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
           isExpanded
-            ? `${conditionColor.replace('bg-', 'bg-opacity-20 bg-')} text-gray-900 border-b-0`
-            : 'text-gray-700 hover:bg-gray-50'
+            ? `${conditionColor.replace('bg-', 'bg-opacity-20 bg-')} text-gray-900 dark:text-white border-b-0`
+            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
         }`}
       >
         {isExpanded ? (

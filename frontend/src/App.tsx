@@ -3,8 +3,10 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { weatherApi } from './services/api';
 import { WeatherCard } from './components/WeatherCard';
 import { ForecastView } from './components/ForecastView';
+import { SettingsModal } from './components/SettingsModal';
+import { SettingsProvider } from './contexts/SettingsContext';
 import { getWeatherCondition, getConditionColor } from './utils/weatherConditions';
-import { RefreshCw, WifiOff, Wifi, ChevronUp } from 'lucide-react';
+import { RefreshCw, WifiOff, Wifi, ChevronUp, Settings } from 'lucide-react';
 import { format } from 'date-fns';
 
 const queryClient = new QueryClient({
@@ -21,6 +23,7 @@ function Dashboard() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [expandedLocationId, setExpandedLocationId] = useState<number | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Monitor online/offline status
   useEffect(() => {
@@ -37,7 +40,7 @@ function Dashboard() {
   }, []);
 
   // Fetch all weather data
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['allWeather'],
     queryFn: async () => {
       const response = await weatherApi.getAllWeather();
@@ -46,10 +49,6 @@ function Dashboard() {
     },
     refetchInterval: 10 * 60 * 1000, // Refetch every 10 minutes
   });
-
-  const handleRefresh = () => {
-    refetch();
-  };
 
   // Sort weather data: Skykomish locations first, then Index, then alphabetically
   const sortedWeather = data?.weather.sort((a, b) => {
@@ -70,15 +69,15 @@ function Dashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
+      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
               <img src="/woulder-logo.svg" alt="woulder logo" className="w-12 h-12" />
               <div>
-                <h1 className="text-4xl text-gray-900" style={{ fontFamily: "'Righteous', cursive" }}>
+                <h1 className="text-4xl text-gray-900 dark:text-white" style={{ fontFamily: "'Righteous', cursive" }}>
                   woulder
                 </h1>
               </div>
@@ -89,32 +88,31 @@ function Dashboard() {
               <div className="flex items-center gap-2">
                 {isOnline ? (
                   <>
-                    <Wifi className="w-5 h-5 text-green-600" />
-                    <span className="text-sm text-gray-700 font-medium">Online</span>
+                    <Wifi className="w-5 h-5 text-green-600 dark:text-green-400" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">Online</span>
                   </>
                 ) : (
                   <>
-                    <WifiOff className="w-5 h-5 text-red-600" />
-                    <span className="text-sm text-gray-700 font-medium">Offline</span>
+                    <WifiOff className="w-5 h-5 text-red-600 dark:text-red-400" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">Offline</span>
                   </>
                 )}
               </div>
 
-              {/* Refresh Button */}
+              {/* Settings Button */}
               <button
-                onClick={handleRefresh}
-                disabled={isFetching || !isOnline}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-sm"
+                onClick={() => setShowSettings(true)}
+                className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="Settings"
               >
-                <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-                <span>{isFetching ? 'Refreshing...' : 'Refresh'}</span>
+                <Settings className="w-5 h-5" />
               </button>
             </div>
           </div>
 
           {/* Last Updated */}
           {lastUpdated && (
-            <div className="mt-3 text-xs text-gray-500">
+            <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
               Last updated: {format(lastUpdated, 'MMM d, yyyy h:mm:ss a')}
             </div>
           )}
@@ -126,15 +124,15 @@ function Dashboard() {
         {isLoading && (
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
-              <RefreshCw className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
-              <p className="text-gray-700 font-medium">Loading weather data...</p>
+              <RefreshCw className="w-12 h-12 animate-spin text-blue-600 dark:text-blue-400 mx-auto mb-4" />
+              <p className="text-gray-700 dark:text-gray-300 font-medium">Loading weather data...</p>
             </div>
           </div>
         )}
 
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-red-900 font-medium">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <p className="text-red-900 dark:text-red-200 font-medium">
               Failed to load weather data. {!isOnline && 'You are currently offline.'}
             </p>
           </div>
@@ -158,10 +156,10 @@ function Dashboard() {
                     />
                     {/* Expanded forecast - seamlessly connected to card */}
                     {isExpanded && (
-                      <div className="bg-white rounded-b-xl border border-t-0 border-gray-200 overflow-hidden">
+                      <div className="bg-white dark:bg-gray-800 rounded-b-xl border border-t-0 border-gray-200 dark:border-gray-700 overflow-hidden">
                         {/* Colored accent bar showing which card this belongs to */}
                         <div className={`h-1 ${conditionColor}`} />
-                        <div className="bg-gray-50 p-4">
+                        <div className="bg-gray-50 dark:bg-gray-900 p-4">
                           <ForecastView
                             hourlyData={forecast.hourly || []}
                             currentWeather={forecast.current}
@@ -172,7 +170,7 @@ function Dashboard() {
                         </div>
                         <button
                           onClick={() => setExpandedLocationId(null)}
-                          className={`w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors ${conditionColor} bg-opacity-10`}
+                          className={`w-full px-6 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${conditionColor} bg-opacity-10`}
                         >
                           <ChevronUp className="w-4 h-4" />
                           Hide Forecast
@@ -220,27 +218,27 @@ function Dashboard() {
                         <div className="relative mt-4">
                           {/* Arrow indicator pointing to the active card */}
                           <div
-                            className="absolute -top-2 w-4 h-4 bg-white border-l border-t border-gray-200 transform rotate-45 z-10"
+                            className="absolute -top-2 w-4 h-4 bg-white dark:bg-gray-800 border-l border-t border-gray-200 dark:border-gray-700 transform rotate-45 z-10"
                             style={{
                               left: expandedPositionInRow === 0 ? 'calc(16.67% - 8px)' :
                                     expandedPositionInRow === 1 ? 'calc(50% - 8px)' :
                                     'calc(83.33% - 8px)'
                             }}
                           />
-                          <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                             {/* Colored accent bar */}
                             <div className={`h-1.5 ${expandedConditionColor}`} />
                             {/* Header with location name */}
-                            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
                               <div className="flex items-center gap-3">
                                 <div className={`w-3 h-3 rounded-full ${expandedConditionColor}`} />
-                                <h3 className="text-lg font-bold text-gray-900">
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
                                   {expandedForecast.location.name}
                                 </h3>
                               </div>
-                              <span className="text-sm text-gray-500">6-Day Forecast</span>
+                              <span className="text-sm text-gray-500 dark:text-gray-400">6-Day Forecast</span>
                             </div>
-                            <div className="bg-gray-50 p-6">
+                            <div className="bg-gray-50 dark:bg-gray-900 p-6">
                               <ForecastView
                                 hourlyData={expandedForecast.hourly || []}
                                 currentWeather={expandedForecast.current}
@@ -251,7 +249,7 @@ function Dashboard() {
                             </div>
                             <button
                               onClick={() => setExpandedLocationId(null)}
-                              className={`w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors`}
+                              className={`w-full px-6 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors`}
                             >
                               <ChevronUp className="w-4 h-4" />
                               Hide Forecast
@@ -271,19 +269,22 @@ function Dashboard() {
 
         {!isLoading && !error && (!data || data.weather.length === 0) && (
           <div className="text-center py-12">
-            <p className="text-gray-700 font-medium">No weather data available</p>
+            <p className="text-gray-700 dark:text-gray-300 font-medium">No weather data available</p>
           </div>
         )}
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-12">
+      <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <p className="text-center text-sm text-gray-600">
+          <p className="text-center text-sm text-gray-600 dark:text-gray-400">
             woulder - Weather dashboard for climbers
           </p>
         </div>
       </footer>
+
+      {/* Settings Modal */}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
@@ -291,7 +292,9 @@ function Dashboard() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Dashboard />
+      <SettingsProvider>
+        <Dashboard />
+      </SettingsProvider>
     </QueryClientProvider>
   );
 }
