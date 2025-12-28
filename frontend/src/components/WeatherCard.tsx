@@ -60,29 +60,21 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   useEffect(() => {
     const fetchRiverData = async () => {
       try {
-        console.log(`[${location.name}] Fetching river data for location ID: ${location.id}`);
         const response = await fetch(`${API_BASE_URL}/rivers/location/${location.id}`);
-        console.log(`[${location.name}] Response status: ${response.status}`);
         if (response.ok) {
           const data = await response.json();
-          console.log(`[${location.name}] Response data:`, data);
           if (data.rivers && data.rivers.length > 0) {
-            console.log(`[${location.name}] Found ${data.rivers.length} rivers`);
             setRiverData(data.rivers);
             setHasRivers(true);
-          } else {
-            console.log(`[${location.name}] No rivers found in response`);
           }
-        } else {
-          console.log(`[${location.name}] Response not OK`);
         }
-      } catch (error) {
-        console.error(`[${location.name}] Error fetching river data:`, error);
+      } catch {
+        // Silently fail - river data is optional
       }
     };
 
     fetchRiverData();
-  }, [location.id, location.name]);
+  }, [location.id]);
 
   const handleRiverClick = async () => {
     setLoadingRivers(true);
