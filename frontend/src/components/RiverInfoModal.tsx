@@ -41,9 +41,9 @@ export function RiverInfoModal({ rivers, locationName, onClose }: RiverInfoModal
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
         {/* Header */}
-        <div className="bg-blue-600 text-white p-6 flex items-center justify-between">
+        <div className="bg-blue-600 dark:bg-blue-700 text-white p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Droplet className="w-6 h-6" />
             <div>
@@ -53,7 +53,7 @@ export function RiverInfoModal({ rivers, locationName, onClose }: RiverInfoModal
           </div>
           <button
             onClick={onClose}
-            className="hover:bg-blue-700 rounded-full p-2 transition-colors"
+            className="hover:bg-blue-700 dark:hover:bg-blue-600 rounded-full p-2 transition-colors"
           >
             <X className="w-6 h-6" />
           </button>
@@ -163,8 +163,8 @@ export function RiverInfoModal({ rivers, locationName, onClose }: RiverInfoModal
           </div>
 
           {/* Safety Warning */}
-          <div className="mt-6 p-4 bg-gray-100 rounded-lg">
-            <p className="text-xs text-gray-600">
+          <div className="mt-6 p-4 bg-gray-100 dark:bg-gray-900 rounded-lg">
+            <p className="text-xs text-gray-600 dark:text-gray-400">
               <strong>Safety Note:</strong> River conditions can change rapidly. Always assess
               conditions on-site before crossing. These thresholds are estimates and may not
               account for all factors affecting crossing safety.
