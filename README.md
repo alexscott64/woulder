@@ -90,7 +90,6 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 ## Documentation
 
 - **[QUICKSTART.md](QUICKSTART.md)** - Quick start guide
-- **[SUMMARY.md](SUMMARY.md)** - Project summary and overview
 
 ---
 
