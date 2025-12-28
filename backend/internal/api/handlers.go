@@ -101,8 +101,8 @@ func (h *Handler) refreshAllWeatherData() {
 			}
 		}
 
-		// Fetch historical data (last 7 days) from Open-Meteo historical API
-		historical, err := h.weatherService.GetHistoricalWeather(location.Latitude, location.Longitude, 7)
+		// Fetch historical data (last 14 days) from Open-Meteo for rain/pest calculations
+		historical, err := h.weatherService.GetHistoricalWeather(location.Latitude, location.Longitude, 14)
 		if err != nil {
 			log.Printf("Error fetching historical weather for location %d: %v", location.ID, err)
 		} else {
@@ -119,8 +119,8 @@ func (h *Handler) refreshAllWeatherData() {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	// Clean old data
-	if err := h.db.CleanOldWeatherData(14); err != nil {
+	// Clean old data (keep 21 days: 14 historical + 7 buffer)
+	if err := h.db.CleanOldWeatherData(21); err != nil {
 		log.Printf("Error cleaning old weather data: %v", err)
 	}
 
@@ -188,8 +188,8 @@ func (h *Handler) GetWeatherForLocation(c *gin.Context) {
 		}
 	}
 
-	// Get historical data (last 7 days)
-	historical, err := h.db.GetHistoricalWeather(locationID, 7)
+	// Get historical data (last 14 days for pest calculations)
+	historical, err := h.db.GetHistoricalWeather(locationID, 14)
 	if err != nil {
 		log.Printf("Error fetching historical weather: %v", err)
 		historical = []models.WeatherData{}
@@ -293,8 +293,8 @@ func (h *Handler) GetAllWeather(c *gin.Context) {
 			forecast = []models.WeatherData{}
 		}
 
-		// Get historical data
-		historical, err := h.db.GetHistoricalWeather(location.ID, 7)
+		// Get historical data (14 days for pest calculations)
+		historical, err := h.db.GetHistoricalWeather(location.ID, 14)
 		if err != nil {
 			log.Printf("Error fetching historical weather: %v", err)
 			historical = []models.WeatherData{}

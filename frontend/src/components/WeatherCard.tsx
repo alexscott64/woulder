@@ -7,10 +7,12 @@ import {
   getWeatherIconUrl,
   getSnowProbability
 } from '../utils/weatherConditions';
+import { calculatePestConditions, getPestLevelColor, PestConditions } from '../utils/pestConditions';
 import { format } from 'date-fns';
-import { Cloud, Droplet, Wind, Snowflake, ChevronDown, ChevronUp, Waves, Sunrise, Sunset } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Cloud, Droplet, Wind, Snowflake, ChevronDown, ChevronUp, Waves, Sunrise, Sunset, Bug } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
 import { RiverInfoModal } from './RiverInfoModal';
+import { PestInfoModal } from './PestInfoModal';
 
 interface WeatherCardProps {
   forecast: WeatherForecast;
@@ -39,6 +41,15 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const [riverData, setRiverData] = useState<RiverData[]>([]);
   const [loadingRivers, setLoadingRivers] = useState(false);
   const [hasRivers, setHasRivers] = useState(false);
+
+  // Pest info state
+  const [showPestModal, setShowPestModal] = useState(false);
+
+  // Calculate pest conditions
+  const pestConditions: PestConditions | null = useMemo(() => {
+    if (!current || !historical || historical.length === 0) return null;
+    return calculatePestConditions(current, historical);
+  }, [current, historical]);
 
   // Fetch river data when component mounts
   useEffect(() => {
@@ -149,6 +160,22 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Pest Activity Icon */}
+            {pestConditions && (
+              <button
+                onClick={() => setShowPestModal(true)}
+                className="relative p-2 hover:bg-amber-50 rounded-full transition-colors group"
+                title="Pest Activity Info"
+              >
+                <Bug className={`w-5 h-5 ${getPestLevelColor(pestConditions.mosquitoLevel)}`} />
+                {/* Status indicator dot showing worst level */}
+                <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${
+                  pestConditions.mosquitoScore >= 60 || pestConditions.outdoorPestScore >= 60 ? 'bg-red-500' :
+                  pestConditions.mosquitoScore >= 40 || pestConditions.outdoorPestScore >= 40 ? 'bg-yellow-500' :
+                  'bg-green-500'
+                }`} />
+              </button>
+            )}
             {/* River Crossing Icon */}
             {hasRivers && (
               <button
@@ -327,6 +354,15 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           rivers={riverData}
           locationName={location.name}
           onClose={() => setShowRiverModal(false)}
+        />
+      )}
+
+      {/* Pest Info Modal */}
+      {showPestModal && pestConditions && (
+        <PestInfoModal
+          pestConditions={pestConditions}
+          locationName={location.name}
+          onClose={() => setShowPestModal(false)}
         />
       )}
     </div>
