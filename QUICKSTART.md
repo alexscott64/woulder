@@ -1,14 +1,13 @@
 # Woulder - Quick Start Guide
 
-## ✅ Prerequisites Completed
+## Prerequisites Completed
 
 - [x] Go installed
 - [x] Node.js installed
-- [x] MySQL database initialized with schema
-- [x] OpenWeatherMap API key configured
-- [x] All 6 default locations added to database
+- [x] Database initialized with schema
+- [x] All 7 default locations added to database
 
-## 🚀 Running the Application
+## Running the Application
 
 ### Option 1: Run Both (Recommended)
 
@@ -58,6 +57,9 @@ curl http://localhost:8080/api/locations
 
 # Get all weather
 curl http://localhost:8080/api/weather/all
+
+# Get river data for a location
+curl http://localhost:8080/api/rivers/location/1
 ```
 
 ### Option 3: Frontend Only (Mock Data)
@@ -69,7 +71,7 @@ cd frontend
 npm run dev
 ```
 
-## 🎯 What Should You See?
+## What Should You See?
 
 ### Backend Running:
 - Server starts on port 8080
@@ -78,11 +80,12 @@ npm run dev
 
 ### Frontend Running:
 - App opens at `http://localhost:5173`
-- Header shows "Woulder" title
+- Header shows "woulder" title with logo
 - Online/Offline indicator (green WiFi icon when online)
-- Refresh button
-- Grid of weather cards for all 6 locations:
-  - Skykomish
+- Settings button (gear icon)
+- Grid of weather cards for all 7 locations:
+  - Skykomish - Money Creek
+  - Skykomish - Paradise
   - Index
   - Gold Bar
   - Bellingham
@@ -92,17 +95,33 @@ npm run dev
 ### Each Weather Card Shows:
 - Location name
 - Current timestamp
-- Condition indicator (red/yellow/green dot)
+- Condition badge (Good/Marginal/Bad with color)
 - Weather icon
 - Temperature in °F
 - Weather description
-- Precipitation (inches)
+- Sunrise/Sunset times
+- Pest activity indicator (bug icon)
+- River crossing indicator (wave icon, if applicable)
+- Last 48h and Next 48h precipitation
+- Snow probability
 - Wind speed & direction (mph)
 - Humidity (%)
 - Cloud cover (%)
-- Condition summary
+- Condition reasons
+- Expandable 6-day forecast button
 
-## 🐛 Troubleshooting
+### Settings Panel:
+- Click the gear icon in the header
+- Toggle dark mode on/off
+- Settings are saved to localStorage
+
+### 6-Day Forecast (Expanded):
+- Click "Show 6-Day Forecast" on any card
+- View hourly data for each day
+- See daily summaries with highs/lows
+- Close with "Hide Forecast" button
+
+## Troubleshooting
 
 ### Backend Issues
 
@@ -111,14 +130,14 @@ npm run dev
 - Go should be in PATH after installation
 
 **"Failed to connect to database"**
-- Check internet connection (AWS RDS is remote)
+- Check database file exists (SQLite) or credentials (MySQL)
 - Verify credentials in `backend/.env`
 - Try running the init script again: `node scripts/init-db.js`
 
 **"Failed to fetch weather"**
-- Check OpenWeatherMap API key in `backend/.env`
-- Free tier has 1,000 calls/day limit
-- Wait a minute if rate-limited
+- Open-Meteo API is free and doesn't require a key
+- Check internet connection
+- API may be temporarily unavailable
 
 ### Frontend Issues
 
@@ -137,6 +156,11 @@ npx kill-port 5173
 # Or change port in vite.config.ts
 ```
 
+**Dark mode not working**
+- Clear Vite cache: `rm -rf node_modules/.vite`
+- Restart dev server
+- Check localStorage for `woulder-settings` key
+
 ### Network/CORS Issues
 
 If you see CORS errors in browser console:
@@ -144,21 +168,44 @@ If you see CORS errors in browser console:
 - This is fine for development
 - For production, update `backend/cmd/server/main.go` to specific domains
 
-## 📱 Testing Offline Mode
+## Testing Features
 
+### Dark Mode
+1. Open the app in browser
+2. Click the gear icon (Settings) in the header
+3. Toggle "Dark Mode" switch
+4. UI should switch between light and dark themes
+5. Refresh the page - setting should persist
+
+### 6-Day Forecast
+1. Click "Show 6-Day Forecast" on any weather card
+2. View the expanded hourly forecast
+3. Switch between days using the day headers
+4. Note the condition color bar matches the card
+
+### River Crossing Info
+1. Look for the wave icon on weather cards (not all locations have rivers)
+2. Click the wave icon to open the River Info modal
+3. View flow rates and safety indicators
+
+### Pest Activity
+1. Look for the bug icon on weather cards
+2. Click to view pest activity details
+3. See mosquito and outdoor pest forecasts
+
+### Offline Mode
 1. Open the app in browser (`http://localhost:5173`)
-2. Load the weather data (click Refresh)
+2. Load the weather data
 3. Open browser DevTools (F12)
 4. Go to Network tab
 5. Select "Offline" from throttling dropdown
 6. Observe:
    - WiFi icon turns red
    - Status shows "Offline"
-   - Refresh button is disabled
    - Cached data still displays
 7. Re-enable network to see auto-refresh
 
-## 🔄 Development Workflow
+## Development Workflow
 
 ### Making Backend Changes
 
@@ -173,19 +220,20 @@ If you see CORS errors in browser console:
 2. Save the file
 3. Vite automatically hot-reloads (no restart needed)
 4. Check browser for updates
+5. If styles aren't updating, restart dev server
 
 ### Adding New Locations
 
 #### Method 1: Direct Database Insert
 ```sql
-INSERT INTO locations (name, latitude, longitude) VALUES
-('Your Location', 47.1234, -122.5678);
+INSERT INTO locations (name, latitude, longitude, elevation_ft) VALUES
+('Your Location', 47.1234, -122.5678, 1000);
 ```
 
-#### Method 2: Programmatically (future feature)
-We'll add a UI for this in the next phase.
+#### Method 2: Via init script
+Edit `scripts/init-db.js` and re-run.
 
-## 📊 API Endpoints
+## API Endpoints
 
 ### GET /api/health
 Health check endpoint
@@ -193,7 +241,7 @@ Health check endpoint
 {
   "status": "ok",
   "message": "Woulder API is running",
-  "time": "2025-12-13T..."
+  "time": "2025-12-27T..."
 }
 ```
 
@@ -204,9 +252,10 @@ Get all saved locations
   "locations": [
     {
       "id": 1,
-      "name": "Skykomish",
+      "name": "Skykomish - Money Creek",
       "latitude": 47.70000522,
       "longitude": -121.46672102,
+      "elevation_ft": 1000,
       "created_at": "...",
       "updated_at": "..."
     }
@@ -224,62 +273,80 @@ Get weather for all locations (use this for the dashboard)
       "location": { ... },
       "current": { ... },
       "hourly": [ ... ],
-      "historical": [ ... ]
+      "historical": [ ... ],
+      "sunrise": "2025-12-27T07:54",
+      "sunset": "2025-12-27T16:22",
+      "daily_sun_times": [ ... ]
     }
   ],
-  "updated_at": "2025-12-13T..."
+  "updated_at": "2025-12-27T..."
 }
 ```
 
 ### GET /api/weather/:id
 Get weather for specific location
-```json
-{
-  "location_id": 1,
-  "location": { ... },
-  "current": { ... },
-  "hourly": [ ... ],
-  "historical": [ ... ]
-}
-```
 
 ### GET /api/weather/coordinates?lat=47.7&lon=-121.46
 Get weather for custom coordinates
+
+### GET /api/rivers/location/:id
+Get river data for a location
 ```json
 {
-  "current": { ... },
-  "forecast": [ ... ]
+  "rivers": [
+    {
+      "name": "North Fork Skykomish River",
+      "current_flow_cfs": 2235,
+      "safe_threshold_cfs": 3000,
+      "is_safe": true,
+      "status": "safe"
+    }
+  ]
 }
 ```
 
-## 🎨 Color Coding System
+## Color Coding System
 
-Weather cards show a colored dot indicating climbing conditions:
+Weather cards show a colored badge indicating climbing conditions:
 
-- **🟢 Green (Good):** Dry, calm, ideal conditions
-- **🟡 Yellow (Marginal):** Light rain OR moderate wind OR extreme temps OR high humidity
-- **🔴 Red (Bad):** Heavy rain (>0.1") OR high winds (>20mph)
+- **Green (Good):** Dry, calm, ideal conditions
+- **Yellow (Marginal):** Light rain OR moderate wind OR extreme temps OR high humidity
+- **Red (Bad):** Heavy rain (>0.1") OR high winds (>20mph)
 
-## 📝 Next Steps
+## Settings
+
+Settings are stored in localStorage under the key `woulder-settings`:
+
+```json
+{
+  "darkMode": false,
+  "temperatureUnit": "fahrenheit",
+  "speedUnit": "mph"
+}
+```
+
+Note: Temperature and speed unit preferences are coming in a future update.
+
+## Next Steps
 
 After confirming everything works:
 
-1. ✅ Test all locations load properly
-2. ✅ Verify weather data updates every 10 minutes
-3. ✅ Test offline mode functionality
-4. ⏳ Add historical weather view (past 7 days)
-5. ⏳ Implement PWA with service workers
-6. ⏳ Add weather charts/graphs
-7. ⏳ Create deployment scripts
+1. Test all locations load properly
+2. Verify weather data updates every 10 minutes
+3. Test dark mode toggle and persistence
+4. Expand forecast views on different cards
+5. Check river and pest info modals
+6. Test offline mode functionality
 
-## 💡 Tips
+## Tips
 
 - **Refresh Interval:** Weather data auto-refreshes every 10 minutes
 - **Cache Duration:** React Query caches for 5 minutes (stale) / 10 minutes (garbage collection)
-- **API Rate Limit:** Free tier = 1,000 calls/day. With 6 locations refreshing every 10 minutes = ~864 calls/day (safe)
-- **Database Cleanup:** Old weather data (>7 days) should be cleaned periodically
+- **Dark Mode:** Toggle persists across browser sessions
+- **Forecast View:** Different cards can be expanded independently on desktop
+- **Mobile:** Only one forecast can be expanded at a time on mobile
 
-## 📞 Need Help?
+## Need Help?
 
 Check the notes folder for detailed documentation:
 - [notes/project-plan.md](notes/project-plan.md) - Full architecture and plan
@@ -287,4 +354,4 @@ Check the notes folder for detailed documentation:
 
 ---
 
-**Ready to climb!** 🧗‍♂️⛰️
+**Ready to climb!**

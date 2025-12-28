@@ -1,31 +1,47 @@
 # Woulder - Project Summary
 
-**Built:** December 13, 2025
-**Status:** ✅ Core functionality complete, ready for testing
+**Built:** December 2025
+**Status:** Phase 2 complete - Enhanced features implemented
+**Live Demo:** https://woulder.com
 
 ---
 
 ## What We Built
 
-A modern weather dashboard for climbers inspired by toorainy.com, with improved UI and offline support.
+A modern weather dashboard for climbers inspired by toorainy.com, with improved UI, dark mode support, and comprehensive weather data.
 
 ### Key Features
-- ☁️ Real-time weather data for 6 climbing locations
-- 📊 Temperature, precipitation, wind, humidity, cloud cover
-- 🟢🟡🔴 Color-coded climbing conditions
-- 📱 Responsive design (mobile/tablet/desktop)
-- 🔄 Auto-refresh every 10 minutes
-- 🌐 Online/offline detection
-- 💾 Smart caching with React Query
-- 🎨 Clean, modern UI with Tailwind CSS
+
+#### Weather & Forecasting
+- Real-time weather data for 7 climbing locations
+- Temperature, precipitation, wind, humidity, cloud cover
+- 6-day hourly forecast with expandable views
+- 48-hour historical and forecasted precipitation
+- Snow probability and accumulation estimates
+- Sunrise/sunset times for each location
+
+#### Condition Assessment
+- Color-coded climbing conditions (Good/Marginal/Bad)
+- Detailed condition reasoning
+- River crossing safety indicators
+- Pest activity forecasts (mosquitoes, outdoor pests)
+
+#### User Experience
+- Dark mode toggle with localStorage persistence
+- Settings panel for user preferences
+- Responsive design (mobile/tablet/desktop)
+- Auto-refresh every 10 minutes
+- Online/offline detection
+- Smart caching with React Query
 
 ### Locations Included
-1. Skykomish, WA (47.7000, -121.4667)
-2. Index, WA
-3. Gold Bar, WA
-4. Bellingham, WA
-5. Icicle Creek (Leavenworth), WA
-6. Squamish, BC
+1. Skykomish - Money Creek, WA
+2. Skykomish - Paradise, WA
+3. Index, WA
+4. Gold Bar, WA
+5. Bellingham, WA
+6. Icicle Creek (Leavenworth), WA
+7. Squamish, BC
 
 ---
 
@@ -33,14 +49,15 @@ A modern weather dashboard for climbers inspired by toorainy.com, with improved 
 
 ### Backend
 - **Go** with Gin framework
-- **MySQL** on AWS RDS
-- **OpenWeatherMap API** (free tier, 1,000 calls/day)
+- **SQLite** / **MySQL** database options
+- **Open-Meteo API** (free, no API key required)
+- **USGS Water Services** for river data
 - REST API with CORS support
 
 ### Frontend
 - **React 18** + **TypeScript**
 - **Vite** (build tool)
-- **Tailwind CSS** (styling)
+- **Tailwind CSS** (styling with dark mode)
 - **React Query** (data fetching/caching)
 - **Axios** (HTTP client)
 - **Lucide React** (icons)
@@ -56,18 +73,28 @@ woulder/
 │   ├── cmd/server/       # Entry point
 │   ├── internal/         # Core logic
 │   │   ├── api/          # HTTP handlers
-│   │   ├── database/     # MySQL layer
+│   │   ├── database/     # Database layer
 │   │   ├── models/       # Data models
-│   │   └── weather/      # OpenWeatherMap client
+│   │   ├── weather/      # Open-Meteo client
+│   │   └── rivers/       # USGS river client
 │   ├── .env              # Configuration
 │   └── go.mod            # Dependencies
 │
 ├── frontend/             # React web app
 │   ├── src/
 │   │   ├── components/   # React components
+│   │   │   ├── WeatherCard.tsx
+│   │   │   ├── ForecastView.tsx
+│   │   │   ├── SettingsModal.tsx
+│   │   │   ├── RiverInfoModal.tsx
+│   │   │   └── PestInfoModal.tsx
+│   │   ├── contexts/     # React contexts
+│   │   │   └── SettingsContext.tsx
 │   │   ├── services/     # API client
 │   │   ├── types/        # TypeScript types
 │   │   ├── utils/        # Helper functions
+│   │   │   ├── weatherConditions.ts
+│   │   │   └── pestConditions.ts
 │   │   └── App.tsx       # Main component
 │   ├── .env              # Frontend config
 │   └── package.json      # Dependencies
@@ -76,10 +103,6 @@ woulder/
 │   └── init-db.js        # Database initialization
 │
 ├── notes/                # Documentation
-│   ├── project-plan.md
-│   ├── setup-instructions.md
-│   ├── technical-implementation.md
-│   └── deployment-guide.md
 │
 ├── README.md             # Project overview
 ├── QUICKSTART.md         # Quick start guide
@@ -97,6 +120,7 @@ woulder/
 | GET | `/api/weather/all` | Weather for all locations |
 | GET | `/api/weather/:id` | Weather for specific location |
 | GET | `/api/weather/coordinates?lat=X&lon=Y` | Weather by coordinates |
+| GET | `/api/rivers/location/:id` | River data for location |
 
 ---
 
@@ -105,7 +129,7 @@ woulder/
 ### Prerequisites
 - Go 1.21+
 - Node.js 18+
-- MySQL (already configured on AWS RDS)
+- SQLite (included) or MySQL
 
 ### Quick Start
 
@@ -132,13 +156,14 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 ## Database
 
 ### Schema
-- `locations` - Climbing locations (6 pre-populated)
+- `locations` - Climbing locations (7 pre-populated)
 - `weather_data` - Weather observations (current + historical)
+- `rivers` - River crossing information
 
 ### Already Initialized
-✅ Schema created
-✅ 6 locations inserted
-✅ Indexes configured
+- Schema created
+- 7 locations inserted
+- Indexes configured
 
 ---
 
@@ -147,12 +172,14 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 ### Backend (.env)
 ```env
 PORT=8080
-OPENWEATHERMAP_API_KEY=4df3c0436f6dd4f0b6af69e97cb4f2bb
-DB_HOST=leasecalcs-development.c0xbv45gqu40.us-west-2.rds.amazonaws.com
-DB_PORT=3306
-DB_USER=woulder
-DB_PASSWORD=j32JgmxzycbaoLet9F#9C%wFfN*RF98O
-DB_NAME=woulder
+DB_TYPE=sqlite
+DB_PATH=./woulder.db
+# Or for MySQL:
+# DB_HOST=localhost
+# DB_PORT=3306
+# DB_USER=woulder
+# DB_PASSWORD=yourpassword
+# DB_NAME=woulder
 ```
 
 ### Frontend (.env)
@@ -166,19 +193,19 @@ VITE_API_URL=http://localhost:8080/api
 
 The app color-codes conditions for climbing:
 
-### 🟢 Green (Good)
+### Green (Good)
 - Dry (no rain)
 - Low winds (<12 mph)
 - Comfortable temperature (35-90°F)
 - Moderate humidity (<85%)
 
-### 🟡 Yellow (Marginal)
+### Yellow (Marginal)
 - Light rain (0.05-0.1")
 - Moderate winds (12-20 mph)
 - Cold (<35°F) or hot (>90°F)
 - High humidity (>85%)
 
-### 🔴 Red (Bad)
+### Red (Bad)
 - Heavy rain (>0.1")
 - High winds (>20 mph)
 - Multiple adverse conditions
@@ -187,74 +214,80 @@ The app color-codes conditions for climbing:
 
 ## What's Working
 
-✅ Backend API with all endpoints
-✅ Frontend dashboard with weather cards
-✅ Real-time data from OpenWeatherMap
-✅ Database storage and retrieval
-✅ Online/offline detection
-✅ Manual refresh button
-✅ Auto-refresh every 10 minutes
-✅ Responsive design
-✅ Dark mode support
-✅ Color-coded conditions
-✅ Error handling
-✅ Loading states
+### Phase 1 (MVP)
+- Backend API with all endpoints
+- Frontend dashboard with weather cards
+- Real-time data from Open-Meteo
+- Database storage and retrieval
+- Online/offline detection
+- Auto-refresh every 10 minutes
+- Responsive design
+- Color-coded conditions
+- Error handling
+- Loading states
+
+### Phase 2 (Enhanced Features)
+- 6-day hourly forecast view
+- Dark mode toggle with persistence
+- Settings panel
+- Sunrise/sunset times
+- River crossing information
+- Pest activity forecasts
+- 48-hour precipitation tracking
+- Snow probability estimates
 
 ---
 
-## What's Next (Phase 2)
+## What's Next (Phase 3)
 
 ### High Priority
 - [ ] Service workers for true offline support
-- [ ] IndexedDB for persistent caching
-- [ ] Hourly forecast view (expand cards)
-- [ ] 7-day historical chart
 - [ ] PWA manifest for "install to homescreen"
+- [ ] Temperature unit toggle (F/C)
+- [ ] Speed unit toggle (mph/kmh)
 
 ### Medium Priority
 - [ ] Location search/autocomplete
 - [ ] Add/remove custom locations
 - [ ] Weather alerts/notifications
-- [ ] Share dashboard links
-- [ ] Export data (CSV)
+- [ ] Additional regions
 
 ### Nice to Have
 - [ ] Radar map overlay
 - [ ] Trip planning mode (multi-day)
-- [ ] Dark/light mode toggle
-- [ ] Units toggle (F/C, mph/kph)
-- [ ] Favorite locations
+- [ ] Share dashboard links
+- [ ] Export data (CSV)
 
 ---
 
 ## Testing Checklist
 
-Before deploying, test:
-
 ### Backend
-- [ ] Server starts without errors
-- [ ] `/api/health` returns OK
-- [ ] `/api/locations` returns 6 locations
-- [ ] `/api/weather/all` returns weather data
-- [ ] Database connection works
-- [ ] OpenWeatherMap API calls succeed
+- [x] Server starts without errors
+- [x] `/api/health` returns OK
+- [x] `/api/locations` returns 7 locations
+- [x] `/api/weather/all` returns weather data
+- [x] `/api/rivers/location/:id` returns river data
+- [x] Database connection works
 
 ### Frontend
-- [ ] App loads at http://localhost:5173
-- [ ] All 6 location cards display
-- [ ] Weather data populates
-- [ ] Online indicator shows green WiFi
-- [ ] Refresh button works
-- [ ] Auto-refresh works (wait 10 min)
-- [ ] Responsive on mobile (resize browser)
-- [ ] No console errors
+- [x] App loads at http://localhost:5173
+- [x] All 7 location cards display
+- [x] Weather data populates
+- [x] Online indicator shows green WiFi
+- [x] Auto-refresh works
+- [x] Responsive on mobile
+- [x] Dark mode toggle works
+- [x] Settings persist after refresh
+- [x] 6-day forecast expands/collapses
+- [x] River info modal opens
+- [x] Pest info modal opens
 
 ### Integration
-- [ ] Frontend calls backend successfully
-- [ ] CORS doesn't block requests
-- [ ] Data updates reflect in UI
-- [ ] Timestamps show correctly
-- [ ] Icons load from OpenWeatherMap
+- [x] Frontend calls backend successfully
+- [x] CORS doesn't block requests
+- [x] Data updates reflect in UI
+- [x] Timestamps show correctly
 
 ---
 
@@ -276,7 +309,7 @@ See [notes/deployment-guide.md](notes/deployment-guide.md) for full instructions
 3. Upload `dist/` contents to web server
 4. Configure routing for SPA
 
-**Target URL:** https://alexscott.io/woulder
+**Live URL:** https://woulder.com
 
 ---
 
@@ -287,7 +320,7 @@ All documentation is in the [notes/](notes/) folder:
 1. **[project-plan.md](notes/project-plan.md)** - Full architecture, design decisions, and roadmap
 2. **[setup-instructions.md](notes/setup-instructions.md)** - Installation and setup
 3. **[technical-implementation.md](notes/technical-implementation.md)** - Implementation details
-4. **[deployment-guide.md](notes/deployment-guide.md)** - Deployment to Namecheap
+4. **[deployment-guide.md](notes/deployment-guide.md)** - Deployment instructions
 
 Also see:
 - **[README.md](README.md)** - Project overview
@@ -296,110 +329,59 @@ Also see:
 
 ---
 
-## Known Issues
-
-### Minor Issues
-- Node.js version warnings (19 vs 20+) - safe to ignore
-- OpenWeatherMap historical data can be inaccurate (known API issue)
-- No service worker yet (Phase 2)
-- Cache clears on full page reload (needs PWA)
-
-### Not Implemented Yet
-- Hourly forecast visualization
-- Historical weather charts
-- Location add/remove UI
-- Push notifications
-- Trip planning features
-
----
-
 ## Performance
 
 ### Current Metrics
 - **Backend:** ~5-10ms response time (localhost)
 - **Frontend:** Initial load <2s (dev mode)
-- **API Calls:** ~6 requests to OpenWeatherMap per refresh
+- **API Calls:** Single batch request for all weather data
 - **Database Queries:** <5ms average
 
 ### Optimization Strategy
 - Database indexes on location_id and timestamp
-- Connection pooling (25 max, 5 idle)
+- Connection pooling
 - React Query caching (5 min stale, 10 min gc)
 - Auto-refresh limited to 10 minutes
-- Future: Redis cache layer
+- Dark mode CSS uses Tailwind's class strategy
 
 ---
 
 ## Cost Breakdown
 
 ### Current: $0/month
-- OpenWeatherMap: Free tier (1,000/day, using ~864)
-- Database: Existing AWS RDS
-- Hosting: Existing Namecheap
+- Open-Meteo: Free (unlimited calls)
+- USGS Water Services: Free
+- Database: SQLite (local) or existing MySQL
+- Hosting: Existing infrastructure
 - Domain: Already owned
-
-### If Scaling Up: ~$10-30/month
-- OpenWeatherMap Pro: $40-180/mo (if needed)
-- Dedicated VPS: $5-20/mo (optional)
-- CDN: $0-5/mo (Cloudflare free tier)
-
----
-
-## Git Commit Message (Suggested)
-
-```
-feat: Initial implementation of Woulder weather dashboard
-
-- Backend API in Go with Gin framework
-- Frontend dashboard in React + TypeScript + Tailwind
-- MySQL database with 6 climbing locations
-- OpenWeatherMap API integration
-- Real-time weather data with auto-refresh
-- Online/offline detection
-- Color-coded climbing conditions
-- Responsive design for mobile/tablet/desktop
-- Comprehensive documentation in notes/
-
-Ready for testing and deployment to alexscott.io/woulder
-```
 
 ---
 
 ## Credits
 
 - **Inspiration:** toorainy.com by Miles Crawford
-- **Weather Data:** OpenWeatherMap API
+- **Weather Data:** Open-Meteo API
+- **River Data:** USGS Water Services
 - **Location Data:** User-provided coordinates
-- **Built with:** Go, React, TypeScript, Tailwind CSS, MySQL
+- **Built with:** Go, React, TypeScript, Tailwind CSS
 
 ---
 
-## Next Steps
+## Recent Updates
 
-### Immediate (Today)
-1. Test backend: `cd backend && go run cmd/server/main.go`
-2. Test frontend: `cd frontend && npm run dev`
-3. Verify all locations load
-4. Check browser console for errors
-5. Test refresh functionality
-
-### Short Term (This Week)
-1. Add hourly forecast view
-2. Implement service workers for offline support
-3. Add historical weather chart
-4. Deploy to Namecheap
-
-### Long Term (Next Month)
-1. PWA with install prompt
-2. Push notifications for weather alerts
-3. Location search and custom locations
-4. Trip planning features
-5. User accounts (optional)
+### December 2025
+- Added dark mode with settings panel
+- Implemented 6-day hourly forecast view
+- Added river crossing safety indicators
+- Added pest activity forecasts
+- Added sunrise/sunset times
+- Updated to 7 locations (split Skykomish into Money Creek and Paradise)
+- Improved condition badge design
+- Added 48-hour precipitation tracking
 
 ---
 
-**Project Status:** ✅ MVP Complete
-**Next Action:** Test both backend and frontend
-**Estimated Time to Deploy:** 1-2 hours
+**Project Status:** Phase 2 Complete
+**Live Demo:** https://woulder.com
 
-🧗‍♂️ Happy climbing! ⛰️
+Happy climbing!
