@@ -1,4 +1,4 @@
-# Woulder
+# woulder
 
 > A modern weather dashboard for climbers, inspired by toorainy.com with improved UI and offline support.
 
@@ -9,7 +9,7 @@
 
 Track rain, wind, temperature, humidity, and cloud cover for climbing locations in the Pacific Northwest - online or offline.
 
-![Woulder Dashboard](https://via.placeholder.com/800x400?text=Woulder+Dashboard+Screenshot)
+![woulder](https://woulder.com)
 
 ---
 
@@ -201,7 +201,7 @@ Weather cards display a colored badge indicating climbing conditions:
 
 ## Dark Mode
 
-Woulder supports dark mode with automatic persistence:
+woulder supports dark mode with automatic persistence:
 
 - Toggle via the Settings icon in the header
 - Preference saved to localStorage
