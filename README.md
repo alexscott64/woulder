@@ -178,9 +178,9 @@ Weather cards display a colored badge indicating climbing conditions:
 
 | Color | Condition | Criteria |
 |-------|-----------|----------|
-| Green | **Good** | Dry, low winds (<12 mph), comfortable temps (35-90°F) |
-| Yellow | **Marginal** | Light rain (0.05-0.1"), moderate winds (12-20 mph), extreme temps, high humidity (>85%) |
-| Red | **Bad** | Heavy rain (>0.1"), high winds (>20 mph) |
+| Green | **Good** | Dry, low winds (<12 mph), ideal temps (41-65°F), normal humidity (<85%) |
+| Yellow | **Fair** | Light rain (0.05-0.1"), moderate winds (12-20 mph), marginal temps (30-40°F or 66-79°F), high humidity (>85%) |
+| Red | **Poor** | Heavy rain (>0.1"), high winds (>20 mph), extreme temps (<30°F or >79°F) |
 
 ---
 

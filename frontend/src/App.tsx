@@ -278,7 +278,7 @@ function Dashboard() {
       <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <p className="text-center text-sm text-gray-600 dark:text-gray-400">
-            woulder - Weather dashboard for climbers
+            woulder - The Weather App for Climbers
           </p>
         </div>
       </footer>

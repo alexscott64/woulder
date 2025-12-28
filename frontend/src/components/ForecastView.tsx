@@ -5,6 +5,8 @@ import { getTempColor, getPrecipColor } from '../utils/climbingConditions';
 import { calculateDayPestConditions, getPestLevelColor, getPestLevelText, PestLevel } from '../utils/pestConditions';
 import { format } from 'date-fns';
 import { Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Bug } from 'lucide-react';
+import { useState } from 'react';
+import { ConditionDetailsModal } from './ConditionDetailsModal';
 
 interface ForecastViewProps {
   hourlyData: WeatherData[];
@@ -35,6 +37,7 @@ interface DayForecast {
   pestLevel?: PestLevel; // Worst pest activity level for this day
   mosquitoLevel?: PestLevel;
   outdoorPestLevel?: PestLevel;
+  conditionReasons?: string[]; // Combined reasons for the day's overall condition
 }
 
 // Helper to format sun time from ISO string to "7:54 AM" format
@@ -121,6 +124,27 @@ function calculateEffectiveSunHours(
 }
 
 export function ForecastView({ hourlyData, currentWeather, historicalData, elevationFt = 0, dailySunTimes }: ForecastViewProps) {
+  // State for condition details modal
+  const [showConditionModal, setShowConditionModal] = useState(false);
+  const [selectedDayCondition, setSelectedDayCondition] = useState<{
+    dayName: string;
+    level: 'good' | 'marginal' | 'bad';
+    reasons: string[];
+  } | null>(null);
+
+  // Calculate total rain from last 48 hours (affects climbing conditions)
+  // Filter historical data to only include last 48 hours, then sum precipitation
+  const currentTime = new Date();
+  const fortyEightHoursAgo = currentTime.getTime() - 48 * 60 * 60 * 1000;
+  const historical48hRain = historicalData && historicalData.length > 0
+    ? historicalData
+        .filter(d => {
+          const time = new Date(d.timestamp).getTime();
+          return time >= fortyEightHoursAgo && time <= currentTime.getTime();
+        })
+        .reduce((sum, h) => sum + h.precipitation, 0)
+    : 0;
+
   // Group hourly data by day
   const dailyForecasts: DayForecast[] = [];
 
@@ -194,11 +218,63 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
     const icon = Array.from(iconCounts.entries()).sort((a, b) => b[1] - a[1])[0][0];
     const description = hours[Math.floor(hours.length / 2)].description;
 
-    // Determine overall condition for the day
-    const conditions = hours.map(h => getWeatherCondition(h).level);
+    // Determine overall condition for the day and collect reasons
+    // Weight climbing hours (9am-8pm) more heavily for temperature issues
+    // But keep rain/precipitation for all hours since it affects conditions later
+    const isClimbingHour = (hour: WeatherData): boolean => {
+      const hourOfDay = new Date(hour.timestamp).getHours();
+      return hourOfDay >= 9 && hourOfDay < 20; // 9am to 8pm
+    };
+
+    const hourConditions = hours.map(h => ({
+      condition: getWeatherCondition(h),
+      hour: h,
+      isClimbingTime: isClimbingHour(h)
+    }));
+
     let condition: 'good' | 'marginal' | 'bad' = 'good';
-    if (conditions.some(c => c === 'bad')) condition = 'bad';
-    else if (conditions.some(c => c === 'marginal')) condition = 'marginal';
+    const conditionReasons: string[] = [];
+
+    // Filter conditions: only consider non-climbing hours if they have rain/wind issues
+    const relevantConditions = hourConditions.filter(hc => {
+      if (hc.isClimbingTime) return true; // Always consider climbing hours
+
+      // For non-climbing hours, only consider if there are rain/wind issues
+      const hasRainIssue = hc.condition.reasons.some(r =>
+        r.toLowerCase().includes('rain') || r.toLowerCase().includes('precip')
+      );
+      const hasWindIssue = hc.condition.reasons.some(r =>
+        r.toLowerCase().includes('wind')
+      );
+
+      return hasRainIssue || hasWindIssue;
+    });
+
+    // Find the worst condition and collect unique reasons from relevant hours
+    const badHours = relevantConditions.filter(hc => hc.condition.level === 'bad');
+    const marginalHours = relevantConditions.filter(hc => hc.condition.level === 'marginal');
+
+    if (badHours.length > 0) {
+      condition = 'bad';
+      // Collect unique reasons from bad hours
+      const reasonSet = new Set<string>();
+      badHours.forEach(hc => hc.condition.reasons.forEach(r => reasonSet.add(r)));
+      conditionReasons.push(...Array.from(reasonSet));
+      if (badHours.length > 1) {
+        conditionReasons.push(`${badHours.length} hours with poor conditions`);
+      }
+    } else if (marginalHours.length > 0) {
+      condition = 'marginal';
+      // Collect unique reasons from marginal hours
+      const reasonSet = new Set<string>();
+      marginalHours.forEach(hc => hc.condition.reasons.forEach(r => reasonSet.add(r)));
+      conditionReasons.push(...Array.from(reasonSet));
+      if (marginalHours.length > 1) {
+        conditionReasons.push(`${marginalHours.length} hours with fair conditions`);
+      }
+    } else {
+      conditionReasons.push('Good climbing conditions all day');
+    }
 
     // Determine if there's snow or rain
     const hasSnow = hours.some(h => h.temperature <= 32 && h.precipitation > 0);
@@ -206,6 +282,21 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
 
     // Check if this date is today
     const isToday = dateKey === todayStr;
+
+    // Factor in historical rain from last 48 hours (affects rock conditions)
+    // Heavy recent rain degrades conditions even if forecast is good
+    if (isToday && historical48hRain > 0) {
+      if (historical48hRain > 0.5) {
+        // Heavy rain in last 48h - rock may still be wet/seeping
+        if (condition === 'good') condition = 'marginal';
+        conditionReasons.push(`Recent heavy rain (${historical48hRain.toFixed(2)}in in last 48h)`);
+      } else if (historical48hRain > 0.2) {
+        // Moderate rain in last 48h - consider for condition
+        if (condition === 'good') {
+          conditionReasons.push(`Recent rain (${historical48hRain.toFixed(2)}in in last 48h) - rock may be damp`);
+        }
+      }
+    }
 
     // Get snow depth for this day (end of day depth)
     const snowDepth = snowDepthByDay.get(dateKey) || 0;
@@ -243,6 +334,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       pestLevel: dayPestConditions.worstLevel,
       mosquitoLevel: dayPestConditions.mosquitoLevel,
       outdoorPestLevel: dayPestConditions.outdoorPestLevel,
+      conditionReasons,
     });
   }
 
@@ -265,10 +357,21 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
 
               {/* Condition badge */}
               <div className="flex justify-center mb-2">
-                <div className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${conditionBadge.bg} ${conditionBadge.text} ${conditionBadge.border} flex items-center gap-1`}>
+                <button
+                  onClick={() => {
+                    setSelectedDayCondition({
+                      dayName: day.dayName,
+                      level: day.condition,
+                      reasons: day.conditionReasons || []
+                    });
+                    setShowConditionModal(true);
+                  }}
+                  className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${conditionBadge.bg} ${conditionBadge.text} ${conditionBadge.border} flex items-center gap-1 hover:opacity-80 active:opacity-100 transition-opacity cursor-pointer`}
+                  title="Click for condition details"
+                >
                   <div className={`w-1.5 h-1.5 rounded-full ${conditionColor}`} />
                   <span>{conditionLabel}</span>
-                </div>
+                </button>
               </div>
 
               {/* Date */}
@@ -450,6 +553,20 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
           </div>
         </div>
       </div>
+
+      {/* Condition Details Modal */}
+      {showConditionModal && selectedDayCondition && (
+        <ConditionDetailsModal
+          locationName={`${selectedDayCondition.dayName} Forecast`}
+          conditionLevel={selectedDayCondition.level}
+          conditionLabel={getConditionLabel(selectedDayCondition.level)}
+          reasons={selectedDayCondition.reasons}
+          onClose={() => {
+            setShowConditionModal(false);
+            setSelectedDayCondition(null);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { Cloud, Droplet, Wind, Snowflake, ChevronDown, ChevronUp, Waves, Sunrise
 import { useState, useEffect, useMemo } from 'react';
 import { RiverInfoModal } from './RiverInfoModal';
 import { PestInfoModal } from './PestInfoModal';
+import { ConditionDetailsModal } from './ConditionDetailsModal';
 
 interface WeatherCardProps {
   forecast: WeatherForecast;
@@ -49,6 +50,9 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
   // Pest info state
   const [showPestModal, setShowPestModal] = useState(false);
+
+  // Condition details state
+  const [showConditionModal, setShowConditionModal] = useState(false);
 
   // Calculate pest conditions
   const pestConditions: PestConditions | null = useMemo(() => {
@@ -153,13 +157,14 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           {/* Title row with condition badge */}
           <div className="flex items-center justify-between gap-2 mb-1">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{location.name}</h2>
-            <div
-              className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${conditionBadge.bg} ${conditionBadge.text} ${conditionBadge.border} flex items-center gap-1.5 flex-shrink-0`}
-              title={condition.reasons.join(', ')}
+            <button
+              onClick={() => setShowConditionModal(true)}
+              className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${conditionBadge.bg} ${conditionBadge.text} ${conditionBadge.border} flex items-center gap-1.5 flex-shrink-0 hover:opacity-80 active:opacity-100 transition-opacity cursor-pointer`}
+              title="Click for condition details"
             >
               <div className={`w-2 h-2 rounded-full ${conditionColor}`} />
               <span>{conditionLabel}</span>
-            </div>
+            </button>
           </div>
           {/* Date and info icons row */}
           <div className="flex items-center justify-between">
@@ -371,6 +376,16 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           pestConditions={pestConditions}
           locationName={location.name}
           onClose={() => setShowPestModal(false)}
+        />
+      )}
+
+      {showConditionModal && (
+        <ConditionDetailsModal
+          locationName={location.name}
+          conditionLevel={condition.level}
+          conditionLabel={conditionLabel}
+          reasons={condition.reasons}
+          onClose={() => setShowConditionModal(false)}
         />
       )}
     </div>
