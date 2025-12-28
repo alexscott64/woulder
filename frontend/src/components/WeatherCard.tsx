@@ -1,5 +1,6 @@
 import { WeatherForecast } from '../types/weather';
 import { RiverData } from '../types/river';
+import { API_BASE_URL } from '../services/api';
 import {
   getWeatherCondition,
   getConditionColor,
@@ -60,7 +61,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
     const fetchRiverData = async () => {
       try {
         console.log(`[${location.name}] Fetching river data for location ID: ${location.id}`);
-        const response = await fetch(`http://localhost:8080/api/rivers/location/${location.id}`);
+        const response = await fetch(`${API_BASE_URL}/rivers/location/${location.id}`);
         console.log(`[${location.name}] Response status: ${response.status}`);
         if (response.ok) {
           const data = await response.json();
@@ -86,7 +87,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const handleRiverClick = async () => {
     setLoadingRivers(true);
     try {
-      const response = await fetch(`http://localhost:8080/api/rivers/location/${location.id}`);
+      const response = await fetch(`${API_BASE_URL}/rivers/location/${location.id}`);
       if (response.ok) {
         const data = await response.json();
         setRiverData(data.rivers);
