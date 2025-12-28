@@ -25,12 +25,21 @@ export interface WeatherData {
   created_at?: string;
 }
 
+export interface DailySunTimes {
+  date: string;    // Date in YYYY-MM-DD format
+  sunrise: string; // Sunrise time (ISO 8601)
+  sunset: string;  // Sunset time (ISO 8601)
+}
+
 export interface WeatherForecast {
   location_id: number;
   location: Location;
   current: WeatherData;
   hourly: WeatherData[];
   historical: WeatherData[];
+  sunrise?: string;  // Today's sunrise time (ISO 8601)
+  sunset?: string;   // Today's sunset time (ISO 8601)
+  daily_sun_times?: DailySunTimes[]; // Sunrise/sunset for each forecast day
 }
 
 export interface AllWeatherResponse {

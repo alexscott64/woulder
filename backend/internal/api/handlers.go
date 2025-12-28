@@ -83,7 +83,7 @@ func (h *Handler) refreshAllWeatherData() {
 		log.Printf("Refreshing weather data for location %d (%s)", location.ID, location.Name)
 
 		// Fetch current + forecast
-		current, forecast, err := h.weatherService.GetCurrentAndForecast(location.Latitude, location.Longitude)
+		current, forecast, _, err := h.weatherService.GetCurrentAndForecast(location.Latitude, location.Longitude)
 		if err != nil {
 			log.Printf("Error refreshing weather for location %d: %v", location.ID, err)
 			continue
@@ -167,7 +167,7 @@ func (h *Handler) GetWeatherForLocation(c *gin.Context) {
 	}
 
 	// Fetch current weather and forecast in a single API call
-	current, forecast, err := h.weatherService.GetCurrentAndForecast(location.Latitude, location.Longitude)
+	current, forecast, sunTimes, err := h.weatherService.GetCurrentAndForecast(location.Latitude, location.Longitude)
 	if err != nil {
 		log.Printf("Error fetching weather for location %d: %v", locationID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch weather"})
@@ -201,6 +201,20 @@ func (h *Handler) GetWeatherForLocation(c *gin.Context) {
 		Current:    *current,
 		Hourly:     forecast,
 		Historical: historical,
+	}
+
+	// Add sunrise/sunset if available
+	if sunTimes != nil {
+		response.Sunrise = sunTimes.Sunrise
+		response.Sunset = sunTimes.Sunset
+		// Add daily sun times for 6-day forecast
+		for _, d := range sunTimes.Daily {
+			response.DailySunTimes = append(response.DailySunTimes, models.DailySunTimes{
+				Date:    d.Date,
+				Sunrise: d.Sunrise,
+				Sunset:  d.Sunset,
+			})
+		}
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -286,13 +300,31 @@ func (h *Handler) GetAllWeather(c *gin.Context) {
 			historical = []models.WeatherData{}
 		}
 
-		allWeather = append(allWeather, models.WeatherForecast{
+		// Fetch fresh sunrise/sunset (quick API call)
+		_, _, sunTimes, _ := h.weatherService.GetCurrentAndForecast(location.Latitude, location.Longitude)
+
+		weatherForecast := models.WeatherForecast{
 			LocationID: location.ID,
 			Location:   location,
 			Current:    *current,
 			Hourly:     forecast,
 			Historical: historical,
-		})
+		}
+
+		if sunTimes != nil {
+			weatherForecast.Sunrise = sunTimes.Sunrise
+			weatherForecast.Sunset = sunTimes.Sunset
+			// Add daily sun times for 6-day forecast
+			for _, d := range sunTimes.Daily {
+				weatherForecast.DailySunTimes = append(weatherForecast.DailySunTimes, models.DailySunTimes{
+					Date:    d.Date,
+					Sunrise: d.Sunrise,
+					Sunset:  d.Sunset,
+				})
+			}
+		}
+
+		allWeather = append(allWeather, weatherForecast)
 	}
 
 	// Get last refresh time

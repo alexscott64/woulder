@@ -50,6 +50,11 @@ type openMeteoResponse struct {
 		ApparentTemperature []float64 `json:"apparent_temperature"`
 		Pressure            []float64 `json:"surface_pressure"`
 	} `json:"hourly"`
+	Daily *struct {
+		Time    []string `json:"time"`
+		Sunrise []string `json:"sunrise"`
+		Sunset  []string `json:"sunset"`
+	} `json:"daily"`
 }
 
 func NewOpenMeteoClient() *OpenMeteoClient {
@@ -137,39 +142,76 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 	return weather, nil
 }
 
+// DailySunTime represents sunrise/sunset for a single day
+type DailySunTime struct {
+	Date    string
+	Sunrise string
+	Sunset  string
+}
+
+// SunTimes contains sunrise and sunset information
+type SunTimes struct {
+	Sunrise string         // Today's sunrise
+	Sunset  string         // Today's sunset
+	Daily   []DailySunTime // All days' sunrise/sunset
+}
+
 // GetCurrentAndForecast fetches both current weather and forecast in a single API call
-func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, error) {
-	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=16",
+func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *SunTimes, error) {
+	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&daily=sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=America/Los_Angeles&forecast_days=16",
 		openMeteoForecastURL, lat, lon)
 
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to fetch weather from Open-Meteo: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to fetch weather from Open-Meteo: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, nil, fmt.Errorf("Open-Meteo API error (status %d): %s", resp.StatusCode, string(body))
+		return nil, nil, nil, fmt.Errorf("Open-Meteo API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	var data openMeteoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode Open-Meteo response: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to decode Open-Meteo response: %w", err)
 	}
 
 	if data.Current == nil {
-		return nil, nil, fmt.Errorf("no current weather data returned from Open-Meteo")
+		return nil, nil, nil, fmt.Errorf("no current weather data returned from Open-Meteo")
 	}
 
 	if len(data.Hourly.Time) == 0 {
-		return nil, nil, fmt.Errorf("no hourly data returned from Open-Meteo")
+		return nil, nil, nil, fmt.Errorf("no hourly data returned from Open-Meteo")
+	}
+
+	// Extract sunrise/sunset for all days
+	var sunTimes *SunTimes
+	if data.Daily != nil && len(data.Daily.Sunrise) > 0 && len(data.Daily.Sunset) > 0 {
+		sunTimes = &SunTimes{
+			Sunrise: data.Daily.Sunrise[0],
+			Sunset:  data.Daily.Sunset[0],
+		}
+		// Build daily sun times array
+		for i := 0; i < len(data.Daily.Time) && i < len(data.Daily.Sunrise) && i < len(data.Daily.Sunset); i++ {
+			sunTimes.Daily = append(sunTimes.Daily, DailySunTime{
+				Date:    data.Daily.Time[i],
+				Sunrise: data.Daily.Sunrise[i],
+				Sunset:  data.Daily.Sunset[i],
+			})
+		}
 	}
 
 	// Parse current weather timestamp - ensure it's in UTC
 	timestamp, err := parseTimestampUTC(data.Current.Time)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+
+	// Determine if it's currently night time for the icon
+	isNight := false
+	if sunTimes != nil {
+		isNight = isNightTime(data.Current.Time, sunTimes.Sunrise, sunTimes.Sunset)
 	}
 
 	// Create current weather data
@@ -184,7 +226,7 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 		CloudCover:    data.Current.CloudCover,
 		Pressure:      int(data.Current.Pressure),
 		Description:   getWeatherDescription(data.Current.WeatherCode),
-		Icon:          getWeatherIcon(data.Current.WeatherCode),
+		Icon:          getWeatherIconWithTime(data.Current.WeatherCode, isNight),
 	}
 
 	// Parse forecast data (3-hour intervals)
@@ -194,6 +236,13 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 		if err != nil {
 			log.Printf("Failed to parse hourly timestamp '%s': %v", data.Hourly.Time[i], err)
 			continue
+		}
+
+		// Determine day/night for this forecast hour
+		hourIsNight := false
+		if sunTimes != nil {
+			// Find the appropriate sunrise/sunset for this day
+			hourIsNight = isNightTimeForForecast(data.Hourly.Time[i], data.Daily)
 		}
 
 		weather := models.WeatherData{
@@ -207,13 +256,13 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 			CloudCover:    data.Hourly.CloudCover[i],
 			Pressure:      int(data.Hourly.Pressure[i]),
 			Description:   getWeatherDescription(data.Hourly.WeatherCode[i]),
-			Icon:          getWeatherIcon(data.Hourly.WeatherCode[i]),
+			Icon:          getWeatherIconWithTime(data.Hourly.WeatherCode[i], hourIsNight),
 		}
 
 		forecast = append(forecast, weather)
 	}
 
-	return current, forecast, nil
+	return current, forecast, sunTimes, nil
 }
 
 // GetForecast fetches hourly forecast data
@@ -358,38 +407,109 @@ func getWeatherDescription(code int) string {
 	return "Unknown"
 }
 
+// isNightTime checks if the given time is before sunrise or after sunset
+func isNightTime(timeStr, sunrise, sunset string) bool {
+	// Parse time strings (format: "2025-12-27T16:15" or "2025-12-27T07:54")
+	// Extract just the time portion for comparison
+	getTimeMinutes := func(s string) int {
+		// Find the T separator
+		for i, c := range s {
+			if c == 'T' {
+				timepart := s[i+1:]
+				// Parse HH:MM
+				var hour, min int
+				fmt.Sscanf(timepart, "%d:%d", &hour, &min)
+				return hour*60 + min
+			}
+		}
+		return 12 * 60 // Default to noon if parsing fails
+	}
+
+	currentMinutes := getTimeMinutes(timeStr)
+	sunriseMinutes := getTimeMinutes(sunrise)
+	sunsetMinutes := getTimeMinutes(sunset)
+
+	// Night is before sunrise or after sunset
+	return currentMinutes < sunriseMinutes || currentMinutes >= sunsetMinutes
+}
+
+// isNightTimeForForecast checks if a forecast hour is night time using the daily sunrise/sunset data
+func isNightTimeForForecast(timeStr string, daily *struct {
+	Time    []string `json:"time"`
+	Sunrise []string `json:"sunrise"`
+	Sunset  []string `json:"sunset"`
+}) bool {
+	if daily == nil || len(daily.Time) == 0 {
+		return false
+	}
+
+	// Extract date from timeStr (format: "2025-12-27T15:00")
+	dateStr := ""
+	for i, c := range timeStr {
+		if c == 'T' {
+			dateStr = timeStr[:i]
+			break
+		}
+	}
+
+	// Find matching day in daily data
+	for i, day := range daily.Time {
+		if day == dateStr && i < len(daily.Sunrise) && i < len(daily.Sunset) {
+			return isNightTime(timeStr, daily.Sunrise[i], daily.Sunset[i])
+		}
+	}
+
+	// If no match found, use first day's sunrise/sunset as approximation
+	if len(daily.Sunrise) > 0 && len(daily.Sunset) > 0 {
+		return isNightTime(timeStr, daily.Sunrise[0], daily.Sunset[0])
+	}
+
+	return false
+}
+
 // Map WMO weather codes to OpenWeatherMap-like icon codes for consistency
 func getWeatherIcon(code int) string {
+	return getWeatherIconWithTime(code, false)
+}
+
+// getWeatherIconWithTime returns weather icon with day/night suffix
+func getWeatherIconWithTime(code int, isNight bool) string {
+	suffix := "d"
+	if isNight {
+		suffix = "n"
+	}
+
 	// Map to OpenWeatherMap icon codes to maintain frontend compatibility
+	// Icons that change with day/night: 01 (clear), 02 (few clouds), 10 (rain)
 	iconMap := map[int]string{
-		0:  "01d", // Clear sky
-		1:  "02d", // Mainly clear
-		2:  "03d", // Partly cloudy
-		3:  "04d", // Overcast
-		45: "50d", // Fog
-		48: "50d", // Rime fog
-		51: "09d", // Light drizzle
-		53: "09d", // Moderate drizzle
-		55: "09d", // Dense drizzle
-		61: "10d", // Slight rain
-		63: "10d", // Moderate rain
-		65: "10d", // Heavy rain
-		71: "13d", // Slight snow
-		73: "13d", // Moderate snow
-		75: "13d", // Heavy snow
-		77: "13d", // Snow grains
-		80: "09d", // Rain showers
-		81: "09d", // Moderate rain showers
-		82: "09d", // Violent rain showers
-		85: "13d", // Snow showers
-		86: "13d", // Heavy snow showers
-		95: "11d", // Thunderstorm
-		96: "11d", // Thunderstorm with hail
-		99: "11d", // Thunderstorm with heavy hail
+		0:  "01", // Clear sky
+		1:  "02", // Mainly clear
+		2:  "03", // Partly cloudy
+		3:  "04", // Overcast
+		45: "50", // Fog
+		48: "50", // Rime fog
+		51: "09", // Light drizzle
+		53: "09", // Moderate drizzle
+		55: "09", // Dense drizzle
+		61: "10", // Slight rain
+		63: "10", // Moderate rain
+		65: "10", // Heavy rain
+		71: "13", // Slight snow
+		73: "13", // Moderate snow
+		75: "13", // Heavy snow
+		77: "13", // Snow grains
+		80: "09", // Rain showers
+		81: "09", // Moderate rain showers
+		82: "09", // Violent rain showers
+		85: "13", // Snow showers
+		86: "13", // Heavy snow showers
+		95: "11", // Thunderstorm
+		96: "11", // Thunderstorm with hail
+		99: "11", // Thunderstorm with heavy hail
 	}
 
 	if icon, ok := iconMap[code]; ok {
-		return icon
+		return icon + suffix
 	}
-	return "01d" // Default to clear sky
+	return "01" + suffix // Default to clear sky
 }

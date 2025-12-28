@@ -23,26 +23,26 @@ func NewWeatherService() *WeatherService {
 }
 
 // GetCurrentAndForecast fetches both current weather and forecast in a single API call
-func (s *WeatherService) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, error) {
+func (s *WeatherService) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *SunTimes, error) {
 	if s.preferOpenMeteo {
-		current, forecast, err := s.openMeteo.GetCurrentAndForecast(lat, lon)
+		current, forecast, sunTimes, err := s.openMeteo.GetCurrentAndForecast(lat, lon)
 		if err == nil {
 			log.Printf("Successfully fetched current + forecast from Open-Meteo for (%.6f, %.6f) - %d hours", lat, lon, len(forecast))
-			return current, forecast, nil
+			return current, forecast, sunTimes, nil
 		}
 		log.Printf("Open-Meteo failed for current+forecast (%.6f, %.6f): %v, falling back to separate calls", lat, lon, err)
 	}
 
-	// Fallback to separate calls
+	// Fallback to separate calls (no sun times available from fallback)
 	current, err := s.GetCurrentWeather(lat, lon)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	forecast, err := s.GetForecast(lat, lon)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return current, forecast, nil
+	return current, forecast, nil, nil
 }
 
 // GetCurrentWeather fetches current weather with fallback

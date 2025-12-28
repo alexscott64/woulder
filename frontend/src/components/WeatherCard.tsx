@@ -8,7 +8,7 @@ import {
   getSnowProbability
 } from '../utils/weatherConditions';
 import { format } from 'date-fns';
-import { Cloud, Droplet, Wind, Snowflake, ChevronDown, ChevronUp, Waves } from 'lucide-react';
+import { Cloud, Droplet, Wind, Snowflake, ChevronDown, ChevronUp, Waves, Sunrise, Sunset } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { RiverInfoModal } from './RiverInfoModal';
 
@@ -18,8 +18,19 @@ interface WeatherCardProps {
   onToggleExpand: (expanded: boolean) => void;
 }
 
+// Format sun time from ISO string (e.g., "2025-12-27T07:54") to "7:54 AM"
+function formatSunTime(isoTime: string | undefined): string {
+  if (!isoTime) return '--';
+  try {
+    const date = new Date(isoTime);
+    return format(date, 'h:mm a');
+  } catch {
+    return '--';
+  }
+}
+
 export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCardProps) {
-  const { location, current, hourly, historical } = forecast;
+  const { location, current, hourly, historical, sunrise, sunset } = forecast;
   const condition = getWeatherCondition(current);
   const conditionColor = getConditionColor(condition.level);
 
@@ -164,7 +175,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
             alt={current.description}
             className="w-20 h-20"
           />
-          <div>
+          <div className="flex-1">
             <div className="text-4xl font-bold text-gray-900">
               {Math.round(current.temperature)}°F
             </div>
@@ -172,6 +183,19 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
               {current.description}
             </div>
           </div>
+          {/* Sunrise/Sunset */}
+          {(sunrise || sunset) && (
+            <div className="flex flex-col gap-1 text-xs text-gray-600">
+              <div className="flex items-center gap-1">
+                <Sunrise className="w-4 h-4 text-orange-400" />
+                <span>{formatSunTime(sunrise)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Sunset className="w-4 h-4 text-orange-600" />
+                <span>{formatSunTime(sunset)}</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Rain Alert */}

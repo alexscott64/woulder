@@ -164,6 +164,7 @@ function Dashboard() {
                           currentWeather={forecast.current}
                           historicalData={forecast.historical || []}
                           elevationFt={forecast.location.elevation_ft || 0}
+                          dailySunTimes={forecast.daily_sun_times}
                         />
                       </div>
                       <button
@@ -219,6 +220,7 @@ function Dashboard() {
                               currentWeather={sortedWeather.find(f => f.location_id === expandedLocationId)?.current}
                               historicalData={sortedWeather.find(f => f.location_id === expandedLocationId)?.historical || []}
                               elevationFt={sortedWeather.find(f => f.location_id === expandedLocationId)?.location.elevation_ft || 0}
+                              dailySunTimes={sortedWeather.find(f => f.location_id === expandedLocationId)?.daily_sun_times}
                             />
                           </div>
                           <button

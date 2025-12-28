@@ -48,13 +48,23 @@ type WeatherData struct {
 	CreatedAt     time.Time `json:"created_at" db:"created_at"`
 }
 
+// DailySunTimes represents sunrise/sunset for a single day
+type DailySunTimes struct {
+	Date    string `json:"date"`    // Date in YYYY-MM-DD format
+	Sunrise string `json:"sunrise"` // Sunrise time (ISO 8601)
+	Sunset  string `json:"sunset"`  // Sunset time (ISO 8601)
+}
+
 // WeatherForecast represents forecast data
 type WeatherForecast struct {
-	LocationID int           `json:"location_id"`
-	Location   Location      `json:"location"`
-	Current    WeatherData   `json:"current"`
-	Hourly     []WeatherData `json:"hourly"`
-	Historical []WeatherData `json:"historical"`
+	LocationID    int             `json:"location_id"`
+	Location      Location        `json:"location"`
+	Current       WeatherData     `json:"current"`
+	Hourly        []WeatherData   `json:"hourly"`
+	Historical    []WeatherData   `json:"historical"`
+	Sunrise       string          `json:"sunrise,omitempty"`    // Today's sunrise time (ISO 8601)
+	Sunset        string          `json:"sunset,omitempty"`     // Today's sunset time (ISO 8601)
+	DailySunTimes []DailySunTimes `json:"daily_sun_times,omitempty"` // Sunrise/sunset for each forecast day
 }
 
 // RiverData represents river gauge information with current conditions

@@ -1,15 +1,16 @@
-import { WeatherData } from '../types/weather';
+import { WeatherData, DailySunTimes } from '../types/weather';
 import { getWeatherCondition, getConditionColor, getWeatherIconUrl } from '../utils/weatherConditions';
 import { calculateSnowAccumulation, getSnowDepthColor } from '../utils/snowAccumulation';
 import { getTempColor, getPrecipColor } from '../utils/climbingConditions';
 import { format } from 'date-fns';
-import { Droplet, Wind, Snowflake } from 'lucide-react';
+import { Droplet, Wind, Snowflake, Sunrise, Sunset, Sun } from 'lucide-react';
 
 interface ForecastViewProps {
   hourlyData: WeatherData[];
   currentWeather?: WeatherData;
   historicalData?: WeatherData[];
   elevationFt?: number; // Elevation in feet for temperature adjustment
+  dailySunTimes?: DailySunTimes[]; // Sunrise/sunset for each day
 }
 
 interface DayForecast {
@@ -26,11 +27,104 @@ interface DayForecast {
   hasSnow: boolean;
   hasRain: boolean;
   snowDepth: number; // Estimated snow depth in inches
+  sunrise?: string;  // Sunrise time for this day
+  sunset?: string;   // Sunset time for this day
+  daylightHours?: number; // Total daylight hours
+  effectiveSunHours?: number; // Estimated direct sun hours (accounting for clouds)
 }
 
-export function ForecastView({ hourlyData, currentWeather, historicalData, elevationFt = 0 }: ForecastViewProps) {
+// Helper to format sun time from ISO string to "7:54 AM" format
+function formatSunTime(isoTime: string | undefined): string {
+  if (!isoTime) return '--';
+  try {
+    const date = new Date(isoTime);
+    return format(date, 'h:mm a');
+  } catch {
+    return '--';
+  }
+}
+
+// Helper to calculate daylight hours from sunrise/sunset
+function calculateDaylightHours(sunrise: string | undefined, sunset: string | undefined): number | undefined {
+  if (!sunrise || !sunset) return undefined;
+  try {
+    const sunriseDate = new Date(sunrise);
+    const sunsetDate = new Date(sunset);
+    const diffMs = sunsetDate.getTime() - sunriseDate.getTime();
+    return diffMs / (1000 * 60 * 60); // Convert to hours
+  } catch {
+    return undefined;
+  }
+}
+
+// Helper to calculate effective sun hours based on cloud cover during daylight
+// This estimates how much direct sunlight an area will receive, accounting for clouds
+function calculateEffectiveSunHours(
+  hours: WeatherData[],
+  sunrise: string | undefined,
+  sunset: string | undefined
+): number | undefined {
+  if (!sunrise || !sunset || hours.length === 0) return undefined;
+
+  try {
+    const sunriseTime = new Date(sunrise).getTime();
+    const sunsetTime = new Date(sunset).getTime();
+
+    let effectiveSunMinutes = 0;
+
+    // Sort hours by timestamp
+    const sortedHours = [...hours].sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    for (let i = 0; i < sortedHours.length; i++) {
+      const hour = sortedHours[i];
+      const hourTime = new Date(hour.timestamp).getTime();
+
+      // Determine the time interval this data point represents
+      // Use 3 hours since that's our forecast interval, or time to next point
+      let intervalMinutes = 180; // 3 hours default
+      if (i < sortedHours.length - 1) {
+        const nextHourTime = new Date(sortedHours[i + 1].timestamp).getTime();
+        intervalMinutes = (nextHourTime - hourTime) / (1000 * 60);
+      }
+
+      // Calculate overlap with daylight hours
+      const intervalStart = hourTime;
+      const intervalEnd = hourTime + intervalMinutes * 60 * 1000;
+
+      // Find the overlap between this interval and daylight
+      const overlapStart = Math.max(intervalStart, sunriseTime);
+      const overlapEnd = Math.min(intervalEnd, sunsetTime);
+
+      if (overlapEnd > overlapStart) {
+        const daylightMinutesInInterval = (overlapEnd - overlapStart) / (1000 * 60);
+
+        // Cloud cover is 0-100%, convert to sun fraction (0% clouds = 100% sun)
+        // Use a non-linear curve: thin clouds still let significant light through
+        const cloudFraction = hour.cloud_cover / 100;
+        // Effective sun: 100% at 0% clouds, ~50% at 50% clouds, ~10% at 100% clouds
+        const sunFraction = Math.pow(1 - cloudFraction, 1.5);
+
+        effectiveSunMinutes += daylightMinutesInInterval * sunFraction;
+      }
+    }
+
+    return effectiveSunMinutes / 60; // Convert to hours
+  } catch {
+    return undefined;
+  }
+}
+
+export function ForecastView({ hourlyData, currentWeather, historicalData, elevationFt = 0, dailySunTimes }: ForecastViewProps) {
   // Group hourly data by day
   const dailyForecasts: DayForecast[] = [];
+
+  // Create a map of sun times by date for quick lookup
+  const sunTimesByDate = new Map<string, DailySunTimes>();
+  if (dailySunTimes) {
+    dailySunTimes.forEach(st => sunTimesByDate.set(st.date, st));
+  }
 
   // Use local timezone to get today's date
   const now = new Date();
@@ -112,6 +206,13 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
     // Get snow depth for this day (end of day depth)
     const snowDepth = snowDepthByDay.get(dateKey) || 0;
 
+    // Get sun times for this day
+    const daySunTimes = sunTimesByDate.get(dateKey);
+    const sunrise = daySunTimes?.sunrise;
+    const sunset = daySunTimes?.sunset;
+    const daylightHours = calculateDaylightHours(sunrise, sunset);
+    const effectiveSunHours = calculateEffectiveSunHours(hours, sunrise, sunset);
+
     dailyForecasts.push({
       date,
       dayName: isToday ? 'Today' : format(date, 'EEE'),
@@ -126,6 +227,10 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       hasSnow,
       hasRain,
       snowDepth,
+      sunrise,
+      sunset,
+      daylightHours,
+      effectiveSunHours,
     });
   }
 
@@ -205,6 +310,28 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                   </div>
                 )}
               </div>
+
+              {/* Sunrise/Sunset and Sun Hours */}
+              {day.sunrise && day.sunset && (
+                <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+                  <div className="flex items-center justify-center gap-2 text-xs text-gray-600">
+                    <div className="flex items-center gap-0.5">
+                      <Sunrise className="w-3 h-3 text-orange-400" />
+                      <span>{formatSunTime(day.sunrise)}</span>
+                    </div>
+                    <div className="flex items-center gap-0.5">
+                      <Sunset className="w-3 h-3 text-orange-600" />
+                      <span>{formatSunTime(day.sunset)}</span>
+                    </div>
+                  </div>
+                  {day.effectiveSunHours !== undefined && day.daylightHours && (
+                    <div className="flex items-center justify-center gap-1 text-xs text-amber-600" title={`${day.daylightHours.toFixed(1)}h total daylight`}>
+                      <Sun className="w-3 h-3" />
+                      <span className="font-medium">{day.effectiveSunHours.toFixed(1)}h sun</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Description */}
               <div className="text-xs text-gray-600 mt-2 capitalize truncate">
