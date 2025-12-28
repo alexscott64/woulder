@@ -82,6 +82,7 @@ func (h *Handler) refreshAllWeatherData() {
 	for _, location := range locations {
 		log.Printf("Refreshing weather data for location %d (%s)", location.ID, location.Name)
 
+		// Fetch current + forecast
 		current, forecast, err := h.weatherService.GetCurrentAndForecast(location.Latitude, location.Longitude)
 		if err != nil {
 			log.Printf("Error refreshing weather for location %d: %v", location.ID, err)
@@ -98,6 +99,20 @@ func (h *Handler) refreshAllWeatherData() {
 			if err := h.db.SaveWeatherData(&f); err != nil {
 				log.Printf("Error saving forecast data: %v", err)
 			}
+		}
+
+		// Fetch historical data (last 7 days) from Open-Meteo historical API
+		historical, err := h.weatherService.GetHistoricalWeather(location.Latitude, location.Longitude, 7)
+		if err != nil {
+			log.Printf("Error fetching historical weather for location %d: %v", location.ID, err)
+		} else {
+			for _, hist := range historical {
+				hist.LocationID = location.ID
+				if err := h.db.SaveWeatherData(&hist); err != nil {
+					log.Printf("Error saving historical data: %v", err)
+				}
+			}
+			log.Printf("Saved %d historical data points for location %d", len(historical), location.ID)
 		}
 
 		// Small delay between locations to be nice to the API
