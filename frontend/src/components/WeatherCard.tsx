@@ -157,61 +157,63 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
       <div className="p-4 sm:p-6">
         {/* Header */}
         <div className="mb-4">
-          {/* Title row with condition badge */}
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">{location.name}</h2>
-            <div
-              className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${conditionBadge.bg} ${conditionBadge.text} ${conditionBadge.border} flex items-center gap-1.5 flex-shrink-0`}
-              title={condition.reasons.join(', ')}
-            >
-              <div className={`w-2 h-2 rounded-full ${conditionColor}`} />
-              <span>{conditionLabel}</span>
+          {/* Title row */}
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 leading-tight">{location.name}</h2>
+            {/* Condition badge + Info icons grouped together */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Info Icons - always visible */}
+              {(pestConditions || hasRivers) && (
+                <div className="flex items-center gap-0.5">
+                  {/* Pest Activity Icon */}
+                  {pestConditions && (
+                    <button
+                      onClick={() => setShowPestModal(true)}
+                      className="relative p-1 hover:bg-amber-50 active:bg-amber-100 rounded-full transition-colors"
+                      title="Pest Activity Info"
+                    >
+                      <Bug className={`w-4 h-4 sm:w-5 sm:h-5 ${getPestLevelColor(pestConditions.mosquitoLevel)}`} />
+                      <div className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-white ${
+                        pestConditions.mosquitoScore >= 60 || pestConditions.outdoorPestScore >= 60 ? 'bg-red-500' :
+                        pestConditions.mosquitoScore >= 40 || pestConditions.outdoorPestScore >= 40 ? 'bg-yellow-500' :
+                        'bg-green-500'
+                      }`} />
+                    </button>
+                  )}
+                  {/* River Crossing Icon */}
+                  {hasRivers && (
+                    <button
+                      onClick={handleRiverClick}
+                      disabled={loadingRivers}
+                      className="relative p-1 hover:bg-blue-50 active:bg-blue-100 rounded-full transition-colors"
+                      title="River Crossing Info"
+                    >
+                      <Waves className={`w-4 h-4 sm:w-5 sm:h-5 text-blue-600 ${loadingRivers ? 'animate-pulse' : ''}`} />
+                      {riverData.length > 0 && (
+                        <div className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-white ${
+                          riverData.every(r => r.is_safe) ? 'bg-green-500' :
+                          riverData.some(r => r.status === 'unsafe') ? 'bg-red-500' :
+                          'bg-yellow-500'
+                        }`} />
+                      )}
+                    </button>
+                  )}
+                </div>
+              )}
+              {/* Condition badge */}
+              <div
+                className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${conditionBadge.bg} ${conditionBadge.text} ${conditionBadge.border} flex items-center gap-1`}
+                title={condition.reasons.join(', ')}
+              >
+                <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${conditionColor}`} />
+                <span>{conditionLabel}</span>
+              </div>
             </div>
           </div>
-          {/* Date and info icons row */}
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">
-              {format(new Date(current.timestamp), 'MMM d, h:mm a')}
-            </p>
-            {/* Info Icons */}
-            {(pestConditions || hasRivers) && (
-              <div className="flex items-center gap-1">
-                {/* Pest Activity Icon */}
-                {pestConditions && (
-                  <button
-                    onClick={() => setShowPestModal(true)}
-                    className="relative p-1.5 hover:bg-amber-50 active:bg-amber-100 rounded-full transition-colors"
-                    title="Pest Activity Info"
-                  >
-                    <Bug className={`w-5 h-5 ${getPestLevelColor(pestConditions.mosquitoLevel)}`} />
-                    <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
-                      pestConditions.mosquitoScore >= 60 || pestConditions.outdoorPestScore >= 60 ? 'bg-red-500' :
-                      pestConditions.mosquitoScore >= 40 || pestConditions.outdoorPestScore >= 40 ? 'bg-yellow-500' :
-                      'bg-green-500'
-                    }`} />
-                  </button>
-                )}
-                {/* River Crossing Icon */}
-                {hasRivers && (
-                  <button
-                    onClick={handleRiverClick}
-                    disabled={loadingRivers}
-                    className="relative p-1.5 hover:bg-blue-50 active:bg-blue-100 rounded-full transition-colors"
-                    title="River Crossing Info"
-                  >
-                    <Waves className={`w-5 h-5 text-blue-600 ${loadingRivers ? 'animate-pulse' : ''}`} />
-                    {riverData.length > 0 && (
-                      <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
-                        riverData.every(r => r.is_safe) ? 'bg-green-500' :
-                        riverData.some(r => r.status === 'unsafe') ? 'bg-red-500' :
-                        'bg-yellow-500'
-                      }`} />
-                    )}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+          {/* Date row */}
+          <p className="text-sm text-gray-500">
+            {format(new Date(current.timestamp), 'MMM d, h:mm a')}
+          </p>
         </div>
 
         {/* Current Weather */}
