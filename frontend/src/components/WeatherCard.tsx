@@ -133,7 +133,11 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const rainNext48hBad = rainNext48h > 1; // Average per day
 
   return (
-    <div className="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow duration-200 border border-gray-200">
+    <div className={`bg-white shadow-md hover:shadow-lg transition-all duration-200 border border-gray-200 ${
+      isExpanded
+        ? 'rounded-t-xl rounded-b-none border-b-0'
+        : 'rounded-xl'
+    }`}>
       {/* Main Card Content */}
       <div className="p-6">
         {/* Header */}
@@ -298,7 +302,11 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
       {/* Expandable Forecast Section */}
       <button
         onClick={() => onToggleExpand(!isExpanded)}
-        className="w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+        className={`w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+          isExpanded
+            ? `${conditionColor.replace('bg-', 'bg-opacity-20 bg-')} text-gray-900 border-b-0`
+            : 'text-gray-700 hover:bg-gray-50'
+        }`}
       >
         {isExpanded ? (
           <>

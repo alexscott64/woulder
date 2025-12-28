@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { weatherApi } from './services/api';
 import { WeatherCard } from './components/WeatherCard';
 import { ForecastView } from './components/ForecastView';
+import { getWeatherCondition, getConditionColor } from './utils/weatherConditions';
 import { RefreshCw, WifiOff, Wifi, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -143,41 +144,44 @@ function Dashboard() {
           <>
             {/* Mobile Layout - Single column with inline forecast */}
             <div className="md:hidden space-y-6">
-              {sortedWeather.map((forecast) => (
-                <div key={forecast.location_id}>
-                  <WeatherCard
-                    forecast={forecast}
-                    isExpanded={expandedLocationId === forecast.location_id}
-                    onToggleExpand={(expanded) => setExpandedLocationId(expanded ? forecast.location_id : null)}
-                  />
-                  {/* Expanded forecast directly after this card on mobile */}
-                  {expandedLocationId === forecast.location_id && (
-                    <div className="mt-4 bg-white rounded-xl shadow-md border border-gray-200">
-                      <div className="p-4 border-b border-gray-200">
-                        <h3 className="text-lg font-bold text-gray-900">
-                          {forecast.location.name} - 6-Day Forecast
-                        </h3>
+              {sortedWeather.map((forecast) => {
+                const isExpanded = expandedLocationId === forecast.location_id;
+                const condition = getWeatherCondition(forecast.current);
+                const conditionColor = getConditionColor(condition.level);
+
+                return (
+                  <div key={forecast.location_id} className={isExpanded ? 'shadow-lg rounded-xl' : ''}>
+                    <WeatherCard
+                      forecast={forecast}
+                      isExpanded={isExpanded}
+                      onToggleExpand={(expanded) => setExpandedLocationId(expanded ? forecast.location_id : null)}
+                    />
+                    {/* Expanded forecast - seamlessly connected to card */}
+                    {isExpanded && (
+                      <div className="bg-white rounded-b-xl border border-t-0 border-gray-200 overflow-hidden">
+                        {/* Colored accent bar showing which card this belongs to */}
+                        <div className={`h-1 ${conditionColor}`} />
+                        <div className="bg-gray-50 p-4">
+                          <ForecastView
+                            hourlyData={forecast.hourly || []}
+                            currentWeather={forecast.current}
+                            historicalData={forecast.historical || []}
+                            elevationFt={forecast.location.elevation_ft || 0}
+                            dailySunTimes={forecast.daily_sun_times}
+                          />
+                        </div>
+                        <button
+                          onClick={() => setExpandedLocationId(null)}
+                          className={`w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors ${conditionColor} bg-opacity-10`}
+                        >
+                          <ChevronUp className="w-4 h-4" />
+                          Hide Forecast
+                        </button>
                       </div>
-                      <div className="bg-gray-50 p-4">
-                        <ForecastView
-                          hourlyData={forecast.hourly || []}
-                          currentWeather={forecast.current}
-                          historicalData={forecast.historical || []}
-                          elevationFt={forecast.location.elevation_ft || 0}
-                          dailySunTimes={forecast.daily_sun_times}
-                        />
-                      </div>
-                      <button
-                        onClick={() => setExpandedLocationId(null)}
-                        className="w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <ChevronUp className="w-4 h-4" />
-                        Hide Forecast
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Desktop Layout - Grid with row-based forecast */}
@@ -191,6 +195,11 @@ function Dashboard() {
                   const rowForecasts = sortedWeather.slice(i, i + 3);
                   const rowNumber = i / 3;
                   const expandedInThisRow = expandedIndex >= i && expandedIndex < i + 3;
+                  const expandedForecast = expandedInThisRow ? sortedWeather.find(f => f.location_id === expandedLocationId) : null;
+                  const expandedCondition = expandedForecast ? getWeatherCondition(expandedForecast.current) : null;
+                  const expandedConditionColor = expandedCondition ? getConditionColor(expandedCondition.level) : '';
+                  // Calculate position of expanded card within row (0, 1, or 2)
+                  const expandedPositionInRow = expandedIndex >= 0 ? expandedIndex - i : -1;
 
                   rows.push(
                     <div key={`row-${rowNumber}`}>
@@ -207,29 +216,47 @@ function Dashboard() {
                       </div>
 
                       {/* Expanded forecast after this row */}
-                      {expandedInThisRow && expandedLocationId && (
-                        <div className="mt-6 bg-white rounded-xl shadow-md border border-gray-200">
-                          <div className="p-6 border-b border-gray-200">
-                            <h3 className="text-xl font-bold text-gray-900">
-                              {sortedWeather.find(f => f.location_id === expandedLocationId)?.location.name} - 6-Day Forecast
-                            </h3>
+                      {expandedInThisRow && expandedForecast && (
+                        <div className="relative mt-4">
+                          {/* Arrow indicator pointing to the active card */}
+                          <div
+                            className="absolute -top-2 w-4 h-4 bg-white border-l border-t border-gray-200 transform rotate-45 z-10"
+                            style={{
+                              left: expandedPositionInRow === 0 ? 'calc(16.67% - 8px)' :
+                                    expandedPositionInRow === 1 ? 'calc(50% - 8px)' :
+                                    'calc(83.33% - 8px)'
+                            }}
+                          />
+                          <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                            {/* Colored accent bar */}
+                            <div className={`h-1.5 ${expandedConditionColor}`} />
+                            {/* Header with location name */}
+                            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-3 h-3 rounded-full ${expandedConditionColor}`} />
+                                <h3 className="text-lg font-bold text-gray-900">
+                                  {expandedForecast.location.name}
+                                </h3>
+                              </div>
+                              <span className="text-sm text-gray-500">6-Day Forecast</span>
+                            </div>
+                            <div className="bg-gray-50 p-6">
+                              <ForecastView
+                                hourlyData={expandedForecast.hourly || []}
+                                currentWeather={expandedForecast.current}
+                                historicalData={expandedForecast.historical || []}
+                                elevationFt={expandedForecast.location.elevation_ft || 0}
+                                dailySunTimes={expandedForecast.daily_sun_times}
+                              />
+                            </div>
+                            <button
+                              onClick={() => setExpandedLocationId(null)}
+                              className={`w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors`}
+                            >
+                              <ChevronUp className="w-4 h-4" />
+                              Hide Forecast
+                            </button>
                           </div>
-                          <div className="bg-gray-50 p-6">
-                            <ForecastView
-                              hourlyData={sortedWeather.find(f => f.location_id === expandedLocationId)?.hourly || []}
-                              currentWeather={sortedWeather.find(f => f.location_id === expandedLocationId)?.current}
-                              historicalData={sortedWeather.find(f => f.location_id === expandedLocationId)?.historical || []}
-                              elevationFt={sortedWeather.find(f => f.location_id === expandedLocationId)?.location.elevation_ft || 0}
-                              dailySunTimes={sortedWeather.find(f => f.location_id === expandedLocationId)?.daily_sun_times}
-                            />
-                          </div>
-                          <button
-                            onClick={() => setExpandedLocationId(null)}
-                            className="w-full px-6 py-3 border-t border-gray-200 flex items-center justify-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                          >
-                            <ChevronUp className="w-4 h-4" />
-                            Hide Forecast
-                          </button>
                         </div>
                       )}
                     </div>
