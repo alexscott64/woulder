@@ -124,7 +124,7 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 		Timestamp:     timestamp,
 		Temperature:   data.Current.Temperature2m,
 		FeelsLike:     data.Current.ApparentTemperature,
-		Precipitation: data.Hourly.Rain[0] + data.Hourly.Snowfall[0], // Use hourly forecast for precipitation
+		Precipitation: data.Hourly.Precipitation[0],
 		Humidity:      data.Current.RelativeHumidity2m,
 		WindSpeed:     data.Current.WindSpeed10m,
 		WindDirection: data.Current.WindDirection10m,
@@ -177,7 +177,7 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 		Timestamp:     timestamp,
 		Temperature:   data.Current.Temperature2m,
 		FeelsLike:     data.Current.ApparentTemperature,
-		Precipitation: data.Hourly.Rain[0] + data.Hourly.Snowfall[0],
+		Precipitation: data.Hourly.Precipitation[0],
 		Humidity:      data.Current.RelativeHumidity2m,
 		WindSpeed:     data.Current.WindSpeed10m,
 		WindDirection: data.Current.WindDirection10m,
@@ -200,7 +200,7 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 			Timestamp:     timestamp,
 			Temperature:   data.Hourly.Temperature2m[i],
 			FeelsLike:     data.Hourly.ApparentTemperature[i],
-			Precipitation: data.Hourly.Rain[i] + data.Hourly.Snowfall[i],
+			Precipitation: data.Hourly.Precipitation[i],
 			Humidity:      data.Hourly.RelativeHumidity2m[i],
 			WindSpeed:     data.Hourly.WindSpeed10m[i],
 			WindDirection: data.Hourly.WindDirection10m[i],
@@ -250,7 +250,7 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 			Timestamp:     timestamp,
 			Temperature:   data.Hourly.Temperature2m[i],
 			FeelsLike:     data.Hourly.ApparentTemperature[i],
-			Precipitation: data.Hourly.Rain[i] + data.Hourly.Snowfall[i], // Combine rain and snow
+			Precipitation: data.Hourly.Precipitation[i],
 			Humidity:      data.Hourly.RelativeHumidity2m[i],
 			WindSpeed:     data.Hourly.WindSpeed10m[i],
 			WindDirection: data.Hourly.WindDirection10m[i],
@@ -266,13 +266,11 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 	return forecast, nil
 }
 
-// GetHistoricalWeather fetches historical weather data
+// GetHistoricalWeather fetches recent historical weather data using forecast API with past_days
 func (c *OpenMeteoClient) GetHistoricalWeather(lat, lon float64, days int) ([]models.WeatherData, error) {
-	endDate := time.Now().Add(-24 * time.Hour).Format("2006-01-02") // Yesterday
-	startDate := time.Now().Add(-time.Duration(days) * 24 * time.Hour).Format("2006-01-02")
-
-	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&start_date=%s&end_date=%s&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC",
-		openMeteoHistoricalURL, lat, lon, startDate, endDate)
+	// Use forecast API with past_days - gives us recent historical data for rain calculations
+	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&past_days=%d&forecast_days=1&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC",
+		openMeteoForecastURL, lat, lon, days)
 
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
@@ -290,6 +288,7 @@ func (c *OpenMeteoClient) GetHistoricalWeather(lat, lon float64, days int) ([]mo
 		return nil, fmt.Errorf("failed to decode Open-Meteo response: %w", err)
 	}
 
+	now := time.Now()
 	var historical []models.WeatherData
 	for i := range data.Hourly.Time {
 		timestamp, err := parseTimestampUTC(data.Hourly.Time[i])
@@ -298,11 +297,16 @@ func (c *OpenMeteoClient) GetHistoricalWeather(lat, lon float64, days int) ([]mo
 			continue
 		}
 
+		// Only include past data (skip future timestamps)
+		if timestamp.After(now) {
+			continue
+		}
+
 		weather := models.WeatherData{
 			Timestamp:     timestamp,
 			Temperature:   data.Hourly.Temperature2m[i],
 			FeelsLike:     data.Hourly.ApparentTemperature[i],
-			Precipitation: data.Hourly.Rain[i] + data.Hourly.Snowfall[i],
+			Precipitation: data.Hourly.Precipitation[i],
 			Humidity:      data.Hourly.RelativeHumidity2m[i],
 			WindSpeed:     data.Hourly.WindSpeed10m[i],
 			WindDirection: data.Hourly.WindDirection10m[i],
@@ -315,6 +319,7 @@ func (c *OpenMeteoClient) GetHistoricalWeather(lat, lon float64, days int) ([]mo
 		historical = append(historical, weather)
 	}
 
+	log.Printf("Got %d historical data points for (%.4f, %.4f)", len(historical), lat, lon)
 	return historical, nil
 }
 
