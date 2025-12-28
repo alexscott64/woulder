@@ -92,6 +92,38 @@ export function getConditionTextColor(level: ConditionLevel): string {
 }
 
 /**
+ * Get display label for condition level
+ */
+export function getConditionLabel(level: ConditionLevel): string {
+  switch (level) {
+    case 'good':
+      return 'Good';
+    case 'marginal':
+      return 'Fair';
+    case 'bad':
+      return 'Poor';
+    default:
+      return 'Unknown';
+  }
+}
+
+/**
+ * Get badge styles for condition level (background + text color)
+ */
+export function getConditionBadgeStyles(level: ConditionLevel): { bg: string; text: string; border: string } {
+  switch (level) {
+    case 'good':
+      return { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300' };
+    case 'marginal':
+      return { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-300' };
+    case 'bad':
+      return { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300' };
+    default:
+      return { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300' };
+  }
+}
+
+/**
  * Get wind direction as compass bearing (N, NE, E, etc.)
  */
 export function getWindDirection(degrees: number): string {

@@ -1,5 +1,5 @@
 import { WeatherData, DailySunTimes } from '../types/weather';
-import { getWeatherCondition, getConditionColor, getWeatherIconUrl } from '../utils/weatherConditions';
+import { getWeatherCondition, getConditionColor, getConditionLabel, getConditionBadgeStyles, getWeatherIconUrl } from '../utils/weatherConditions';
 import { calculateSnowAccumulation, getSnowDepthColor } from '../utils/snowAccumulation';
 import { getTempColor, getPrecipColor } from '../utils/climbingConditions';
 import { calculateDayPestConditions, getPestLevelColor, getPestLevelText, PestLevel } from '../utils/pestConditions';
@@ -252,16 +252,23 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
         {dailyForecasts.map((day, index) => {
           const conditionColor = getConditionColor(day.condition);
+          const conditionBadge = getConditionBadgeStyles(day.condition);
+          const conditionLabel = getConditionLabel(day.condition);
 
           return (
             <div
               key={index}
               className="bg-white rounded-lg border-2 border-gray-200 p-4 text-center hover:shadow-md transition-shadow"
             >
-              {/* Day name with condition indicator */}
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <span className="text-sm font-bold text-gray-900">{day.dayName}</span>
-                <div className={`w-2 h-2 rounded-full ${conditionColor}`} />
+              {/* Day name */}
+              <div className="text-sm font-bold text-gray-900 mb-1">{day.dayName}</div>
+
+              {/* Condition badge */}
+              <div className="flex justify-center mb-2">
+                <div className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${conditionBadge.bg} ${conditionBadge.text} ${conditionBadge.border} flex items-center gap-1`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${conditionColor}`} />
+                  <span>{conditionLabel}</span>
+                </div>
               </div>
 
               {/* Date */}
