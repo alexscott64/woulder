@@ -2,8 +2,9 @@ import { WeatherData, DailySunTimes } from '../types/weather';
 import { getWeatherCondition, getConditionColor, getWeatherIconUrl } from '../utils/weatherConditions';
 import { calculateSnowAccumulation, getSnowDepthColor } from '../utils/snowAccumulation';
 import { getTempColor, getPrecipColor } from '../utils/climbingConditions';
+import { calculateDayPestConditions, getPestLevelColor, getPestLevelText, PestLevel } from '../utils/pestConditions';
 import { format } from 'date-fns';
-import { Droplet, Wind, Snowflake, Sunrise, Sunset, Sun } from 'lucide-react';
+import { Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Bug } from 'lucide-react';
 
 interface ForecastViewProps {
   hourlyData: WeatherData[];
@@ -31,6 +32,9 @@ interface DayForecast {
   sunset?: string;   // Sunset time for this day
   daylightHours?: number; // Total daylight hours
   effectiveSunHours?: number; // Estimated direct sun hours (accounting for clouds)
+  pestLevel?: PestLevel; // Worst pest activity level for this day
+  mosquitoLevel?: PestLevel;
+  outdoorPestLevel?: PestLevel;
 }
 
 // Helper to format sun time from ISO string to "7:54 AM" format
@@ -213,6 +217,11 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
     const daylightHours = calculateDaylightHours(sunrise, sunset);
     const effectiveSunHours = calculateEffectiveSunHours(hours, sunrise, sunset);
 
+    // Calculate pest conditions for this day
+    // Use cumulative rainfall from previous days in the forecast
+    const previousDaysRainfall = dailyForecasts.reduce((sum, d) => sum + d.avgPrecip, 0);
+    const dayPestConditions = calculateDayPestConditions(hours, date, previousDaysRainfall);
+
     dailyForecasts.push({
       date,
       dayName: isToday ? 'Today' : format(date, 'EEE'),
@@ -231,6 +240,9 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       sunset,
       daylightHours,
       effectiveSunHours,
+      pestLevel: dayPestConditions.worstLevel,
+      mosquitoLevel: dayPestConditions.mosquitoLevel,
+      outdoorPestLevel: dayPestConditions.outdoorPestLevel,
     });
   }
 
@@ -330,6 +342,19 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                       <span className="font-medium">{day.effectiveSunHours.toFixed(1)}h sun</span>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Pest Activity */}
+              {day.pestLevel && (
+                <div
+                  className="mt-2 pt-2 border-t border-gray-100"
+                  title={`Mosquitoes: ${getPestLevelText(day.mosquitoLevel || 'low')}, Outdoor Pests: ${getPestLevelText(day.outdoorPestLevel || 'low')}`}
+                >
+                  <div className={`flex items-center justify-center gap-1 text-xs ${getPestLevelColor(day.pestLevel)}`}>
+                    <Bug className="w-3 h-3" />
+                    <span className="font-medium">{getPestLevelText(day.pestLevel)} Bugs</span>
+                  </div>
                 </div>
               )}
 

@@ -380,3 +380,81 @@ export function calculatePestConditions(
     factors: topFactors,
   };
 }
+
+/**
+ * Simplified pest conditions for forecast days
+ * Uses the day's forecast data to estimate pest activity
+ */
+export interface DayPestConditions {
+  mosquitoLevel: PestLevel;
+  outdoorPestLevel: PestLevel;
+  // Combined worst level for display
+  worstLevel: PestLevel;
+}
+
+/**
+ * Calculate pest conditions for a forecast day
+ * Uses representative temperature (high for daytime pests) and average conditions
+ *
+ * @param dayHours - Hourly weather data for the day
+ * @param forecastDate - The date being forecast
+ * @param recentRainfall - Total rainfall in inches from recent days (for breeding sites)
+ */
+export function calculateDayPestConditions(
+  dayHours: WeatherData[],
+  forecastDate: Date,
+  recentRainfall: number = 0
+): DayPestConditions {
+  if (dayHours.length === 0) {
+    return {
+      mosquitoLevel: 'low',
+      outdoorPestLevel: 'low',
+      worstLevel: 'low',
+    };
+  }
+
+  const month = forecastDate.getMonth() + 1; // 1-12
+
+  // Use the day's high temperature (peak pest activity occurs during warmest part of day)
+  const highTemp = Math.max(...dayHours.map(h => h.temperature));
+
+  // Average humidity and wind for the day
+  const avgHumidity = dayHours.reduce((sum, h) => sum + h.humidity, 0) / dayHours.length;
+  const avgWind = dayHours.reduce((sum, h) => sum + h.wind_speed, 0) / dayHours.length;
+
+  // Add any precipitation from this day to recent rainfall for breeding site calculation
+  const dayPrecip = dayHours.reduce((sum, h) => sum + h.precipitation, 0);
+  const totalRecentRainfall = recentRainfall + dayPrecip;
+
+  // Calculate mosquito conditions using peak daytime temp
+  const mosquitoResult = calculateMosquitoScore(
+    highTemp,
+    avgHumidity,
+    avgWind,
+    totalRecentRainfall,
+    month
+  );
+
+  // Calculate outdoor pest conditions
+  const pestResult = calculateOutdoorPestScore(
+    highTemp,
+    avgHumidity,
+    totalRecentRainfall,
+    month
+  );
+
+  const mosquitoLevel = scoreToLevel(mosquitoResult.score);
+  const outdoorPestLevel = scoreToLevel(pestResult.score);
+
+  // Determine worst level for display indicator
+  const levelOrder: PestLevel[] = ['low', 'moderate', 'high', 'very_high', 'extreme'];
+  const mosquitoIndex = levelOrder.indexOf(mosquitoLevel);
+  const pestIndex = levelOrder.indexOf(outdoorPestLevel);
+  const worstLevel = levelOrder[Math.max(mosquitoIndex, pestIndex)];
+
+  return {
+    mosquitoLevel,
+    outdoorPestLevel,
+    worstLevel,
+  };
+}

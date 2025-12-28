@@ -150,26 +150,30 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
         : 'rounded-xl'
     }`}>
       {/* Main Card Content */}
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">{location.name}</h2>
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">{location.name}</h2>
+              <div className={`w-3 h-3 sm:w-4 sm:h-4 rounded-full ${conditionColor} shadow-sm flex-shrink-0`} title={condition.level} />
+            </div>
             <p className="text-sm text-gray-500 mt-1">
               {format(new Date(current.timestamp), 'MMM d, h:mm a')}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          {/* Info Icons - always visible */}
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0 ml-2">
             {/* Pest Activity Icon */}
             {pestConditions && (
               <button
                 onClick={() => setShowPestModal(true)}
-                className="relative p-2 hover:bg-amber-50 rounded-full transition-colors group"
+                className="relative p-2 hover:bg-amber-50 active:bg-amber-100 rounded-full transition-colors"
                 title="Pest Activity Info"
               >
-                <Bug className={`w-5 h-5 ${getPestLevelColor(pestConditions.mosquitoLevel)}`} />
+                <Bug className={`w-5 h-5 sm:w-5 sm:h-5 ${getPestLevelColor(pestConditions.mosquitoLevel)}`} />
                 {/* Status indicator dot showing worst level */}
-                <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${
+                <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
                   pestConditions.mosquitoScore >= 60 || pestConditions.outdoorPestScore >= 60 ? 'bg-red-500' :
                   pestConditions.mosquitoScore >= 40 || pestConditions.outdoorPestScore >= 40 ? 'bg-yellow-500' :
                   'bg-green-500'
@@ -181,13 +185,13 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
               <button
                 onClick={handleRiverClick}
                 disabled={loadingRivers}
-                className="relative p-2 hover:bg-blue-50 rounded-full transition-colors group"
+                className="relative p-2 hover:bg-blue-50 active:bg-blue-100 rounded-full transition-colors"
                 title="River Crossing Info"
               >
-                <Waves className={`w-5 h-5 text-blue-600 ${loadingRivers ? 'animate-pulse' : ''}`} />
+                <Waves className={`w-5 h-5 sm:w-5 sm:h-5 text-blue-600 ${loadingRivers ? 'animate-pulse' : ''}`} />
                 {/* Status indicator dot */}
                 {riverData.length > 0 && (
-                  <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${
+                  <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
                     riverData.every(r => r.is_safe) ? 'bg-green-500' :
                     riverData.some(r => r.status === 'unsafe') ? 'bg-red-500' :
                     'bg-yellow-500'
@@ -195,7 +199,6 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
                 )}
               </button>
             )}
-            <div className={`w-4 h-4 rounded-full ${conditionColor} shadow-sm`} title={condition.level} />
           </div>
         </div>
 
