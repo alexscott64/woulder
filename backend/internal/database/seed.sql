@@ -9,7 +9,9 @@ INSERT OR IGNORE INTO locations (name, latitude, longitude, elevation_ft) VALUES
     ('Bellingham', 48.7519, -122.4787, 100),
     ('Icicle Creek (Leavenworth)', 47.5962, -120.6615, 1200),
     ('Squamish', 49.7016, -123.1558, 200),
-    ('Skykomish - Paradise', 47.64074805, -121.37822668, 1500);
+    ('Skykomish - Paradise', 47.64074805, -121.37822668, 1500),
+    ('Treasury', 47.76086166, -121.12877297, 3650),
+    ('Calendar Butte', 48.36202, -122.08273, 1600);
 
 -- Rivers (using active USGS gauges)
 -- Money Creek - estimated from South Fork Skykomish at Skykomish (12131500)

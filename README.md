@@ -16,7 +16,7 @@ Track rain, wind, temperature, humidity, and cloud cover for climbing locations 
 ## Features
 
 ### Weather & Conditions
-- **7 Climbing Locations** - Skykomish (Money Creek & Paradise), Index, Gold Bar, Bellingham, Icicle Creek, Squamish
+- **9 Climbing Locations** - Skykomish (Money Creek & Paradise), Index, Gold Bar, Bellingham, Icicle Creek, Squamish, Treasury, Calendar Butte
 - **Real-time Weather** - Temperature, precipitation, wind, humidity, cloud cover
 - **Condition Indicators** - Color-coded badges (Good/Marginal/Bad) for climbing suitability
 - **6-Day Forecast** - Expandable hourly forecast with daily summaries
@@ -186,15 +186,17 @@ Weather cards display a colored badge indicating climbing conditions:
 
 ## Locations
 
-| Location | Coordinates | Region |
-|----------|-------------|--------|
-| Skykomish - Money Creek | 47.70, -121.48 | Washington |
-| Skykomish - Paradise | 47.64, -121.38 | Washington |
-| Index | 47.82, -121.56 | Washington |
-| Gold Bar | 47.85, -121.70 | Washington |
-| Bellingham | 48.75, -122.48 | Washington |
-| Icicle Creek (Leavenworth) | 47.60, -120.66 | Washington |
-| Squamish | 49.70, -123.16 | British Columbia |
+| Location | Coordinates | Elevation | Region |
+|----------|-------------|-----------|--------|
+| Skykomish - Money Creek | 47.70, -121.48 | 1,000 ft | Washington |
+| Skykomish - Paradise | 47.64, -121.38 | 1,500 ft | Washington |
+| Index | 47.82, -121.56 | 500 ft | Washington |
+| Gold Bar | 47.85, -121.70 | 200 ft | Washington |
+| Bellingham | 48.75, -122.48 | 100 ft | Washington |
+| Icicle Creek (Leavenworth) | 47.60, -120.66 | 1,200 ft | Washington |
+| Squamish | 49.70, -123.16 | 200 ft | British Columbia |
+| Treasury | 47.76, -121.13 | 3,650 ft | Washington |
+| Calendar Butte | 48.36, -122.08 | 1,600 ft | Washington |
 
 ---
 
@@ -258,7 +260,7 @@ npm run dev
 - [x] Frontend dashboard with React + TypeScript
 - [x] Database integration (SQLite/MySQL)
 - [x] Open-Meteo API integration
-- [x] 7 default locations
+- [x] 9 default locations
 - [x] Color-coded conditions
 - [x] Online/offline detection
 - [x] Auto-refresh

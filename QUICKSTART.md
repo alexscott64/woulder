@@ -5,7 +5,7 @@
 - [x] Go installed
 - [x] Node.js installed
 - [x] Database initialized with schema
-- [x] All 7 default locations added to database
+- [x] All 9 default locations added to database
 
 ## Running the Application
 
@@ -83,7 +83,7 @@ npm run dev
 - Header shows "woulder" title with logo
 - Online/Offline indicator (green WiFi icon when online)
 - Settings button (gear icon)
-- Grid of weather cards for all 7 locations:
+- Grid of weather cards for all 9 locations:
   - Skykomish - Money Creek
   - Skykomish - Paradise
   - Index
@@ -91,6 +91,8 @@ npm run dev
   - Bellingham
   - Icicle Creek (Leavenworth)
   - Squamish
+  - Treasury
+  - Calendar Butte
 
 ### Each Weather Card Shows:
 - Location name
