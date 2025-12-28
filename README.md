@@ -9,7 +9,7 @@
 
 Track rain, wind, temperature, humidity, and cloud cover for climbing locations in the Pacific Northwest - online or offline.
 
-![woulder](https://woulder.com)
+[woulder](https://woulder.com)
 
 ---
 
