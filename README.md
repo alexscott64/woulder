@@ -45,7 +45,7 @@ Track rain, wind, temperature, humidity, and cloud cover for climbing locations 
 
 - [Go 1.21+](https://go.dev/dl/)
 - [Node.js 18+](https://nodejs.org/)
-- SQLite (included) or MySQL 8.0+
+- PostgreSQL 18 (included), SQLite (included), or MySQL 8.0+
 - [Open-Meteo API](https://open-meteo.com/) (free, no key required)
 
 ### Setup
@@ -98,7 +98,7 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 ### Backend
 - **[Go](https://go.dev/)** - Fast, compiled language
 - **[Gin](https://gin-gonic.com/)** - Lightweight HTTP framework
-- **[SQLite](https://www.sqlite.org/)** / **[MySQL](https://www.mysql.com/)** - Database options
+- **[PostgreSQL 18](https://www.postgresql.org/)** / (**[SQLite](https://www.sqlite.org/)** / **[MySQL](https://www.mysql.com/)** - Database options
 - **[Open-Meteo API](https://open-meteo.com/)** - Weather data source (free)
 
 ### Frontend
