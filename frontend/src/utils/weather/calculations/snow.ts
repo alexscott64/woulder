@@ -1,4 +1,4 @@
-import { WeatherData } from '../types/weather';
+import { WeatherData } from '../../../types/weather';
 import { format } from 'date-fns';
 
 /**
@@ -150,25 +150,4 @@ function getCompactionRate(temp: number): number {
   if (temp < 28) return 0.0006;
   if (temp < 32) return 0.0012;
   return 0.0025; // warm, wet snow compacts fast
-}
-
-/**
- * Get color class for snow depth based on climbing conditions
- */
-export function getSnowDepthColor(depth: number): string {
-  if (depth === 0) return 'text-green-600'; // No snow = good
-  if (depth < 3) return 'text-yellow-600'; // Light snow = marginal
-  if (depth < 6) return 'text-orange-600'; // Moderate snow = challenging
-  return 'text-red-600'; // Deep snow = bad
-}
-
-/**
- * Get human-readable description of snow conditions
- */
-export function getSnowDescription(depth: number): string {
-  if (depth === 0) return 'No snow';
-  if (depth < 3) return 'Light snow cover';
-  if (depth < 6) return 'Moderate snow';
-  if (depth < 12) return 'Heavy snow';
-  return 'Very deep snow';
 }

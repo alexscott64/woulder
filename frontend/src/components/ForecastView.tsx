@@ -1,8 +1,10 @@
 import { WeatherData, DailySunTimes } from '../types/weather';
-import { getWeatherCondition, getConditionColor, getConditionLabel, getConditionBadgeStyles, getWeatherIconUrl } from '../utils/weatherConditions';
-import { calculateSnowAccumulation, getSnowDepthColor } from '../utils/snowAccumulation';
-import { getTempColor, getPrecipColor } from '../utils/climbingConditions';
-import { calculateDayPestConditions, getPestLevelColor, getPestLevelText, PestLevel } from '../utils/pestConditions';
+import { ConditionCalculator, TemperatureAnalyzer, PrecipitationAnalyzer } from '../utils/weather/analyzers';
+import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl, getSnowDepthColor } from './weather/weatherDisplay';
+import { calculateSnowAccumulation } from '../utils/weather/calculations/snow';
+import { PestAnalyzer } from '../utils/pests/analyzers';
+import { PestLevel } from '../utils/pests/calculations/pests';
+import { getPestLevelColor, getPestLevelText } from './pests/pestDisplay';
 import { format } from 'date-fns';
 import { Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Bug } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
@@ -14,6 +16,19 @@ function getWindColor(windSpeed: number): string {
   if (windSpeed <= 12) return 'text-green-600 dark:text-green-400';
   if (windSpeed <= 20) return 'text-yellow-600 dark:text-yellow-400';
   return 'text-red-600 dark:text-red-400';
+}
+
+// Get temperature color for climbing comfort (using TemperatureAnalyzer)
+function getTempColor(temp: number): string {
+  return TemperatureAnalyzer.getColor(temp);
+}
+
+// Get precipitation color for climbing conditions (using PrecipitationAnalyzer)
+function getPrecipColor(precip: number): string {
+  const intensity = PrecipitationAnalyzer.getIntensity(precip);
+  if (intensity === 'none') return 'text-green-600 dark:text-green-400';
+  if (intensity === 'light') return 'text-yellow-600 dark:text-yellow-400';
+  return 'text-red-600 dark:text-red-400'; // moderate or heavy
 }
 
 interface ForecastViewProps {
@@ -280,7 +295,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       // Pass previous hours as recent weather context for precipitation pattern analysis
       const recentHours = index > 0 ? hours.slice(Math.max(0, index - 2), index) : [];
       return {
-        condition: getWeatherCondition(h, recentHours),
+        condition: ConditionCalculator.calculateCondition(h, recentHours),
         hour: h,
         isClimbingTime: isClimbingHour(h)
       };
@@ -424,7 +439,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
     // Calculate pest conditions for this day
     // Use cumulative rainfall from previous days in the forecast
     const previousDaysRainfall = dailyForecasts.reduce((sum, d) => sum + d.avgPrecip, 0);
-    const dayPestConditions = calculateDayPestConditions(hours, date, previousDaysRainfall);
+    const dayPestConditions = PestAnalyzer.assessDayConditions(hours, date, previousDaysRainfall);
 
     dailyForecasts.push({
       date,

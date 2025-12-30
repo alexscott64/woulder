@@ -1,10 +1,10 @@
 import { X, Bug, AlertTriangle } from 'lucide-react';
+import type { PestConditions } from '../utils/pests/analyzers/PestAnalyzer';
 import {
-  PestConditions,
   getPestLevelColor,
   getPestLevelBgColor,
   getPestLevelText,
-} from '../utils/pestConditions';
+} from './pests/pestDisplay';
 
 interface PestInfoModalProps {
   pestConditions: PestConditions;

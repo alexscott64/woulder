@@ -1,16 +1,11 @@
 import { WeatherForecast } from '../types/weather';
 import { RiverData } from '../types/river';
 import { API_BASE_URL } from '../services/api';
-import {
-  getWeatherCondition,
-  getConditionColor,
-  getConditionLabel,
-  getConditionBadgeStyles,
-  getWindDirection,
-  getWeatherIconUrl,
-  getSnowProbability
-} from '../utils/weatherConditions';
-import { calculatePestConditions, getPestLevelColor, PestConditions } from '../utils/pestConditions';
+import { ConditionCalculator, WindAnalyzer } from '../utils/weather/analyzers';
+import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl } from './weather/weatherDisplay';
+import { PestAnalyzer } from '../utils/pests/analyzers';
+import type { PestConditions } from '../utils/pests/analyzers/PestAnalyzer';
+import { getPestLevelColor } from './pests/pestDisplay';
 import { format } from 'date-fns';
 import { Cloud, Droplet, Wind, Snowflake, ChevronDown, ChevronUp, Waves, Sunrise, Sunset, Bug } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
@@ -39,7 +34,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const { location, current, hourly, historical, sunrise, sunset } = forecast;
 
   // Pass recent historical data for precipitation pattern analysis
-  const condition = getWeatherCondition(current, historical);
+  const condition = ConditionCalculator.calculateCondition(current, historical);
   const conditionColor = getConditionColor(condition.level);
   const conditionBadge = getConditionBadgeStyles(condition.level);
   const conditionLabel = getConditionLabel(condition.level);
@@ -59,7 +54,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   // Calculate pest conditions
   const pestConditions: PestConditions | null = useMemo(() => {
     if (!current || !historical || historical.length === 0) return null;
-    return calculatePestConditions(current, historical);
+    return PestAnalyzer.assessConditions(current, historical);
   }, [current, historical]);
 
   // Fetch river data when component mounts
@@ -132,7 +127,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
   // Check for snow on ground (use recent historical data)
   const recentData = [...safeHistorical].reverse().slice(0, 8); // Last 24 hours
-  const snowInfo = getSnowProbability(recentData);
+  const snowInfo = ConditionCalculator.calculateSnowProbability(recentData);
 
   // Determine precipitation type for last 48h
   const hasSnowLast48h = past48h.some(d => d.temperature <= 32 && d.precipitation > 0);
@@ -310,7 +305,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
             <Wind className="w-5 h-5 mb-1 text-gray-600 dark:text-gray-400" />
             <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Wind</div>
             <div className="text-sm font-semibold text-gray-900 dark:text-white">
-              {Math.round(current.wind_speed)} {getWindDirection(current.wind_direction)}
+              {Math.round(current.wind_speed)} {WindAnalyzer.degreesToCompass(current.wind_direction)}
             </div>
           </div>
 

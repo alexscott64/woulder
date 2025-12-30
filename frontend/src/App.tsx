@@ -6,7 +6,8 @@ import { ForecastView } from './components/ForecastView';
 import { SettingsModal } from './components/SettingsModal';
 import AreaSelector from './components/AreaSidebar';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
-import { getWeatherCondition, getConditionColor } from './utils/weatherConditions';
+import { ConditionCalculator } from './utils/weather/analyzers';
+import { getConditionColor } from './components/weather/weatherDisplay';
 import { RefreshCw, WifiOff, Wifi, ChevronUp, Settings } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -149,7 +150,7 @@ function Dashboard() {
             <div className="md:hidden space-y-6">
               {sortedWeather.map((forecast) => {
                 const isExpanded = expandedLocationId === forecast.location_id;
-                const condition = getWeatherCondition(forecast.current, forecast.historical);
+                const condition = ConditionCalculator.calculateCondition(forecast.current, forecast.historical);
                 const conditionColor = getConditionColor(condition.level);
 
                 return (
@@ -199,7 +200,7 @@ function Dashboard() {
                   const rowNumber = i / 3;
                   const expandedInThisRow = expandedIndex >= i && expandedIndex < i + 3;
                   const expandedForecast = expandedInThisRow ? sortedWeather.find(f => f.location_id === expandedLocationId) : null;
-                  const expandedCondition = expandedForecast ? getWeatherCondition(expandedForecast.current, expandedForecast.historical) : null;
+                  const expandedCondition = expandedForecast ? ConditionCalculator.calculateCondition(expandedForecast.current, expandedForecast.historical) : null;
                   const expandedConditionColor = expandedCondition ? getConditionColor(expandedCondition.level) : '';
                   // Calculate position of expanded card within row (0, 1, or 2)
                   const expandedPositionInRow = expandedIndex >= 0 ? expandedIndex - i : -1;
