@@ -76,29 +76,23 @@ function Dashboard() {
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <img src="/woulder-logo.svg" alt="woulder logo" className="w-12 h-12" />
+          <div className="flex items-center justify-between gap-2 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <img src="/woulder-logo.svg" alt="woulder logo" className="w-10 h-10 sm:w-12 sm:h-12" />
               <div>
-                <h1 className="text-4xl text-gray-900 dark:text-white" style={{ fontFamily: "'Righteous', cursive" }}>
+                <h1 className="text-3xl sm:text-4xl text-gray-900 dark:text-white" style={{ fontFamily: "'Righteous', cursive" }}>
                   woulder
                 </h1>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              {/* Online Status */}
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 sm:gap-4">
+              {/* Online Status - Icon only */}
+              <div className="flex items-center" title={isOnline ? "Online" : "Offline"}>
                 {isOnline ? (
-                  <>
-                    <Wifi className="w-5 h-5 text-green-600 dark:text-green-400" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">Online</span>
-                  </>
+                  <Wifi className="w-5 h-5 text-green-600 dark:text-green-400" />
                 ) : (
-                  <>
-                    <WifiOff className="w-5 h-5 text-red-600 dark:text-red-400" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">Offline</span>
-                  </>
+                  <WifiOff className="w-5 h-5 text-red-600 dark:text-red-400" />
                 )}
               </div>
 

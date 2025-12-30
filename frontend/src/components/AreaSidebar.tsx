@@ -31,22 +31,27 @@ export default function AreaSelector() {
       {/* Compact Selector Button - designed to go in header */}
       <button
         onClick={() => setIsOpen(true)}
-        className="flex items-center gap-2 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+        className="flex items-center gap-1.5 px-2 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
         title="Select climbing area"
       >
+        {/* Icon */}
         {settings.selectedAreaId === null ? (
           <Globe className="w-5 h-5 text-blue-600 dark:text-blue-400" />
         ) : (
           <MapPin className="w-5 h-5 text-blue-600 dark:text-blue-400" />
         )}
+
+        {/* Desktop: Show full area info */}
         <div className="hidden md:flex flex-col items-start">
           <span className="text-xs text-gray-500 dark:text-gray-400">Area</span>
           <span className="text-sm font-medium leading-none">
             {isLoading ? '...' : selectedAreaName}
           </span>
         </div>
+
+        {/* Count badge (both mobile and desktop) */}
         {!isLoading && (
-          <span className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-semibold rounded">
+          <span className="px-2 py-0.5 bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold rounded-full">
             {settings.selectedAreaId === null
               ? totalLocations
               : areas.find(a => a.id === settings.selectedAreaId)?.location_count || 0}

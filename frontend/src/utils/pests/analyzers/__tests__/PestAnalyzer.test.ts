@@ -13,6 +13,8 @@ function createWeatherData(overrides: Partial<WeatherData> = {}): WeatherData {
     wind_speed: 5,
     wind_direction: 180,
     cloud_cover: 0,
+    pressure: 1013,
+    description: 'Clear',
     icon: '01d',
     ...overrides
   };

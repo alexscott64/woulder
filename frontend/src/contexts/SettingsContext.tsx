@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { getClosestAreaFromIP } from '../utils/geolocation';
 
 export type TemperatureUnit = 'fahrenheit' | 'celsius';
 export type SpeedUnit = 'mph' | 'kmh';
@@ -8,6 +9,7 @@ interface Settings {
   temperatureUnit: TemperatureUnit;
   speedUnit: SpeedUnit;
   selectedAreaId: number | null; // null = "All Areas"
+  hasManuallySelectedArea: boolean; // Track if user has manually selected an area
 }
 
 interface SettingsContextType {
@@ -22,6 +24,7 @@ const defaultSettings: Settings = {
   temperatureUnit: 'fahrenheit',
   speedUnit: 'mph',
   selectedAreaId: null, // Default to "All Areas"
+  hasManuallySelectedArea: false, // Track if user has manually selected
 };
 
 const STORAGE_KEY = 'woulder-settings';
@@ -70,6 +73,20 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [settings.darkMode]);
 
+  // Auto-detect user's closest area on first load (only if they haven't manually selected)
+  useEffect(() => {
+    if (!settings.hasManuallySelectedArea) {
+      getClosestAreaFromIP().then(areaId => {
+        if (areaId !== null) {
+          console.log(`Auto-selecting area ${areaId} based on IP location`);
+          setSettings(prev => ({ ...prev, selectedAreaId: areaId }));
+        }
+      }).catch(error => {
+        console.error('Failed to get closest area from IP:', error);
+      });
+    }
+  }, []); // Only run once on mount
+
   // Save settings whenever they change
   useEffect(() => {
     saveSettings(settings);
@@ -93,7 +110,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   };
 
   const setSelectedArea = (areaId: number | null) => {
-    setSettings(prev => ({ ...prev, selectedAreaId: areaId }));
+    // Mark that user has manually selected an area
+    setSettings(prev => ({
+      ...prev,
+      selectedAreaId: areaId,
+      hasManuallySelectedArea: true
+    }));
   };
 
   return (
