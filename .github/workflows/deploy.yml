@@ -61,6 +61,18 @@ jobs:
           # Upload new binary
           scp -i ~/.ssh/id_ed25519 backend/woulder-api root@${{ secrets.VPS_HOST }}:/opt/woulder/woulder-api
 
+          # Create .env file on server with secrets
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'PORT=${{ secrets.PORT }}' > /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'GIN_MODE=${{ secrets.GIN_MODE }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'DB_HOST=${{ secrets.DB_HOST }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'DB_PORT=${{ secrets.DB_PORT }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'DB_USER=${{ secrets.DB_USER }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'DB_PASSWORD=${{ secrets.DB_PASSWORD }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'DB_NAME=${{ secrets.DB_NAME }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'DB_SSLMODE=${{ secrets.DB_SSLMODE }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'CACHE_DURATION=${{ secrets.CACHE_DURATION }}' >> /opt/woulder/.env"
+
           # Make executable and start
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "chmod +x /opt/woulder/woulder-api && systemctl start woulder"
 
