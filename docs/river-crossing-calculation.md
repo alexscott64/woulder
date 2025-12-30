@@ -1,14 +1,14 @@
 # River Crossing Safety Calculation
 
-This document explains how Woulder determines river crossing safety levels for climbing approach trails.
+This document explains how woulder determines river crossing safety levels for climbing approach trails.
 
 ## Overview
 
-Many climbing areas in the Pacific Northwest require crossing rivers or creeks on approach trails. Woulder provides real-time safety assessments based on current streamflow data from the USGS (United States Geological Survey) Water Data system.
+Many climbing areas in the Pacific Northwest require crossing rivers or creeks on approach trails. woulder provides real-time safety assessments based on current streamflow data from the USGS (United States Geological Survey) Water Data system.
 
 ### Safety Levels
 
-Woulder categorizes river crossings into three levels:
+woulder categorizes river crossings into three levels:
 
 - **Safe**: Flow is at or below the safe crossing threshold
 - **Caution**: Flow exceeds safe threshold but is below the dangerous threshold
@@ -43,7 +43,7 @@ The USGS maintains a network of over 8,500 real-time stream gauges across the Un
 
 ## Flow Estimation Methods
 
-Not all river crossings have gauges directly at the crossing point. Woulder uses two scientifically-validated methods to estimate flow at ungauged locations.
+Not all river crossings have gauges directly at the crossing point. woulder uses two scientifically-validated methods to estimate flow at ungauged locations.
 
 ### Method 1: Drainage Area Ratio Method
 
@@ -375,7 +375,7 @@ Estimates become less reliable when:
 
 ### Conservative Approach
 
-Woulder uses conservative thresholds:
+woulder uses conservative thresholds:
 - Safe threshold set below actual ford-able flow
 - Caution range provides buffer
 - Percentage display shows margin

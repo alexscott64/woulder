@@ -1,10 +1,10 @@
 # Pest Activity Calculation
 
-This document explains how Woulder calculates pest activity levels for outdoor climbing locations.
+This document explains how woulder calculates pest activity levels for outdoor climbing locations.
 
 ## Overview
 
-Woulder provides two pest activity metrics:
+woulder provides two pest activity metrics:
 - **Mosquito Activity**: Focuses specifically on mosquito populations
 - **Outdoor Pest Activity**: Covers flies, gnats, wasps, ants, and other nuisance insects
 
@@ -254,7 +254,7 @@ Final scores (0-100) are converted to descriptive levels:
 
 ## Contributing Factors Display
 
-When displaying pest activity, Woulder shows up to 4 key contributing factors:
+When displaying pest activity, woulder shows up to 4 key contributing factors:
 
 **Example factors:**
 - "Optimal mosquito temperature (75-85°F)"

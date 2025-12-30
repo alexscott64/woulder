@@ -1,10 +1,10 @@
 # Snow Accumulation Calculation
 
-This document explains how Woulder calculates snow accumulation and melt for climbing locations.
+This document explains how woulder calculates snow accumulation and melt for climbing locations.
 
 ## Overview
 
-Woulder uses a **Snow Water Equivalent (SWE) temperature-indexed model** to track snow accumulation and melt. This model is specifically calibrated for Pacific Northwest conditions, accounting for:
+woulder uses a **Snow Water Equivalent (SWE) temperature-indexed model** to track snow accumulation and melt. This model is specifically calibrated for Pacific Northwest conditions, accounting for:
 
 - Temperature-dependent snow density
 - Freezing level transitions (rain/snow mix)
@@ -526,7 +526,7 @@ Loss: 1.75 inches of depth in 3 hours
 
 ### Comparison with Professional Models
 
-| Feature | Woulder | SNOTEL | SNODAS | SnowModel |
+| Feature | woulder | SNOTEL | SNODAS | SnowModel |
 |---------|---------|--------|--------|-----------|
 | Resolution | Location-specific | Point | 1 km grid | Variable |
 | Physics | Temperature-index | Temperature-index | Energy balance | Energy balance |
