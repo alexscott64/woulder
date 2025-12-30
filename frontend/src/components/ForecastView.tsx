@@ -8,6 +8,14 @@ import { Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Bug } from 'lucide-reac
 import { useState, useEffect, useRef } from 'react';
 import { ConditionDetailsModal } from './ConditionDetailsModal';
 
+// Get wind color based on climbing conditions
+// Good: <12 mph (green), Moderate: 12-20 mph (yellow), High: >20 mph (red)
+function getWindColor(windSpeed: number): string {
+  if (windSpeed <= 12) return 'text-green-600 dark:text-green-400';
+  if (windSpeed <= 20) return 'text-yellow-600 dark:text-yellow-400';
+  return 'text-red-600 dark:text-red-400';
+}
+
 interface ForecastViewProps {
   hourlyData: WeatherData[];
   currentWeather?: WeatherData;
@@ -268,11 +276,15 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       return hourOfDay >= 9 && hourOfDay < 20; // 9am to 8pm
     };
 
-    const hourConditions = hours.map(h => ({
-      condition: getWeatherCondition(h),
-      hour: h,
-      isClimbingTime: isClimbingHour(h)
-    }));
+    const hourConditions = hours.map((h, index) => {
+      // Pass previous hours as recent weather context for precipitation pattern analysis
+      const recentHours = index > 0 ? hours.slice(Math.max(0, index - 2), index) : [];
+      return {
+        condition: getWeatherCondition(h, recentHours),
+        hour: h,
+        isClimbingTime: isClimbingHour(h)
+      };
+    });
 
     let condition: 'good' | 'marginal' | 'bad' = 'good';
     const conditionReasons: string[] = [];
@@ -292,25 +304,84 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       return hasRainIssue || hasWindIssue;
     });
 
-    // Find the worst condition and collect unique reasons from relevant hours
+    // Find the worst condition and consolidate reasons (show worst value for each factor)
     const badHours = relevantConditions.filter(hc => hc.condition.level === 'bad');
     const marginalHours = relevantConditions.filter(hc => hc.condition.level === 'marginal');
 
+    // Helper function to consolidate reasons by extracting worst values
+    const consolidateReasons = (hours: typeof hourConditions) => {
+      const factorMap = new Map<string, { reason: string; value: number }>();
+
+      hours.forEach(hc => {
+        hc.condition.reasons.forEach(reason => {
+          // Extract factor type and value from reason string
+          // Examples: "High humidity (90%)", "Cold (38°F)", "Heavy rain (0.15in/3h)"
+
+          if (reason.includes('humidity')) {
+            const match = reason.match(/(\d+)%/);
+            if (match) {
+              const value = parseInt(match[1]);
+              const existing = factorMap.get('humidity');
+              if (!existing || value > existing.value) {
+                factorMap.set('humidity', { reason, value });
+              }
+            }
+          } else if (reason.includes('cold') || reason.includes('Too cold')) {
+            const match = reason.match(/(\d+)°F/);
+            if (match) {
+              const value = parseInt(match[1]);
+              const existing = factorMap.get('cold');
+              if (!existing || value < existing.value) { // Lower is worse for cold
+                factorMap.set('cold', { reason, value });
+              }
+            }
+          } else if (reason.includes('hot') || reason.includes('Too hot') || reason.includes('Warm')) {
+            const match = reason.match(/(\d+)°F/);
+            if (match) {
+              const value = parseInt(match[1]);
+              const existing = factorMap.get('hot');
+              if (!existing || value > existing.value) { // Higher is worse for hot
+                factorMap.set('hot', { reason, value });
+              }
+            }
+          } else if (reason.includes('wind')) {
+            const match = reason.match(/(\d+)mph/);
+            if (match) {
+              const value = parseInt(match[1]);
+              const existing = factorMap.get('wind');
+              if (!existing || value > existing.value) {
+                factorMap.set('wind', { reason, value });
+              }
+            }
+          } else if (reason.includes('rain') || reason.includes('precip') || reason.includes('drizzle')) {
+            const match = reason.match(/([\d.]+)in/);
+            if (match) {
+              const value = parseFloat(match[1]);
+              const existing = factorMap.get('precipitation');
+              if (!existing || value > existing.value) {
+                factorMap.set('precipitation', { reason, value });
+              }
+            }
+          } else {
+            // For reasons without numeric values, just keep unique ones
+            const key = reason.toLowerCase().replace(/[^a-z]/g, '');
+            factorMap.set(key, { reason, value: 0 });
+          }
+        });
+      });
+
+      return Array.from(factorMap.values()).map(f => f.reason);
+    };
+
     if (badHours.length > 0) {
       condition = 'bad';
-      // Collect unique reasons from bad hours
-      const reasonSet = new Set<string>();
-      badHours.forEach(hc => hc.condition.reasons.forEach(r => reasonSet.add(r)));
-      conditionReasons.push(...Array.from(reasonSet));
+      conditionReasons.push(...consolidateReasons(badHours));
       if (badHours.length > 1) {
         conditionReasons.push(`${badHours.length} hours with poor conditions`);
       }
     } else if (marginalHours.length > 0) {
       condition = 'marginal';
-      // Collect unique reasons from marginal hours
-      const reasonSet = new Set<string>();
-      marginalHours.forEach(hc => hc.condition.reasons.forEach(r => reasonSet.add(r)));
-      conditionReasons.push(...Array.from(reasonSet));
+      conditionReasons.push(...consolidateReasons(marginalHours));
       if (marginalHours.length > 1) {
         conditionReasons.push(`${marginalHours.length} hours with fair conditions`);
       }
@@ -468,7 +539,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                 )}
 
                 {day.avgWind > 10 && (
-                  <div className="flex items-center justify-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+                  <div className={`flex items-center justify-center gap-1 text-xs ${getWindColor(day.avgWind)}`}>
                     <Wind className="w-3 h-3" />
                     <span>{Math.round(day.avgWind)} mph</span>
                   </div>
@@ -602,7 +673,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                   </div>
 
                   {/* Wind */}
-                  <div className="flex items-center justify-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+                  <div className={`flex items-center justify-center gap-1 text-xs ${getWindColor(hour.wind_speed)}`}>
                     <Wind className="w-3 h-3" />
                     <span>{Math.round(hour.wind_speed)}</span>
                   </div>

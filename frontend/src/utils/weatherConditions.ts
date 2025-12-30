@@ -3,18 +3,64 @@ import { WeatherData, WeatherCondition, ConditionLevel } from '../types/weather'
 /**
  * Determine the weather condition level for climbing based on weather data
  * Similar to toorainy.com's color coding system
+ *
+ * Precipitation Assessment:
+ * - "Precipitation rate" = amount per hour (converted from 3h period)
+ * - Brief isolated rain (e.g., 0.06"/hr for 1h) can dry quickly in good conditions
+ * - Persistent drizzle (e.g., 0.02"/hr sustained) keeps surfaces wet
+ * - Considers recent precipitation history to detect patterns
  */
-export function getWeatherCondition(weather: WeatherData): WeatherCondition {
+export function getWeatherCondition(weather: WeatherData, recentWeather?: WeatherData[]): WeatherCondition {
   const reasons: string[] = [];
   let level: ConditionLevel = 'good';
 
-  // Check precipitation (inches in 3h period)
+  // Check for recent precipitation pattern (last 3-6 hours)
+  let recentPrecipTotal = 0;
+  let recentHoursWithPrecip = 0;
+  if (recentWeather && recentWeather.length > 0) {
+    // Look at last 2 data points (6 hours of 3-hour intervals)
+    const recentData = recentWeather.slice(0, 2);
+    recentPrecipTotal = recentData.reduce((sum, w) => sum + w.precipitation, 0);
+    recentHoursWithPrecip = recentData.filter(w => w.precipitation > 0.01).length;
+  }
+
+  // Assess drying conditions (affects how quickly surfaces dry after rain)
+  const hasDryingConditions =
+    weather.temperature > 55 && // Warm enough to dry
+    weather.cloud_cover < 50 && // Sunny (UV helps dry)
+    weather.wind_speed > 5 && // Wind helps evaporation
+    weather.wind_speed < 20; // But not too windy
+
+  // Precipitation assessment
   if (weather.precipitation > 0.1) {
+    // Heavy rain (>0.033"/hr rate or >0.1" in 3h period)
     level = 'bad';
-    reasons.push(`Heavy rain (${weather.precipitation.toFixed(2)}in)`);
+    reasons.push(`Heavy rain (${weather.precipitation.toFixed(2)}in/3h)`);
   } else if (weather.precipitation > 0.05) {
+    // Moderate rain (0.017-0.033"/hr rate)
     level = level === 'good' ? 'marginal' : level;
-    reasons.push(`Light rain (${weather.precipitation.toFixed(2)}in)`);
+    reasons.push(`Moderate rain (${weather.precipitation.toFixed(2)}in/3h)`);
+  } else if (weather.precipitation > 0.01) {
+    // Light rain or drizzle (0.003-0.017"/hr rate)
+    // This is where pattern matters!
+
+    if (recentHoursWithPrecip >= 2) {
+      // Persistent drizzle - keeps surfaces wet even if rate is low
+      level = level === 'good' ? 'marginal' : level;
+      reasons.push(`Persistent drizzle (${(recentPrecipTotal + weather.precipitation).toFixed(2)}in over 9h)`);
+    } else if (!hasDryingConditions) {
+      // Light rain without drying conditions = stays wet
+      level = level === 'good' ? 'marginal' : level;
+      reasons.push(`Light rain, poor drying (${weather.precipitation.toFixed(2)}in/3h)`);
+    } else {
+      // Brief light rain with good drying = may dry quickly
+      // Don't downgrade condition, but note it
+      reasons.push(`Brief light rain (${weather.precipitation.toFixed(2)}in/3h, drying fast)`);
+    }
+  } else if (recentPrecipTotal > 0.05 && !hasDryingConditions) {
+    // No current rain, but recent rain + poor drying = still wet
+    level = level === 'good' ? 'marginal' : level;
+    reasons.push(`Drying slowly after rain (${recentPrecipTotal.toFixed(2)}in recently)`);
   }
 
   // Check wind speed (mph)

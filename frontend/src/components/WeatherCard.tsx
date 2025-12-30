@@ -37,7 +37,9 @@ function formatSunTime(isoTime: string | undefined): string {
 
 export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCardProps) {
   const { location, current, hourly, historical, sunrise, sunset } = forecast;
-  const condition = getWeatherCondition(current);
+
+  // Pass recent historical data for precipitation pattern analysis
+  const condition = getWeatherCondition(current, historical);
   const conditionColor = getConditionColor(condition.level);
   const conditionBadge = getConditionBadgeStyles(condition.level);
   const conditionLabel = getConditionLabel(condition.level);
