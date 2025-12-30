@@ -5,7 +5,7 @@ import { getTempColor, getPrecipColor } from '../utils/climbingConditions';
 import { calculateDayPestConditions, getPestLevelColor, getPestLevelText, PestLevel } from '../utils/pestConditions';
 import { format } from 'date-fns';
 import { Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Bug } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ConditionDetailsModal } from './ConditionDetailsModal';
 
 interface ForecastViewProps {
@@ -131,6 +131,48 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
     level: 'good' | 'marginal' | 'bad';
     reasons: string[];
   } | null>(null);
+
+  // State and ref for floating day label
+  const [currentDay, setCurrentDay] = useState<string>('');
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const hourElementsRef = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Update floating day label based on scroll position
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!scrollContainerRef.current) return;
+
+      const container = scrollContainerRef.current;
+      const containerLeft = container.getBoundingClientRect().left;
+
+      // Find which hour element is currently at the left edge
+      for (let i = 0; i < hourElementsRef.current.length; i++) {
+        const element = hourElementsRef.current[i];
+        if (!element) continue;
+
+        const rect = element.getBoundingClientRect();
+        const relativeLeft = rect.left - containerLeft;
+
+        // If this element is visible at the left edge (within 100px threshold)
+        if (relativeLeft >= -50 && relativeLeft <= 100) {
+          const hour = hourlyData[i];
+          if (hour) {
+            const dayName = format(new Date(hour.timestamp), 'EEEE');
+            setCurrentDay(dayName);
+          }
+          break;
+        }
+      }
+    };
+
+    const container = scrollContainerRef.current;
+    if (container) {
+      // Set initial day
+      handleScroll();
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, [hourlyData]);
 
   // Calculate total rain from last 48 hours (affects climbing conditions)
   // Filter historical data to only include last 48 hours, then sum precipitation
@@ -480,31 +522,47 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       {/* Hourly Details (scrollable) */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
         <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Hourly Forecast</h3>
-        <div className="overflow-x-auto">
-          {/* Day labels row */}
-          <div className="flex gap-6 mb-2">
-            {hourlyData.slice(0, 48).map((hour, index) => {
-              const date = new Date(hour.timestamp);
-              const prevDate = index > 0 ? new Date(hourlyData[index - 1].timestamp) : null;
-              const showDayLabel = !prevDate || format(date, 'yyyy-MM-dd') !== format(prevDate, 'yyyy-MM-dd');
+        <div className="relative">
+          {/* Sticky day label overlay */}
+          {currentDay && (
+            <div className="absolute left-0 top-0 z-30 bg-white dark:bg-gray-800 border-l-4 border-blue-500 dark:border-blue-400 pl-3 pr-4 py-1.5 shadow-md pointer-events-none">
+              <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                {currentDay}
+              </div>
+            </div>
+          )}
 
-              return (
-                <div key={`day-${index}`} className="flex-shrink-0 w-20 text-center">
-                  {showDayLabel ? (
-                    <div className="text-xs font-bold text-gray-900 dark:text-white pb-1 border-b border-gray-300 dark:border-gray-600">
-                      {format(date, 'EEEE')}
+          {/* Scrollable container */}
+          <div ref={scrollContainerRef} className="overflow-x-auto">
+            {/* Day labels row */}
+            <div className="mb-4 pb-2 relative">
+              {/* Full-width border line */}
+              <div className="absolute bottom-0 left-0 right-0 h-px bg-gray-200 dark:bg-gray-700" style={{width: 'calc(48 * 5rem + 47 * 1.5rem)'}}></div>
+
+              <div className="flex gap-6">
+                {hourlyData.slice(0, 48).map((hour, index) => {
+                  const date = new Date(hour.timestamp);
+                  const prevDate = index > 0 ? new Date(hourlyData[index - 1].timestamp) : null;
+                  const showDayLabel = !prevDate || format(date, 'yyyy-MM-dd') !== format(prevDate, 'yyyy-MM-dd');
+
+                  return (
+                    <div key={`day-${index}`} className="flex-shrink-0 w-20 text-center">
+                      {showDayLabel ? (
+                        <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide pb-2">
+                          {format(date, 'EEEE')}
+                        </div>
+                      ) : (
+                        <div className="h-6"></div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="h-5"></div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            </div>
 
-          {/* Hourly data row */}
-          <div className="flex gap-6 pb-2">
-            {hourlyData.slice(0, 48).map((hour, index) => {
+            {/* Hourly data row */}
+            <div className="flex gap-6 pb-2">
+              {hourlyData.slice(0, 48).map((hour, index) => {
               const date = new Date(hour.timestamp);
               // Check if this hour matches the current weather timestamp
               const isCurrentHour = currentWeather &&
@@ -513,6 +571,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
               return (
                 <div
                   key={index}
+                  ref={el => { hourElementsRef.current[index] = el; }}
                   className={`flex-shrink-0 w-20 text-center ${isCurrentHour ? 'bg-blue-50 dark:bg-blue-900/30 rounded-lg p-2 -m-2' : ''}`}
                 >
                   {/* Time */}
@@ -550,6 +609,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                 </div>
               );
             })}
+            </div>
           </div>
         </div>
       </div>
