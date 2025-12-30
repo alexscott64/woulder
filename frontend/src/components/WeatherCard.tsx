@@ -7,7 +7,7 @@ import { PestAnalyzer } from '../utils/pests/analyzers';
 import type { PestConditions } from '../utils/pests/analyzers/PestAnalyzer';
 import { getPestLevelColor } from './pests/pestDisplay';
 import { format } from 'date-fns';
-import { Cloud, Droplet, Wind, Snowflake, ChevronDown, ChevronUp, Waves, Sunrise, Sunset, Bug } from 'lucide-react';
+import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, Waves, Sunrise, Sunset, Bug } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { RiverInfoModal } from './RiverInfoModal';
 import { PestInfoModal } from './PestInfoModal';
@@ -311,8 +311,8 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
           {/* Humidity */}
           <div className="flex flex-col items-center text-center">
-            <Droplet className="w-5 h-5 mb-1 text-cyan-500 dark:text-cyan-400" />
-            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Humid</div>
+            <Droplets className="w-5 h-5 mb-1 text-cyan-500 dark:text-cyan-400" />
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Humidity</div>
             <div className="text-sm font-semibold text-gray-900 dark:text-white">
               {current.humidity}%
             </div>

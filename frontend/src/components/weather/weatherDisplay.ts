@@ -92,9 +92,34 @@ export function getConditionBadgeStyles(level: ConditionLevel): {
 }
 
 /**
- * Get OpenWeatherMap icon URL
+ * Check if a timestamp is during daytime based on sunrise/sunset
  */
-export function getWeatherIconUrl(iconCode: string): string {
+export function isDaytime(timestamp: string, sunrise: string | undefined, sunset: string | undefined): boolean {
+  if (!sunrise || !sunset) {
+    // Fallback to simple hour check if no sun times available
+    const hour = new Date(timestamp).getHours();
+    return hour >= 6 && hour < 20;
+  }
+
+  const time = new Date(timestamp).getTime();
+  const sunriseTime = new Date(sunrise).getTime();
+  const sunsetTime = new Date(sunset).getTime();
+
+  return time >= sunriseTime && time < sunsetTime;
+}
+
+/**
+ * Get OpenWeatherMap icon URL, correcting day/night indicator based on actual sunrise/sunset
+ */
+export function getWeatherIconUrl(iconCode: string, timestamp?: string, sunrise?: string, sunset?: string): string {
+  // If we have timestamp and sun times, correct the day/night indicator
+  if (timestamp && (sunrise || sunset)) {
+    const isDay = isDaytime(timestamp, sunrise, sunset);
+    const baseIcon = iconCode.substring(0, 2); // e.g., "01" from "01d" or "01n"
+    const correctedIcon = baseIcon + (isDay ? 'd' : 'n');
+    return `https://openweathermap.org/img/wn/${correctedIcon}@2x.png`;
+  }
+
   return `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
 }
 

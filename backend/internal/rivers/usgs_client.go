@@ -138,6 +138,7 @@ func CalculateCrossingStatus(river models.River, flowCFS float64) (string, strin
 	var message string
 	var isSafe bool
 
+	// Determine base status
 	if flowCFS <= float64(river.SafeCrossingCFS) {
 		status = "safe"
 		message = fmt.Sprintf("Safe to cross. Flow is %.0f%% of safe threshold.", percentOfSafe)
@@ -150,6 +151,11 @@ func CalculateCrossingStatus(river models.River, flowCFS float64) (string, strin
 		status = "unsafe"
 		message = fmt.Sprintf("Unsafe to cross! Flow is %.0f%% of safe threshold.", percentOfSafe)
 		isSafe = false
+	}
+
+	// Prefix status with "estimated" if flow is estimated
+	if river.IsEstimated {
+		status = "estimated " + status
 	}
 
 	return status, message, isSafe, percentOfSafe

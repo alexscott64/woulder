@@ -1,5 +1,5 @@
 import { RiverData } from '../types/river';
-import { X, Droplet, AlertTriangle, AlertCircle, TrendingUp, Clock } from 'lucide-react';
+import { X, Droplet, AlertTriangle, AlertCircle, TrendingUp, Clock, Waves } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface RiverInfoModalProps {
@@ -14,28 +14,32 @@ export function RiverInfoModal({ rivers, locationName, onClose }: RiverInfoModal
   }
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    // Handle "estimated" prefix
+    const baseStatus = status.replace('estimated ', '');
+    switch (baseStatus) {
       case 'safe':
-        return 'bg-green-100 text-green-800 border-green-300';
+        return 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/20 dark:text-green-200 dark:border-green-800';
       case 'caution':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-200 dark:border-yellow-800';
       case 'unsafe':
-        return 'bg-red-100 text-red-800 border-red-300';
+        return 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/20 dark:text-red-200 dark:border-red-800';
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-300';
+        return 'bg-gray-100 text-gray-800 border-gray-300 dark:bg-gray-900/20 dark:text-gray-200 dark:border-gray-700';
     }
   };
 
   const getStatusIcon = (status: string) => {
-    switch (status) {
+    // Handle "estimated" prefix
+    const baseStatus = status.replace('estimated ', '');
+    switch (baseStatus) {
       case 'safe':
-        return <Droplet className="w-5 h-5 text-green-600" />;
+        return <Droplet className="w-5 h-5 text-green-600 dark:text-green-400" />;
       case 'caution':
-        return <AlertTriangle className="w-5 h-5 text-yellow-600" />;
+        return <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />;
       case 'unsafe':
-        return <AlertCircle className="w-5 h-5 text-red-600" />;
+        return <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />;
       default:
-        return <Droplet className="w-5 h-5 text-gray-600" />;
+        return <Droplet className="w-5 h-5 text-gray-600 dark:text-gray-400" />;
     }
   };
 
@@ -45,7 +49,7 @@ export function RiverInfoModal({ rivers, locationName, onClose }: RiverInfoModal
         {/* Header */}
         <div className="bg-blue-600 dark:bg-blue-700 text-white p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Droplet className="w-6 h-6" />
+            <Waves className="w-6 h-6" />
             <div>
               <h2 className="text-xl font-bold">River Crossing Information</h2>
               <p className="text-sm text-blue-100">{locationName}</p>
@@ -67,24 +71,26 @@ export function RiverInfoModal({ rivers, locationName, onClose }: RiverInfoModal
                 key={index}
                 className={`border-2 rounded-lg p-4 ${getStatusColor(riverData.status)}`}
               >
-                {/* River Name and Status */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    {getStatusIcon(riverData.status)}
-                    <div>
-                      <h3 className="font-bold text-lg">{riverData.river.river_name}</h3>
-                      {riverData.river.description && (
-                        <p className="text-sm opacity-75">{riverData.river.description}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-bold text-sm uppercase">{riverData.status}</div>
+                {/* River Name */}
+                <div className="flex items-start gap-2 mb-4">
+                  {getStatusIcon(riverData.status)}
+                  <div className="flex-1">
+                    <h3 className="font-bold text-lg">{riverData.river.river_name}</h3>
+                    {riverData.river.description && (
+                      <p className="text-sm opacity-75">{riverData.river.description}</p>
+                    )}
                   </div>
                 </div>
 
-                {/* Status Message */}
-                <div className="mb-4 p-3 bg-white bg-opacity-50 rounded-lg">
+                {/* Status Badge */}
+                <div className="mb-4">
+                  <div className="inline-block px-4 py-2 bg-white dark:bg-gray-700 bg-opacity-70 rounded-lg font-bold text-sm uppercase">
+                    {riverData.status}
+                  </div>
+                </div>
+
+                {/* Status Message - Full Width */}
+                <div className="mb-4 p-3 bg-white dark:bg-gray-700 bg-opacity-50 rounded-lg">
                   <p className="font-medium">{riverData.status_message}</p>
                 </div>
 

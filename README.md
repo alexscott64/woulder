@@ -1,13 +1,13 @@
 # woulder
 
-> A comprehensive weather intelligence platform for climbers in the Pacific Northwest
+> A comprehensive weather intelligence platform for bouldering.
 
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://woulder.com)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://go.dev/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
-Track comprehensive climbing conditions including weather, river crossings, pest activity, and snow accumulation for locations across the Pacific Northwest.
+Track comprehensive climbing conditions including weather, river crossings, pest activity, and snow accumulation for locations across the Pacific Northwest, Southern California, and eventually more.
 
 [woulder.com](https://woulder.com)
 
@@ -106,14 +106,13 @@ Track comprehensive climbing conditions including weather, river crossings, pest
    - Frontend: http://localhost:5173
    - Backend API: http://localhost:8080/api/health
 
-See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 
 ---
 
 ## Documentation
 
 ### User Guides
-- **[QUICKSTART.md](QUICKSTART.md)** - Installation and setup guide
+- **[ADDING_LOCATIONS.md](ADDING_LOCATIONS.md)** - Add a new location
 
 ### Scientific Documentation
 - **[docs/pest-activity-calculation.md](docs/pest-activity-calculation.md)** - How pest forecasts are calculated
@@ -121,8 +120,6 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 - **[docs/snow-accumulation-calculation.md](docs/snow-accumulation-calculation.md)** - Snow physics and modeling
 - **[docs/precipitation-rating.md](docs/precipitation-rating.md)** - Precipitation condition assessment
 
-### Architecture
-- **[notes/architecture-weather.md](notes/architecture-weather.md)** - Three-layer architecture pattern
 
 ---
 
@@ -308,11 +305,8 @@ woulder/
 │   ├── snow-accumulation-calculation.md  # Snow science
 │   └── precipitation-rating.md           # Precipitation science
 │
-├── notes/                        # Development notes
-│   └── architecture-weather.md   # Architecture documentation
-│
 ├── README.md                     # This file
-├── QUICKSTART.md                 # Quick start guide
+├── ADDING_LOCATIONS.md           # Add a location guide
 └── SUMMARY.md                    # Project summary
 ```
 
@@ -339,8 +333,6 @@ woulder uses a **three-layer architecture** to separate concerns:
 - **Purpose**: Visual presentation and user interaction
 - **Examples**: Color coding, labels, icons, charts
 - **Testing**: Component tests for rendering
-
-See [notes/architecture-weather.md](notes/architecture-weather.md) for detailed architecture documentation.
 
 ---
 

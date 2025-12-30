@@ -49,10 +49,19 @@ export class ConditionCalculator {
       downgradeCondition(tempCondition.level);
     }
 
-    // 4. Assess Humidity (only marginal, not bad)
+    // 4. Assess Humidity (only flag when combined with extreme temperatures)
+    // High humidity is only a climbing concern when it's very cold (< 30°F) or very hot (> 85°F)
     if (weather.humidity > 85) {
-      reasons.push(`High humidity (${weather.humidity}%)`);
-      if (level === 'good') level = 'marginal';
+      if (weather.temperature < 30) {
+        // High humidity in cold = ice risk
+        reasons.push(`High humidity (${weather.humidity}%) in freezing conditions`);
+        if (level === 'good') level = 'marginal';
+      } else if (weather.temperature > 85) {
+        // High humidity in heat = heat index concern
+        reasons.push(`High humidity (${weather.humidity}%) in hot conditions`);
+        if (level === 'good') level = 'marginal';
+      }
+      // Otherwise humidity alone isn't a concern for climbing
     }
 
     // If no issues found, note good conditions

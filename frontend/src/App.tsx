@@ -8,7 +8,7 @@ import AreaSelector from './components/AreaSidebar';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { ConditionCalculator } from './utils/weather/analyzers';
 import { getConditionColor } from './components/weather/weatherDisplay';
-import { RefreshCw, WifiOff, Wifi, ChevronUp, Settings } from 'lucide-react';
+import { RefreshCw, WifiOff, ChevronUp, Settings, Github, Heart, Mail } from 'lucide-react';
 import { format } from 'date-fns';
 
 const queryClient = new QueryClient({
@@ -87,14 +87,12 @@ function Dashboard() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-4">
-              {/* Online Status - Icon only */}
-              <div className="flex items-center" title={isOnline ? "Online" : "Offline"}>
-                {isOnline ? (
-                  <Wifi className="w-5 h-5 text-green-600 dark:text-green-400" />
-                ) : (
+              {/* Offline Status - Only show when offline */}
+              {!isOnline && (
+                <div className="flex items-center" title="Offline">
                   <WifiOff className="w-5 h-5 text-red-600 dark:text-red-400" />
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Area Selector */}
               <AreaSelector />
@@ -113,7 +111,7 @@ function Dashboard() {
           {/* Last Updated */}
           {lastUpdated && (
             <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-              Last updated: {format(lastUpdated, 'MMM d, yyyy h:mm:ss a')}
+              Last updated: {format(lastUpdated, 'MMM d, yyyy h:mm:ss a')} {new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' }).formatToParts(lastUpdated).find(part => part.type === 'timeZoneName')?.value}
             </div>
           )}
         </div>
@@ -142,6 +140,10 @@ function Dashboard() {
           <>
             {/* Mobile Layout - Single column with inline forecast */}
             <div className="md:hidden space-y-6">
+              {/* Mobile Region Header - Clickable Area Selector */}
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                <AreaSelector variant="mobile" />
+              </div>
               {sortedWeather.map((forecast) => {
                 const isExpanded = expandedLocationId === forecast.location_id;
                 const condition = ConditionCalculator.calculateCondition(forecast.current, forecast.historical);
@@ -276,10 +278,41 @@ function Dashboard() {
 
       {/* Footer */}
       <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <p className="text-center text-sm text-gray-600 dark:text-gray-400">
-            woulder - The Weather App for Climbers
-          </p>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="flex flex-col items-center gap-4">
+            {/* Tagline */}
+            <p className="text-center text-gray-900 dark:text-white font-medium">
+              Better forecasts for bouldering
+            </p>
+
+            {/* Links */}
+            <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-sm">
+              <a
+                href="mailto:woulder.pnw@gmail.com"
+                className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              >
+                <Mail className="w-4 h-4" />
+                <span>Contact</span>
+              </a>
+              <a
+                href="https://github.com/alexscott64/woulder"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              >
+                <Github className="w-4 h-4" />
+                <span>GitHub</span>
+              </a>
+            </div>
+
+            {/* Open Source Badge */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-full">
+              <Heart className="w-4 h-4 text-red-500" />
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                Always free, always open source
+              </span>
+            </div>
+          </div>
         </div>
       </footer>
 

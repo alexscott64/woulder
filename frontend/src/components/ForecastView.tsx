@@ -6,7 +6,8 @@ import { PestAnalyzer } from '../utils/pests/analyzers';
 import { PestLevel } from '../utils/pests/calculations/pests';
 import { getPestLevelColor, getPestLevelText } from './pests/pestDisplay';
 import { format } from 'date-fns';
-import { Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Bug } from 'lucide-react';
+import { formatInTimeZone } from 'date-fns-tz';
+import { Droplets, Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Bug, Cloud } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { ConditionDetailsModal } from './ConditionDetailsModal';
 
@@ -46,6 +47,8 @@ interface DayForecast {
   low: number;
   avgPrecip: number;
   avgWind: number;
+  avgHumidity: number; // Average humidity for the day
+  avgCloudCover: number; // Average cloud cover for the day
   icon: string;
   description: string;
   condition: 'good' | 'marginal' | 'bad';
@@ -63,12 +66,11 @@ interface DayForecast {
   conditionReasons?: string[]; // Combined reasons for the day's overall condition
 }
 
-// Helper to format sun time from ISO string to "7:54 AM" format
+// Helper to format sun time from ISO string to "7:54 AM" format in Pacific timezone
 function formatSunTime(isoTime: string | undefined): string {
   if (!isoTime) return '--';
   try {
-    const date = new Date(isoTime);
-    return format(date, 'h:mm a');
+    return formatInTimeZone(isoTime, 'America/Los_Angeles', 'h:mm a');
   } catch {
     return '--';
   }
@@ -180,7 +182,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
         if (relativeLeft >= -50 && relativeLeft <= 100) {
           const hour = hourlyData[i];
           if (hour) {
-            const dayName = format(new Date(hour.timestamp), 'EEEE');
+            const dayName = formatInTimeZone(hour.timestamp, 'America/Los_Angeles', 'EEEE');
             setCurrentDay(dayName);
           }
           break;
@@ -245,12 +247,11 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
     deduplicatedMap.set(data.timestamp.toString(), data);
   });
 
-  // Group deduplicated data by day
+  // Group deduplicated data by day (in Pacific timezone)
   const days = new Map<string, WeatherData[]>();
   Array.from(deduplicatedMap.values()).forEach(data => {
-    const timestamp = new Date(data.timestamp);
-    const dateOnly = new Date(timestamp.getFullYear(), timestamp.getMonth(), timestamp.getDate());
-    const dateKey = format(dateOnly, 'yyyy-MM-dd');
+    // Group by Pacific timezone date
+    const dateKey = formatInTimeZone(data.timestamp, 'America/Los_Angeles', 'yyyy-MM-dd');
 
     // Include all data from today onwards
     if (dateKey >= todayStr) {
@@ -273,7 +274,10 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
     const high = Math.max(...temps);
     const low = Math.min(...temps);
     const totalPrecip = hours.reduce((sum, h) => sum + h.precipitation, 0);
+    const avgPrecip = totalPrecip / hours.length; // Average precipitation per hour
     const avgWind = hours.reduce((sum, h) => sum + h.wind_speed, 0) / hours.length;
+    const avgHumidity = hours.reduce((sum, h) => sum + h.humidity, 0) / hours.length;
+    const avgCloudCover = hours.reduce((sum, h) => sum + h.cloud_cover, 0) / hours.length;
 
     // Use most common weather icon
     const iconCounts = new Map<string, number>();
@@ -287,8 +291,10 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
     // Weight climbing hours (9am-8pm) more heavily for temperature issues
     // But keep rain/precipitation for all hours since it affects conditions later
     const isClimbingHour = (hour: WeatherData): boolean => {
-      const hourOfDay = new Date(hour.timestamp).getHours();
-      return hourOfDay >= 9 && hourOfDay < 20; // 9am to 8pm
+      // Convert to Pacific timezone to get the correct hour
+      const pacificDate = new Date(hour.timestamp).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+      const hourOfDay = new Date(pacificDate).getHours();
+      return hourOfDay >= 9 && hourOfDay < 20; // 9am to 8pm Pacific
     };
 
     const hourConditions = hours.map((h, index) => {
@@ -446,8 +452,10 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       dayName: isToday ? 'Today' : format(date, 'EEE'),
       high,
       low,
-      avgPrecip: totalPrecip,
+      avgPrecip, // Changed from totalPrecip to avgPrecip
       avgWind,
+      avgHumidity,
+      avgCloudCover,
       icon,
       description,
       condition,
@@ -504,12 +512,12 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
 
               {/* Date */}
               <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                {format(day.date, 'MMM d')}
+                {formatInTimeZone(day.date, 'America/Los_Angeles', 'MMM d')}
               </div>
 
               {/* Weather icon */}
               <img
-                src={getWeatherIconUrl(day.icon)}
+                src={getWeatherIconUrl(day.icon, day.hours[Math.floor(day.hours.length / 2)].timestamp, day.sunrise, day.sunset)}
                 alt={day.description}
                 className="w-12 h-12 mx-auto"
               />
@@ -559,6 +567,18 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                     <span>{Math.round(day.avgWind)} mph</span>
                   </div>
                 )}
+
+                {/* Humidity */}
+                <div className="flex items-center justify-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+                  <Droplets className="w-3 h-3" />
+                  <span>{Math.round(day.avgHumidity)}%</span>
+                </div>
+
+                {/* Cloud Cover */}
+                <div className="flex items-center justify-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+                  <Cloud className="w-3 h-3" />
+                  <span>{Math.round(day.avgCloudCover)}%</span>
+                </div>
               </div>
 
               {/* Sunrise/Sunset and Sun Hours */}
@@ -649,10 +669,13 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
             {/* Hourly data row */}
             <div className="flex gap-6 pb-2">
               {hourlyData.slice(0, 48).map((hour, index) => {
-              const date = new Date(hour.timestamp);
               // Check if this hour matches the current weather timestamp
               const isCurrentHour = currentWeather &&
                 Math.abs(new Date(hour.timestamp).getTime() - new Date(currentWeather.timestamp).getTime()) < 60 * 60 * 1000;
+
+              // Find the sunrise/sunset for this hour's date
+              const dateKey = formatInTimeZone(hour.timestamp, 'America/Los_Angeles', 'yyyy-MM-dd');
+              const daySunTimes = dailySunTimes?.find(d => d.date === dateKey);
 
               return (
                 <div
@@ -662,12 +685,12 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                 >
                   {/* Time */}
                   <div className={`text-xs font-medium mb-1 ${isCurrentHour ? 'text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-700 dark:text-gray-300'}`}>
-                    {isCurrentHour ? 'Now' : format(date, 'ha')}
+                    {isCurrentHour ? 'Now' : formatInTimeZone(hour.timestamp, 'America/Los_Angeles', 'ha')}
                   </div>
 
                   {/* Icon */}
                   <img
-                    src={getWeatherIconUrl(hour.icon)}
+                    src={getWeatherIconUrl(hour.icon, hour.timestamp, daySunTimes?.sunrise, daySunTimes?.sunset)}
                     alt={hour.description}
                     className="w-10 h-10 mx-auto"
                   />
@@ -691,6 +714,18 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                   <div className={`flex items-center justify-center gap-1 text-xs ${getWindColor(hour.wind_speed)}`}>
                     <Wind className="w-3 h-3" />
                     <span>{Math.round(hour.wind_speed)}</span>
+                  </div>
+
+                  {/* Humidity */}
+                  <div className="flex items-center justify-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+                    <Droplets className="w-3 h-3" />
+                    <span>{hour.humidity}%</span>
+                  </div>
+
+                  {/* Cloud Cover */}
+                  <div className="flex items-center justify-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+                    <Cloud className="w-3 h-3" />
+                    <span>{hour.cloud_cover}%</span>
                   </div>
                 </div>
               );
