@@ -61,6 +61,8 @@ func main() {
 	{
 		apiGroup.GET("/health", handler.HealthCheck)
 		apiGroup.GET("/locations", handler.GetAllLocations)
+		apiGroup.GET("/areas", handler.GetAllAreas)
+		apiGroup.GET("/areas/:id/locations", handler.GetLocationsByArea)
 		apiGroup.GET("/weather/all", handler.GetAllWeather)
 		apiGroup.GET("/weather/:id", handler.GetWeatherForLocation)
 		apiGroup.GET("/weather/coordinates", handler.GetWeatherByCoordinates)

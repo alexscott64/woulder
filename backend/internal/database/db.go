@@ -105,7 +105,7 @@ func (db *Database) Close() error {
 
 // GetAllLocations retrieves all saved locations
 func (db *Database) GetAllLocations() ([]models.Location, error) {
-	query := `SELECT id, name, latitude, longitude, elevation_ft, created_at, updated_at
+	query := `SELECT id, name, latitude, longitude, elevation_ft, area_id, created_at, updated_at
 	          FROM woulder.locations ORDER BY name`
 
 	rows, err := db.conn.Query(query)
@@ -117,7 +117,7 @@ func (db *Database) GetAllLocations() ([]models.Location, error) {
 	var locations []models.Location
 	for rows.Next() {
 		var loc models.Location
-		if err := rows.Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude, &loc.ElevationFt, &loc.CreatedAt, &loc.UpdatedAt); err != nil {
+		if err := rows.Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude, &loc.ElevationFt, &loc.AreaID, &loc.CreatedAt, &loc.UpdatedAt); err != nil {
 			return nil, err
 		}
 		locations = append(locations, loc)
@@ -128,11 +128,11 @@ func (db *Database) GetAllLocations() ([]models.Location, error) {
 
 // GetLocation retrieves a location by ID
 func (db *Database) GetLocation(id int) (*models.Location, error) {
-	query := `SELECT id, name, latitude, longitude, elevation_ft, created_at, updated_at
+	query := `SELECT id, name, latitude, longitude, elevation_ft, area_id, created_at, updated_at
 	          FROM woulder.locations WHERE id = $1`
 
 	var loc models.Location
-	err := db.conn.QueryRow(query, id).Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude, &loc.ElevationFt, &loc.CreatedAt, &loc.UpdatedAt)
+	err := db.conn.QueryRow(query, id).Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude, &loc.ElevationFt, &loc.AreaID, &loc.CreatedAt, &loc.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -370,4 +370,101 @@ func (db *Database) GetRiverByID(riverID int) (*models.River, error) {
 	}
 
 	return &river, nil
+}
+
+// GetAllAreas retrieves all areas ordered by display_order
+func (db *Database) GetAllAreas() ([]models.Area, error) {
+	query := `SELECT id, name, description, region, display_order, created_at, updated_at
+	          FROM woulder.areas
+	          ORDER BY display_order, name`
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var areas []models.Area
+	for rows.Next() {
+		var area models.Area
+		if err := rows.Scan(&area.ID, &area.Name, &area.Description, &area.Region,
+			&area.DisplayOrder, &area.CreatedAt, &area.UpdatedAt); err != nil {
+			return nil, err
+		}
+		areas = append(areas, area)
+	}
+
+	return areas, nil
+}
+
+// GetAreasWithLocationCounts retrieves all areas with location counts
+func (db *Database) GetAreasWithLocationCounts() ([]models.AreaWithLocationCount, error) {
+	query := `
+		SELECT a.id, a.name, a.description, a.region, a.display_order,
+		       a.created_at, a.updated_at, COUNT(l.id) as location_count
+		FROM woulder.areas a
+		LEFT JOIN woulder.locations l ON l.area_id = a.id
+		GROUP BY a.id
+		ORDER BY a.display_order, a.name`
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var areas []models.AreaWithLocationCount
+	for rows.Next() {
+		var area models.AreaWithLocationCount
+		if err := rows.Scan(&area.ID, &area.Name, &area.Description, &area.Region,
+			&area.DisplayOrder, &area.CreatedAt, &area.UpdatedAt,
+			&area.LocationCount); err != nil {
+			return nil, err
+		}
+		areas = append(areas, area)
+	}
+
+	return areas, nil
+}
+
+// GetAreaByID retrieves a single area by ID
+func (db *Database) GetAreaByID(id int) (*models.Area, error) {
+	query := `SELECT id, name, description, region, display_order, created_at, updated_at
+	          FROM woulder.areas WHERE id = $1`
+
+	var area models.Area
+	err := db.conn.QueryRow(query, id).Scan(&area.ID, &area.Name, &area.Description,
+		&area.Region, &area.DisplayOrder,
+		&area.CreatedAt, &area.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &area, nil
+}
+
+// GetLocationsByArea retrieves all locations for a specific area
+func (db *Database) GetLocationsByArea(areaID int) ([]models.Location, error) {
+	query := `SELECT id, name, latitude, longitude, elevation_ft, area_id, created_at, updated_at
+	          FROM woulder.locations
+	          WHERE area_id = $1
+	          ORDER BY name`
+
+	rows, err := db.conn.Query(query, areaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var locations []models.Location
+	for rows.Next() {
+		var loc models.Location
+		if err := rows.Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude,
+			&loc.ElevationFt, &loc.AreaID, &loc.CreatedAt, &loc.UpdatedAt); err != nil {
+			return nil, err
+		}
+		locations = append(locations, loc)
+	}
+
+	return locations, nil
 }

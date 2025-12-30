@@ -7,18 +7,21 @@ interface Settings {
   darkMode: boolean;
   temperatureUnit: TemperatureUnit;
   speedUnit: SpeedUnit;
+  selectedAreaId: number | null; // null = "All Areas"
 }
 
 interface SettingsContextType {
   settings: Settings;
   updateSettings: (updates: Partial<Settings>) => void;
   toggleDarkMode: () => void;
+  setSelectedArea: (areaId: number | null) => void;
 }
 
 const defaultSettings: Settings = {
   darkMode: false,
   temperatureUnit: 'fahrenheit',
   speedUnit: 'mph',
+  selectedAreaId: null, // Default to "All Areas"
 };
 
 const STORAGE_KEY = 'woulder-settings';
@@ -89,8 +92,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const setSelectedArea = (areaId: number | null) => {
+    setSettings(prev => ({ ...prev, selectedAreaId: areaId }));
+  };
+
   return (
-    <SettingsContext.Provider value={{ settings, updateSettings, toggleDarkMode }}>
+    <SettingsContext.Provider value={{ settings, updateSettings, toggleDarkMode, setSelectedArea }}>
       {children}
     </SettingsContext.Provider>
   );

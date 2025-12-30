@@ -9,6 +9,7 @@ type Location struct {
 	Latitude    float64   `json:"latitude" db:"latitude"`
 	Longitude   float64   `json:"longitude" db:"longitude"`
 	ElevationFt int       `json:"elevation_ft" db:"elevation_ft"` // Elevation in feet above sea level
+	AreaID      int       `json:"area_id" db:"area_id"`           // Foreign key to areas table
 	CreatedAt   time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
 }

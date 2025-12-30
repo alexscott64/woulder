@@ -4,6 +4,7 @@ export interface Location {
   latitude: number;
   longitude: number;
   elevation_ft: number; // Elevation in feet above sea level
+  area_id: number; // Foreign key to areas table
   created_at: string;
   updated_at: string;
 }
