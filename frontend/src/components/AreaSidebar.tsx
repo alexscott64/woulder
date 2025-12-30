@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { MapPin, Globe, ChevronDown, X, Check } from 'lucide-react';
+import { MapPin, Globe, X, Check } from 'lucide-react';
 import { weatherApi } from '../services/api';
 import { useSettings } from '../contexts/SettingsContext';
 
