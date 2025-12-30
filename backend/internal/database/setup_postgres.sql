@@ -29,6 +29,18 @@ SET search_path TO woulder, public;
 -- TABLES
 -- ============================================================================
 
+-- Areas table
+-- Stores geographic areas for grouping climbing locations
+CREATE TABLE IF NOT EXISTS woulder.areas (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT,
+    region VARCHAR(100),
+    display_order INTEGER DEFAULT 0 CHECK (display_order >= 0),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Locations table
 -- Stores climbing locations with coordinates and elevation
 CREATE TABLE IF NOT EXISTS woulder.locations (
@@ -37,8 +49,10 @@ CREATE TABLE IF NOT EXISTS woulder.locations (
     latitude DECIMAL(10, 8) NOT NULL CHECK (latitude >= -90 AND latitude <= 90),
     longitude DECIMAL(11, 8) NOT NULL CHECK (longitude >= -180 AND longitude <= 180),
     elevation_ft INTEGER DEFAULT 0 CHECK (elevation_ft >= -1000 AND elevation_ft <= 30000),
+    area_id INTEGER NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (area_id) REFERENCES woulder.areas(id) ON DELETE RESTRICT
 );
 
 -- Weather data table
@@ -85,8 +99,12 @@ CREATE TABLE IF NOT EXISTS woulder.rivers (
 -- INDEXES
 -- ============================================================================
 
+-- Area indexes
+CREATE INDEX IF NOT EXISTS idx_areas_display_order ON woulder.areas(display_order);
+
 -- Location indexes
 CREATE INDEX IF NOT EXISTS idx_locations_name ON woulder.locations(name);
+CREATE INDEX IF NOT EXISTS idx_locations_area_id ON woulder.locations(area_id);
 
 -- Weather data indexes (for performance)
 CREATE INDEX IF NOT EXISTS idx_weather_data_location_timestamp ON woulder.weather_data(location_id, timestamp DESC);
@@ -110,6 +128,11 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+-- Trigger for areas table
+DROP TRIGGER IF EXISTS update_areas_updated_at ON woulder.areas;
+CREATE TRIGGER update_areas_updated_at BEFORE UPDATE ON woulder.areas
+    FOR EACH ROW EXECUTE FUNCTION woulder.update_updated_at_column();
+
 -- Trigger for locations table
 DROP TRIGGER IF EXISTS update_locations_updated_at ON woulder.locations;
 CREATE TRIGGER update_locations_updated_at BEFORE UPDATE ON woulder.locations
@@ -125,9 +148,12 @@ CREATE TRIGGER update_rivers_updated_at BEFORE UPDATE ON woulder.rivers
 -- ============================================================================
 
 COMMENT ON SCHEMA woulder IS 'Woulder climbing weather application schema';
+COMMENT ON TABLE woulder.areas IS 'Geographic areas for grouping climbing locations';
 COMMENT ON TABLE woulder.locations IS 'Climbing locations with coordinates and elevation';
 COMMENT ON TABLE woulder.weather_data IS 'Historical and forecast weather data';
 COMMENT ON TABLE woulder.rivers IS 'River crossing information with USGS gauge data';
+COMMENT ON COLUMN woulder.areas.display_order IS 'Order in which areas should be displayed (lower = first)';
+COMMENT ON COLUMN woulder.locations.area_id IS 'Foreign key to areas table';
 COMMENT ON COLUMN woulder.rivers.is_estimated IS 'Whether flow is estimated from nearby gauge or direct reading';
 COMMENT ON COLUMN woulder.rivers.flow_divisor IS 'Divisor to apply to gauge reading (e.g., 2.0 means divide by 2)';
 COMMENT ON COLUMN woulder.rivers.drainage_area_sq_mi IS 'Drainage area of the river at crossing point';
@@ -137,20 +163,49 @@ COMMENT ON COLUMN woulder.rivers.gauge_drainage_area_sq_mi IS 'Drainage area at 
 -- SEED DATA
 -- ============================================================================
 
+-- Areas
+-- Create Pacific Northwest and Southern California areas
+INSERT INTO woulder.areas (name, description, region, display_order)
+VALUES
+    ('Pacific Northwest', 'Climbing areas in Washington, Oregon, and British Columbia', 'West Coast', 1),
+    ('Southern California', 'Desert climbing and high-alpine bouldering in Southern California', 'Southwest', 2)
+ON CONFLICT (name) DO NOTHING;
+
 -- Locations
 -- Using ON CONFLICT DO NOTHING to skip if location already exists
-INSERT INTO woulder.locations (name, latitude, longitude, elevation_ft)
-VALUES
-    ('Skykomish - Money Creek', 47.69727769, -121.47884640, 1000),
-    ('Index', 47.82061272, -121.55492795, 500),
-    ('Gold Bar', 47.8468, -121.6970, 200),
-    ('Bellingham', 48.7519, -122.4787, 100),
-    ('Icicle Creek (Leavenworth)', 47.5962, -120.6615, 1200),
-    ('Squamish', 49.7016, -123.1558, 200),
-    ('Skykomish - Paradise', 47.64074805, -121.37822668, 1500),
-    ('Treasury', 47.76086166, -121.12877297, 3650),
-    ('Calendar Butte', 48.36202, -122.08273, 1600)
-ON CONFLICT (name) DO NOTHING;
+DO $$
+DECLARE
+    pnw_area_id INTEGER;
+    socal_area_id INTEGER;
+BEGIN
+    SELECT id INTO pnw_area_id FROM woulder.areas WHERE name = 'Pacific Northwest';
+    SELECT id INTO socal_area_id FROM woulder.areas WHERE name = 'Southern California';
+
+    -- Pacific Northwest locations
+    INSERT INTO woulder.locations (name, latitude, longitude, elevation_ft, area_id)
+    VALUES
+        ('Skykomish - Money Creek', 47.69727769, -121.47884640, 1000, pnw_area_id),
+        ('Index', 47.82061272, -121.55492795, 500, pnw_area_id),
+        ('Gold Bar', 47.8468, -121.6970, 200, pnw_area_id),
+        ('Bellingham', 48.7519, -122.4787, 100, pnw_area_id),
+        ('Icicle Creek (Leavenworth)', 47.5962, -120.6615, 1200, pnw_area_id),
+        ('Squamish', 49.7016, -123.1558, 200, pnw_area_id),
+        ('Skykomish - Paradise', 47.64074805, -121.37822668, 1500, pnw_area_id),
+        ('Treasury', 47.76086166, -121.12877297, 3650, pnw_area_id),
+        ('Calendar Butte', 48.36202, -122.08273, 1600, pnw_area_id)
+    ON CONFLICT (name) DO NOTHING;
+
+    -- Southern California locations
+    INSERT INTO woulder.locations (name, latitude, longitude, elevation_ft, area_id)
+    VALUES
+        ('Joshua Tree', 34.01565, -116.16298, 2700, socal_area_id),
+        ('Black Mountain', 33.82629, -116.7591, 7500, socal_area_id),
+        ('Buttermilks', 37.3276, -118.5757, 6400, socal_area_id),
+        ('Happy / Sad Boulders', 37.41601, -118.43994, 4400, socal_area_id),
+        ('Yosemite', 37.7416, -119.60152, 3977, socal_area_id),
+        ('Tramway', 33.81074, -116.65175, 8519, socal_area_id)
+    ON CONFLICT (name) DO NOTHING;
+END $$;
 
 -- Rivers (using active USGS gauges)
 
@@ -239,9 +294,11 @@ ON CONFLICT DO NOTHING;
 -- Display setup results
 DO $$
 DECLARE
+    area_count INTEGER;
     location_count INTEGER;
     river_count INTEGER;
 BEGIN
+    SELECT COUNT(*) INTO area_count FROM woulder.areas;
     SELECT COUNT(*) INTO location_count FROM woulder.locations;
     SELECT COUNT(*) INTO river_count FROM woulder.rivers;
 
@@ -249,10 +306,11 @@ BEGIN
     RAISE NOTICE '========================================';
     RAISE NOTICE 'Woulder Database Setup Complete!';
     RAISE NOTICE '========================================';
+    RAISE NOTICE 'Areas created: %', area_count;
     RAISE NOTICE 'Locations created: %', location_count;
     RAISE NOTICE 'Rivers created: %', river_count;
     RAISE NOTICE '';
     RAISE NOTICE 'Schema: woulder';
-    RAISE NOTICE 'Tables: locations, weather_data, rivers';
+    RAISE NOTICE 'Tables: areas, locations, weather_data, rivers';
     RAISE NOTICE '========================================';
 END $$;

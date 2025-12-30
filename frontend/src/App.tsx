@@ -4,7 +4,8 @@ import { weatherApi } from './services/api';
 import { WeatherCard } from './components/WeatherCard';
 import { ForecastView } from './components/ForecastView';
 import { SettingsModal } from './components/SettingsModal';
-import { SettingsProvider } from './contexts/SettingsContext';
+import AreaSelector from './components/AreaSidebar';
+import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { getWeatherCondition, getConditionColor } from './utils/weatherConditions';
 import { RefreshCw, WifiOff, Wifi, ChevronUp, Settings } from 'lucide-react';
 import { format } from 'date-fns';
@@ -20,6 +21,7 @@ const queryClient = new QueryClient({
 });
 
 function Dashboard() {
+  const { settings } = useSettings();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [expandedLocationId, setExpandedLocationId] = useState<number | null>(null);
@@ -39,11 +41,11 @@ function Dashboard() {
     };
   }, []);
 
-  // Fetch all weather data
+  // Fetch all weather data (filtered by selected area)
   const { data, isLoading, error } = useQuery({
-    queryKey: ['allWeather'],
+    queryKey: ['allWeather', settings.selectedAreaId],
     queryFn: async () => {
-      const response = await weatherApi.getAllWeather();
+      const response = await weatherApi.getAllWeather(settings.selectedAreaId);
       setLastUpdated(new Date());
       return response;
     },
@@ -98,6 +100,9 @@ function Dashboard() {
                   </>
                 )}
               </div>
+
+              {/* Area Selector */}
+              <AreaSelector />
 
               {/* Settings Button */}
               <button

@@ -1,6 +1,17 @@
 -- Woulder SQLite Schema
 -- This file is tracked in git and used to initialize the database
 
+-- Areas table
+CREATE TABLE IF NOT EXISTS areas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    region TEXT,
+    display_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Locations table
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -8,8 +19,10 @@ CREATE TABLE IF NOT EXISTS locations (
     latitude REAL NOT NULL,
     longitude REAL NOT NULL,
     elevation_ft INTEGER DEFAULT 0,
+    area_id INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE RESTRICT
 );
 
 -- Weather data table
@@ -51,6 +64,8 @@ CREATE TABLE IF NOT EXISTS rivers (
 );
 
 -- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_areas_display_order ON areas(display_order);
+CREATE INDEX IF NOT EXISTS idx_locations_area_id ON locations(area_id);
 CREATE INDEX IF NOT EXISTS idx_weather_data_location_timestamp ON weather_data(location_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_weather_data_timestamp ON weather_data(timestamp);
 CREATE INDEX IF NOT EXISTS idx_rivers_location ON rivers(location_id);

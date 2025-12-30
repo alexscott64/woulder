@@ -268,7 +268,24 @@ func (h *Handler) GetWeatherByCoordinates(c *gin.Context) {
 
 // GetAllWeather returns weather for all locations from cache (fast response)
 func (h *Handler) GetAllWeather(c *gin.Context) {
-	locations, err := h.db.GetAllLocations()
+	// Check for area_id query parameter
+	areaIDStr := c.Query("area_id")
+	var locations []models.Location
+	var err error
+
+	if areaIDStr != "" {
+		// Filter by area
+		areaID, parseErr := strconv.Atoi(areaIDStr)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area_id parameter"})
+			return
+		}
+		locations, err = h.db.GetLocationsByArea(areaID)
+	} else {
+		// Get all locations
+		locations, err = h.db.GetAllLocations()
+	}
+
 	if err != nil {
 		log.Printf("Error fetching locations: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch locations"})
@@ -499,4 +516,47 @@ func (h *Handler) GetRiverDataByID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, riverData)
+}
+
+// GetAllAreas returns all areas with location counts
+func (h *Handler) GetAllAreas(c *gin.Context) {
+	areas, err := h.db.GetAreasWithLocationCounts()
+	if err != nil {
+		log.Printf("Error fetching areas: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch areas"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"areas": areas,
+	})
+}
+
+// GetLocationsByArea returns all locations for a specific area
+func (h *Handler) GetLocationsByArea(c *gin.Context) {
+	areaID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area ID"})
+		return
+	}
+
+	// Verify area exists
+	area, err := h.db.GetAreaByID(areaID)
+	if err != nil {
+		log.Printf("Error fetching area %d: %v", areaID, err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Area not found"})
+		return
+	}
+
+	locations, err := h.db.GetLocationsByArea(areaID)
+	if err != nil {
+		log.Printf("Error fetching locations for area %d: %v", areaID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch locations"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"area":      area,
+		"locations": locations,
+	})
 }

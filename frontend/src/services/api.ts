@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { Location, WeatherForecast, AllWeatherResponse } from '../types/weather';
+import { Area, AreaWithLocations } from '../types/area';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
@@ -21,9 +22,10 @@ export const weatherApi = {
     return response.data;
   },
 
-  // Get weather for all locations
-  getAllWeather: async (): Promise<AllWeatherResponse> => {
-    const response = await api.get('/weather/all');
+  // Get weather for all locations (optionally filtered by area)
+  getAllWeather: async (areaId?: number | null): Promise<AllWeatherResponse> => {
+    const params = areaId ? { area_id: areaId } : {};
+    const response = await api.get('/weather/all', { params });
     return response.data;
   },
 
@@ -38,6 +40,18 @@ export const weatherApi = {
   // Health check
   healthCheck: async (): Promise<{ status: string; message: string; time: string }> => {
     const response = await api.get('/health');
+    return response.data;
+  },
+
+  // Get all areas with location counts
+  getAreas: async (): Promise<{ areas: Area[] }> => {
+    const response = await api.get('/areas');
+    return response.data;
+  },
+
+  // Get locations for a specific area
+  getLocationsByArea: async (areaId: number): Promise<AreaWithLocations> => {
+    const response = await api.get(`/areas/${areaId}/locations`);
     return response.data;
   },
 };
