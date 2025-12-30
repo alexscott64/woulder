@@ -12,7 +12,7 @@ SET search_path TO woulder, public;
 -- Create Pacific Northwest and Southern California areas
 INSERT INTO woulder.areas (name, description, region, display_order)
 VALUES
-    ('Pacific Northwest', 'Climbing areas in Washington, Oregon, and British Columbia', 'West Coast', 1),
+    ('Pacific Northwest', 'Climbing areas in Washington, Oregon, and British Columbia', 'Northwest', 1),
     ('Southern California', 'Desert climbing and high-alpine bouldering in Southern California', 'Southwest', 2)
 ON CONFLICT (name) DO NOTHING;
 
