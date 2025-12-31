@@ -1,4 +1,4 @@
-import { X, AlertTriangle, Droplet, Clock, CheckCircle, Info, Stone } from 'lucide-react';
+import { X, AlertTriangle, Info, Stone } from 'lucide-react';
 import { RockDryingStatus } from '../types/weather';
 
 interface RockStatusModalProps {
