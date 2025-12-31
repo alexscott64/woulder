@@ -71,7 +71,7 @@ export interface AllWeatherResponse {
   updated_at: string;
 }
 
-export type ConditionLevel = 'good' | 'marginal' | 'bad';
+export type ConditionLevel = 'good' | 'marginal' | 'bad' | 'do_not_climb';
 
 export interface WeatherCondition {
   level: ConditionLevel;

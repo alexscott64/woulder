@@ -1,8 +1,10 @@
 import { X } from 'lucide-react';
 
+import { ConditionLevel } from '../types/weather';
+
 interface ConditionDetailsModalProps {
   locationName: string;
-  conditionLevel: 'good' | 'marginal' | 'bad';
+  conditionLevel: ConditionLevel;
   conditionLabel: string;
   reasons: string[];
   onClose: () => void;
@@ -15,7 +17,7 @@ export function ConditionDetailsModal({
   reasons,
   onClose
 }: ConditionDetailsModalProps) {
-  const getBadgeColor = (level: 'good' | 'marginal' | 'bad') => {
+  const getBadgeColor = (level: ConditionLevel) => {
     switch (level) {
       case 'good':
         return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-green-300 dark:border-green-700';
@@ -23,6 +25,8 @@ export function ConditionDetailsModal({
         return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 border-yellow-300 dark:border-yellow-700';
       case 'bad':
         return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 border-red-300 dark:border-red-700';
+      case 'do_not_climb':
+        return 'bg-red-200 text-red-900 dark:bg-red-900 dark:text-red-100 border-red-500 dark:border-red-600';
     }
   };
 
@@ -86,6 +90,9 @@ export function ConditionDetailsModal({
               </div>
               <div>
                 <span className="font-medium text-red-700 dark:text-red-400">Poor:</span> Heavy rain (&gt;0.1"), high winds (&gt;20 mph), extreme temps (&lt;30°F or &gt;79°F)
+              </div>
+              <div>
+                <span className="font-medium text-red-900 dark:text-red-300">Do Not Climb:</span> Wet-sensitive rock (sandstone, arkose, graywacke) is currently wet and climbing will cause permanent damage
               </div>
             </div>
           </div>

@@ -18,6 +18,8 @@ export function getConditionColor(level: ConditionLevel): string {
       return 'bg-yellow-500';
     case 'bad':
       return 'bg-red-500';
+    case 'do_not_climb':
+      return 'bg-red-700';
     default:
       return 'bg-gray-500';
   }
@@ -34,6 +36,8 @@ export function getConditionTextColor(level: ConditionLevel): string {
       return 'text-yellow-600 dark:text-yellow-400';
     case 'bad':
       return 'text-red-600 dark:text-red-400';
+    case 'do_not_climb':
+      return 'text-red-700 dark:text-red-500';
     default:
       return 'text-gray-600 dark:text-gray-400';
   }
@@ -50,6 +54,8 @@ export function getConditionLabel(level: ConditionLevel): string {
       return 'Fair';
     case 'bad':
       return 'Poor';
+    case 'do_not_climb':
+      return 'Do Not Climb';
     default:
       return 'Unknown';
   }
@@ -81,6 +87,12 @@ export function getConditionBadgeStyles(level: ConditionLevel): {
         bg: 'bg-red-100 dark:bg-red-900/30',
         text: 'text-red-700 dark:text-red-300',
         border: 'border-red-300 dark:border-red-700'
+      };
+    case 'do_not_climb':
+      return {
+        bg: 'bg-red-200 dark:bg-red-900/50',
+        text: 'text-red-900 dark:text-red-200',
+        border: 'border-red-500 dark:border-red-600'
       };
     default:
       return {

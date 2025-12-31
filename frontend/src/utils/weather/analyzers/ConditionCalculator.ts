@@ -1,4 +1,4 @@
-import { WeatherData, WeatherCondition, ConditionLevel } from '../../../types/weather';
+import { WeatherData, WeatherCondition, ConditionLevel, RockDryingStatus } from '../../../types/weather';
 import { PrecipitationAnalyzer } from './PrecipitationAnalyzer';
 import { TemperatureAnalyzer } from './TemperatureAnalyzer';
 import { WindAnalyzer } from './WindAnalyzer';
@@ -12,14 +12,23 @@ import { WindAnalyzer } from './WindAnalyzer';
 export class ConditionCalculator {
   /**
    * Calculate overall climbing conditions
-   * Combines precipitation, temperature, wind, and humidity assessments
+   * Combines precipitation, temperature, wind, humidity, and rock drying status
    */
   static calculateCondition(
     weather: WeatherData,
-    recentWeather?: WeatherData[]
+    recentWeather?: WeatherData[],
+    rockStatus?: RockDryingStatus
   ): WeatherCondition {
     const reasons: string[] = [];
     let level: ConditionLevel = 'good';
+
+    // Check rock drying status FIRST - this overrides all other conditions for wet-sensitive rocks
+    if (rockStatus && rockStatus.status === 'critical' && rockStatus.is_wet_sensitive) {
+      return {
+        level: 'do_not_climb',
+        reasons: [rockStatus.message]
+      };
+    }
 
     // Helper to downgrade condition level
     const downgradeCondition = (newLevel: ConditionLevel) => {

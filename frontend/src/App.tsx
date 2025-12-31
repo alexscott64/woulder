@@ -146,7 +146,7 @@ function Dashboard() {
               </div>
               {sortedWeather.map((forecast) => {
                 const isExpanded = expandedLocationId === forecast.location_id;
-                const condition = ConditionCalculator.calculateCondition(forecast.current, forecast.historical);
+                const condition = ConditionCalculator.calculateCondition(forecast.current, forecast.historical, forecast.rock_drying_status);
                 const conditionColor = getConditionColor(condition.level);
 
                 return (
@@ -196,7 +196,7 @@ function Dashboard() {
                   const rowNumber = i / 3;
                   const expandedInThisRow = expandedIndex >= i && expandedIndex < i + 3;
                   const expandedForecast = expandedInThisRow ? sortedWeather.find(f => f.location_id === expandedLocationId) : null;
-                  const expandedCondition = expandedForecast ? ConditionCalculator.calculateCondition(expandedForecast.current, expandedForecast.historical) : null;
+                  const expandedCondition = expandedForecast ? ConditionCalculator.calculateCondition(expandedForecast.current, expandedForecast.historical, expandedForecast.rock_drying_status) : null;
                   const expandedConditionColor = expandedCondition ? getConditionColor(expandedCondition.level) : '';
                   // Calculate position of expanded card within row (0, 1, or 2)
                   const expandedPositionInRow = expandedIndex >= 0 ? expandedIndex - i : -1;

@@ -111,13 +111,10 @@ func (c *RockDryingCalculator) CalculateDryingStatus(
 		message = "Rock is still wet"
 	}
 
+	// Wet-sensitive rocks (sandstone, arkose, graywacke) are ALWAYS critical when wet
 	if hasWetSensitive {
-		if hoursRemaining > requiredDryingTime*0.3 {
-			status = "critical"
-			message = "DO NOT CLIMB - " + primaryRock.GroupName + " is wet-sensitive and still wet"
-		} else {
-			message = "CAUTION - " + primaryRock.GroupName + " is wet-sensitive, check holds carefully"
-		}
+		status = "critical"
+		message = "DO NOT CLIMB - " + primaryRock.GroupName + " is wet-sensitive and still wet"
 	}
 
 	return models.RockDryingStatus{
