@@ -188,6 +188,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
     }
 
     let foundCurrent = false;
+    const addedHours = new Set<string>(); // Track "date-hour" combinations we've added
 
     // Go through all hourly data and pick target hours
     for (let i = 0; i < hourlyData.length && filtered.length < 48; i++) {
@@ -200,10 +201,15 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       // Only process target hours
       if (!targetHours.includes(hourPacific)) continue;
 
+      // Skip if we've already added this date-hour combination
+      const dateHourKey = `${datePacific}-${hourPacific}`;
+      if (addedHours.has(dateHourKey)) continue;
+
       if (!foundCurrent) {
         // Try to find current target hour on today
         if (datePacific === currentDate && hourPacific === currentTargetHour) {
           filtered.push(hourlyData[i]);
+          addedHours.add(dateHourKey);
           foundCurrent = true;
           continue;
         }
@@ -211,12 +217,14 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
         // Fallback: If we're on today and this hour is >= current hour, this becomes "Now"
         if (datePacific === currentDate && hourPacific >= currentHour) {
           filtered.push(hourlyData[i]);
+          addedHours.add(dateHourKey);
           foundCurrent = true;
           continue;
         }
       } else {
         // After we've found the current hour, include all future target hours
         filtered.push(hourlyData[i]);
+        addedHours.add(dateHourKey);
       }
     }
 
