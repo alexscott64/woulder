@@ -13,6 +13,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { RiverInfoModal } from './RiverInfoModal';
 import { PestInfoModal } from './PestInfoModal';
 import { ConditionDetailsModal } from './ConditionDetailsModal';
+import { RockStatusIndicator } from './RockStatusIndicator';
+import { RockStatusModal } from './RockStatusModal';
 
 interface WeatherCardProps {
   forecast: WeatherForecast;
@@ -32,7 +34,7 @@ function formatSunTime(isoTime: string | undefined): string {
 }
 
 export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCardProps) {
-  const { location, current, hourly, historical, sunrise, sunset } = forecast;
+  const { location, current, hourly, historical, sunrise, sunset, rock_drying_status } = forecast;
 
   // Pass recent historical data for precipitation pattern analysis
   const condition = ConditionCalculator.calculateCondition(current, historical);
@@ -51,6 +53,9 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
   // Condition details state
   const [showConditionModal, setShowConditionModal] = useState(false);
+
+  // Rock status modal state
+  const [showRockModal, setShowRockModal] = useState(false);
 
   // Calculate pest conditions
   const pestConditions: PestConditions | null = useMemo(() => {
@@ -172,7 +177,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
               {formatInTimeZone(current.timestamp, 'America/Los_Angeles', 'MMM d, h:mm a')} {new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'short' }).formatToParts(new Date()).find(part => part.type === 'timeZoneName')?.value}
             </p>
             {/* Info Icons */}
-            {(pestConditions || hasRivers) && (
+            {(pestConditions || hasRivers || rock_drying_status) && (
               <div className="flex items-center gap-1">
                 {/* Pest Activity Icon */}
                 {pestConditions && (
@@ -204,6 +209,14 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
                       }`} />
                     )}
                   </button>
+                )}
+                {/* Rock Drying Status Icon */}
+                {rock_drying_status && (
+                  <RockStatusIndicator
+                    status={rock_drying_status}
+                    onClick={() => setShowRockModal(true)}
+                    compact={true}
+                  />
                 )}
               </div>
             )}
@@ -384,6 +397,15 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           conditionLabel={conditionLabel}
           reasons={condition.reasons}
           onClose={() => setShowConditionModal(false)}
+        />
+      )}
+
+      {/* Rock Status Modal */}
+      {showRockModal && rock_drying_status && (
+        <RockStatusModal
+          rockStatus={rock_drying_status}
+          locationName={location.name}
+          onClose={() => setShowRockModal(false)}
         />
       )}
     </div>
