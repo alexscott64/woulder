@@ -338,24 +338,6 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
         )}
       </button>
 
-      {/* River Info Modal */}
-      {showRiverModal && (
-        <RiverInfoModal
-          rivers={riverData}
-          locationName={location.name}
-          onClose={() => setShowRiverModal(false)}
-        />
-      )}
-
-      {/* Pest Info Modal */}
-      {showPestModal && pestConditions && (
-        <PestInfoModal
-          pestConditions={pestConditions}
-          locationName={location.name}
-          onClose={() => setShowPestModal(false)}
-        />
-      )}
-
       {showConditionModal && (
         <ConditionDetailsModal
           locationName={location.name}
