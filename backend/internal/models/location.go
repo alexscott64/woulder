@@ -58,14 +58,15 @@ type DailySunTimes struct {
 
 // WeatherForecast represents forecast data
 type WeatherForecast struct {
-	LocationID    int             `json:"location_id"`
-	Location      Location        `json:"location"`
-	Current       WeatherData     `json:"current"`
-	Hourly        []WeatherData   `json:"hourly"`
-	Historical    []WeatherData   `json:"historical"`
-	Sunrise       string          `json:"sunrise,omitempty"`    // Today's sunrise time (ISO 8601)
-	Sunset        string          `json:"sunset,omitempty"`     // Today's sunset time (ISO 8601)
-	DailySunTimes []DailySunTimes `json:"daily_sun_times,omitempty"` // Sunrise/sunset for each forecast day
+	LocationID      int              `json:"location_id"`
+	Location        Location         `json:"location"`
+	Current         WeatherData      `json:"current"`
+	Hourly          []WeatherData    `json:"hourly"`
+	Historical      []WeatherData    `json:"historical"`
+	Sunrise         string           `json:"sunrise,omitempty"`    // Today's sunrise time (ISO 8601)
+	Sunset          string           `json:"sunset,omitempty"`     // Today's sunset time (ISO 8601)
+	DailySunTimes   []DailySunTimes  `json:"daily_sun_times,omitempty"` // Sunrise/sunset for each forecast day
+	RockDryingStatus *RockDryingStatus `json:"rock_drying_status,omitempty"` // Rock drying status
 }
 
 // RiverData represents river gauge information with current conditions
