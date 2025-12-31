@@ -34,9 +34,9 @@ INSERT INTO woulder.rock_types (name, base_drying_hours, porosity_percent, is_we
 -- Medium-drying rocks
 ('Basalt', 10.0, 5.0, FALSE, 'Dense volcanic rock. May have vesicles that trap water.'),
 ('Andesite', 10.0, 6.0, FALSE, 'Intermediate volcanic rock. Moderate drying time.'),
-('Schist', 12.0, 3.5, FALSE, 'Foliated metamorphic rock. Water can seep between layers.'),
 
 -- Slow-drying rocks
+('Schist', 12.0, 3.5, FALSE, 'Foliated metamorphic rock. Water can seep between layers.'),
 ('Phyllite', 20.0, 10.0, FALSE, 'Fine-grained metamorphic rock. Holds moisture in foliation.'),
 ('Argillite', 24.0, 12.0, FALSE, 'Clay-rich sedimentary rock. Absorbs and retains water.'),
 ('Chert', 14.0, 3.0, FALSE, 'Dense sedimentary rock. Micro-pores can hold water.'),

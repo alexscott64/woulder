@@ -411,10 +411,10 @@ BEGIN
          (SELECT id FROM woulder.rock_type_groups WHERE name = 'Medium-Drying Rocks')),
         ('Andesite', 10.0, 6.0, FALSE, 'Intermediate volcanic rock. Moderate drying time.',
          (SELECT id FROM woulder.rock_type_groups WHERE name = 'Medium-Drying Rocks')),
-        ('Schist', 12.0, 3.5, FALSE, 'Foliated metamorphic rock. Water can seep between layers.',
-         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Medium-Drying Rocks')),
 
         -- Slow-drying rocks
+        ('Schist', 12.0, 3.5, FALSE, 'Foliated metamorphic rock. Water can seep between layers.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Slow-Drying Rocks')),
         ('Phyllite', 20.0, 10.0, FALSE, 'Fine-grained metamorphic rock. Holds moisture in foliation.',
          (SELECT id FROM woulder.rock_type_groups WHERE name = 'Slow-Drying Rocks')),
         ('Argillite', 24.0, 12.0, FALSE, 'Clay-rich sedimentary rock. Absorbs and retains water.',

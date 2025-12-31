@@ -92,8 +92,6 @@ INSERT OR IGNORE INTO rock_types (name, base_drying_hours, porosity_percent, is_
  (SELECT id FROM rock_type_groups WHERE name = 'Medium-Drying Rocks')),
 ('Andesite', 10.0, 6.0, 0, 'Intermediate volcanic rock. Moderate drying time.',
  (SELECT id FROM rock_type_groups WHERE name = 'Medium-Drying Rocks')),
-('Schist', 12.0, 3.5, 0, 'Foliated metamorphic rock. Water can seep between layers.',
- (SELECT id FROM rock_type_groups WHERE name = 'Medium-Drying Rocks')),
 
 -- Slow-drying rocks
 ('Schist', 12.0, 3.5, 0, 'Foliated metamorphic rock. Water can seep between layers.',

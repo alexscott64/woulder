@@ -24,10 +24,10 @@ UPDATE woulder.rock_types SET rock_type_group_id = (SELECT id FROM woulder.rock_
 WHERE name IN ('Granite', 'Granodiorite', 'Tonalite', 'Rhyolite');
 
 UPDATE woulder.rock_types SET rock_type_group_id = (SELECT id FROM woulder.rock_type_groups WHERE name = 'Medium-Drying Rocks')
-WHERE name IN ('Basalt', 'Andesite', 'Schist');
+WHERE name IN ('Basalt', 'Andesite');
 
 UPDATE woulder.rock_types SET rock_type_group_id = (SELECT id FROM woulder.rock_type_groups WHERE name = 'Slow-Drying Rocks')
-WHERE name IN ('Phyllite', 'Argillite', 'Chert', 'Metavolcanic');
+WHERE name IN ('Schist', 'Phyllite', 'Argillite', 'Chert', 'Metavolcanic');
 
 -- Make rock_type_group_id NOT NULL now that all rows have been updated
 ALTER TABLE woulder.rock_types ALTER COLUMN rock_type_group_id SET NOT NULL;
