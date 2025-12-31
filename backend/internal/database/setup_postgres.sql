@@ -130,6 +130,27 @@ CREATE TABLE IF NOT EXISTS woulder.location_rock_types (
     FOREIGN KEY (rock_type_id) REFERENCES woulder.rock_types(id) ON DELETE CASCADE
 );
 
+-- Location Sun Exposure table
+-- Stores sun exposure profiles for each location to improve drying calculations
+CREATE TABLE IF NOT EXISTS woulder.location_sun_exposure (
+    id SERIAL PRIMARY KEY,
+    location_id INTEGER NOT NULL UNIQUE,
+    south_facing_percent DECIMAL(5,2) DEFAULT 0 CHECK (south_facing_percent >= 0 AND south_facing_percent <= 100),
+    west_facing_percent DECIMAL(5,2) DEFAULT 0 CHECK (west_facing_percent >= 0 AND west_facing_percent <= 100),
+    east_facing_percent DECIMAL(5,2) DEFAULT 0 CHECK (east_facing_percent >= 0 AND east_facing_percent <= 100),
+    north_facing_percent DECIMAL(5,2) DEFAULT 0 CHECK (north_facing_percent >= 0 AND north_facing_percent <= 100),
+    slab_percent DECIMAL(5,2) DEFAULT 0 CHECK (slab_percent >= 0 AND slab_percent <= 100),
+    overhang_percent DECIMAL(5,2) DEFAULT 0 CHECK (overhang_percent >= 0 AND overhang_percent <= 100),
+    tree_coverage_percent DECIMAL(5,2) DEFAULT 0 CHECK (tree_coverage_percent >= 0 AND tree_coverage_percent <= 100),
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (location_id) REFERENCES woulder.locations(id) ON DELETE CASCADE
+);
+
+-- Add seepage risk column to locations
+ALTER TABLE woulder.locations ADD COLUMN IF NOT EXISTS has_seepage_risk BOOLEAN DEFAULT FALSE;
+
 -- ============================================================================
 -- INDEXES
 -- ============================================================================
@@ -154,6 +175,12 @@ CREATE INDEX IF NOT EXISTS idx_rivers_gauge_id ON woulder.rivers(gauge_id);
 CREATE INDEX IF NOT EXISTS idx_rock_types_group ON woulder.rock_types(rock_type_group_id);
 CREATE INDEX IF NOT EXISTS idx_location_rock_types_location ON woulder.location_rock_types(location_id);
 CREATE INDEX IF NOT EXISTS idx_location_rock_types_rock_type ON woulder.location_rock_types(rock_type_id);
+
+-- Sun exposure indexes
+CREATE INDEX IF NOT EXISTS idx_location_sun_exposure_location ON woulder.location_sun_exposure(location_id);
+
+-- Location seepage risk index
+CREATE INDEX IF NOT EXISTS idx_locations_seepage_risk ON woulder.locations(has_seepage_risk);
 
 -- ============================================================================
 -- TRIGGERS
@@ -183,6 +210,11 @@ DROP TRIGGER IF EXISTS update_rivers_updated_at ON woulder.rivers;
 CREATE TRIGGER update_rivers_updated_at BEFORE UPDATE ON woulder.rivers
     FOR EACH ROW EXECUTE FUNCTION woulder.update_updated_at_column();
 
+-- Trigger for location_sun_exposure table
+DROP TRIGGER IF EXISTS update_location_sun_exposure_updated_at ON woulder.location_sun_exposure;
+CREATE TRIGGER update_location_sun_exposure_updated_at BEFORE UPDATE ON woulder.location_sun_exposure
+    FOR EACH ROW EXECUTE FUNCTION woulder.update_updated_at_column();
+
 -- ============================================================================
 -- COMMENTS (Documentation)
 -- ============================================================================
@@ -195,8 +227,10 @@ COMMENT ON TABLE woulder.rivers IS 'River crossing information with USGS gauge d
 COMMENT ON TABLE woulder.rock_type_groups IS 'Categories of rock types based on drying characteristics';
 COMMENT ON TABLE woulder.rock_types IS 'Individual rock types with drying and porosity data';
 COMMENT ON TABLE woulder.location_rock_types IS 'Junction table linking locations to their rock types';
+COMMENT ON TABLE woulder.location_sun_exposure IS 'Sun exposure profiles for each climbing location. Used to calculate sun exposure factor in rock drying algorithm.';
 COMMENT ON COLUMN woulder.areas.display_order IS 'Order in which areas should be displayed (lower = first)';
 COMMENT ON COLUMN woulder.locations.area_id IS 'Foreign key to areas table';
+COMMENT ON COLUMN woulder.locations.has_seepage_risk IS 'Location has seepage, snowmelt, or water table issues that slow rock drying';
 COMMENT ON COLUMN woulder.rivers.is_estimated IS 'Whether flow is estimated from nearby gauge or direct reading';
 COMMENT ON COLUMN woulder.rivers.flow_divisor IS 'Divisor to apply to gauge reading (e.g., 2.0 means divide by 2)';
 COMMENT ON COLUMN woulder.rivers.drainage_area_sq_mi IS 'Drainage area of the river at crossing point';
@@ -204,6 +238,13 @@ COMMENT ON COLUMN woulder.rivers.gauge_drainage_area_sq_mi IS 'Drainage area at 
 COMMENT ON COLUMN woulder.rock_types.base_drying_hours IS 'Base hours required to dry after 0.1" of rain';
 COMMENT ON COLUMN woulder.rock_types.is_wet_sensitive IS 'True for rocks that are permanently damaged when climbed wet';
 COMMENT ON COLUMN woulder.location_rock_types.is_primary IS 'Marks the primary rock type for the location';
+COMMENT ON COLUMN woulder.location_sun_exposure.south_facing_percent IS 'Percentage of climbing area facing south (optimal sun exposure)';
+COMMENT ON COLUMN woulder.location_sun_exposure.west_facing_percent IS 'Percentage of climbing area facing west (afternoon sun)';
+COMMENT ON COLUMN woulder.location_sun_exposure.east_facing_percent IS 'Percentage of climbing area facing east (morning sun)';
+COMMENT ON COLUMN woulder.location_sun_exposure.north_facing_percent IS 'Percentage of climbing area facing north (minimal sun exposure)';
+COMMENT ON COLUMN woulder.location_sun_exposure.slab_percent IS 'Percentage of climbing on slabs (water runs off faster, more sun exposure)';
+COMMENT ON COLUMN woulder.location_sun_exposure.overhang_percent IS 'Percentage of climbing on overhangs (stays dry longer, less sun exposure)';
+COMMENT ON COLUMN woulder.location_sun_exposure.tree_coverage_percent IS 'Percentage of climbing area shaded by trees (reduces drying speed)';
 
 -- ============================================================================
 -- SEED DATA
@@ -507,6 +548,87 @@ BEGIN
     CROSS JOIN woulder.rock_types rt
     WHERE l.name = 'Tramway' AND rt.name = 'Tonalite'
     ON CONFLICT DO NOTHING;
+
+    -- Sun Exposure Profiles
+    -- Pacific Northwest locations - moderate tree coverage, mixed aspects
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 35.0, 25.0, 25.0, 15.0, 40.0, 20.0, 60.0, 'Forest bouldering with mixed aspects and moderate tree shade'
+    FROM woulder.locations WHERE name = 'Skykomish - Money Creek'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 30.0, 30.0, 20.0, 20.0, 35.0, 25.0, 50.0, 'Wall climbing with good west/south exposure, moderate tree coverage'
+    FROM woulder.locations WHERE name = 'Index'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 40.0, 25.0, 20.0, 15.0, 45.0, 15.0, 55.0, 'Forest bouldering with good south exposure'
+    FROM woulder.locations WHERE name = 'Gold Bar'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 20.0, 30.0, 25.0, 25.0, 30.0, 30.0, 70.0, 'Dense forest bouldering, mostly sandstone with heavy tree coverage'
+    FROM woulder.locations WHERE name = 'Bellingham'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 45.0, 25.0, 20.0, 10.0, 50.0, 10.0, 35.0, 'Excellent south exposure, moderate tree coverage, many slabs'
+    FROM woulder.locations WHERE name = 'Icicle Creek (Leavenworth)'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 40.0, 30.0, 20.0, 10.0, 40.0, 20.0, 45.0, 'Mixed wall and boulder climbing with good sun exposure'
+    FROM woulder.locations WHERE name = 'Squamish'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 35.0, 25.0, 25.0, 15.0, 45.0, 15.0, 65.0, 'High elevation forest bouldering, good slab percentage but heavy tree shade'
+    FROM woulder.locations WHERE name = 'Skykomish - Paradise'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 30.0, 30.0, 25.0, 15.0, 40.0, 20.0, 60.0, 'High alpine bouldering with moderate tree coverage and snowmelt seepage risk'
+    FROM woulder.locations WHERE name = 'Treasury'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 45.0, 25.0, 20.0, 10.0, 55.0, 10.0, 40.0, 'Excellent south/slab exposure with moderate tree coverage'
+    FROM woulder.locations WHERE name = 'Calendar Butte'
+    ON CONFLICT DO NOTHING;
+
+    -- Southern California locations - minimal tree coverage, excellent sun exposure
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 40.0, 30.0, 20.0, 10.0, 35.0, 25.0, 5.0, 'Desert granite bouldering, excellent sun exposure, minimal shade'
+    FROM woulder.locations WHERE name = 'Joshua Tree'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 50.0, 25.0, 15.0, 10.0, 50.0, 10.0, 20.0, 'High alpine bouldering, excellent south/slab exposure, minimal trees'
+    FROM woulder.locations WHERE name = 'Black Mountain'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 45.0, 30.0, 15.0, 10.0, 45.0, 15.0, 10.0, 'High desert bouldering, excellent sun exposure, sparse tree coverage'
+    FROM woulder.locations WHERE name = 'Buttermilks'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 40.0, 30.0, 20.0, 10.0, 40.0, 20.0, 15.0, 'High desert bouldering, good sun exposure, minimal tree coverage'
+    FROM woulder.locations WHERE name = 'Happy / Sad Boulders'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 35.0, 30.0, 20.0, 15.0, 40.0, 20.0, 30.0, 'Mixed alpine climbing, moderate tree coverage at lower elevations'
+    FROM woulder.locations WHERE name = 'Yosemite'
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO woulder.location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+    SELECT id, 45.0, 30.0, 15.0, 10.0, 50.0, 10.0, 25.0, 'High alpine bouldering, excellent south exposure, sparse trees'
+    FROM woulder.locations WHERE name = 'Tramway'
+    ON CONFLICT DO NOTHING;
+
+    -- Update seepage risk flags
+    UPDATE woulder.locations SET has_seepage_risk = TRUE WHERE name IN ('Treasury', 'Skykomish - Paradise', 'Bellingham');
 END $$;
 
 -- ============================================================================
@@ -522,6 +644,8 @@ DECLARE
     rock_group_count INTEGER;
     rock_type_count INTEGER;
     location_rock_type_count INTEGER;
+    sun_exposure_count INTEGER;
+    seepage_locations INTEGER;
 BEGIN
     SELECT COUNT(*) INTO area_count FROM woulder.areas;
     SELECT COUNT(*) INTO location_count FROM woulder.locations;
@@ -529,6 +653,8 @@ BEGIN
     SELECT COUNT(*) INTO rock_group_count FROM woulder.rock_type_groups;
     SELECT COUNT(*) INTO rock_type_count FROM woulder.rock_types;
     SELECT COUNT(*) INTO location_rock_type_count FROM woulder.location_rock_types;
+    SELECT COUNT(*) INTO sun_exposure_count FROM woulder.location_sun_exposure;
+    SELECT COUNT(*) INTO seepage_locations FROM woulder.locations WHERE has_seepage_risk = TRUE;
 
     RAISE NOTICE '';
     RAISE NOTICE '========================================';
@@ -540,8 +666,10 @@ BEGIN
     RAISE NOTICE 'Rock type groups created: %', rock_group_count;
     RAISE NOTICE 'Rock types created: %', rock_type_count;
     RAISE NOTICE 'Location-rock type associations: %', location_rock_type_count;
+    RAISE NOTICE 'Sun exposure profiles: %', sun_exposure_count;
+    RAISE NOTICE 'Locations with seepage risk: %', seepage_locations;
     RAISE NOTICE '';
     RAISE NOTICE 'Schema: woulder';
-    RAISE NOTICE 'Tables: areas, locations, weather_data, rivers, rock_type_groups, rock_types, location_rock_types';
+    RAISE NOTICE 'Tables: areas, locations, weather_data, rivers, rock_type_groups, rock_types, location_rock_types, location_sun_exposure';
     RAISE NOTICE '========================================';
 END $$;

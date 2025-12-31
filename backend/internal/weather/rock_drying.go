@@ -15,14 +15,17 @@ func (c *RockDryingCalculator) CalculateDryingStatus(
 	rockTypes []models.RockType,
 	currentWeather *models.WeatherData,
 	historicalWeather []models.WeatherData,
+	sunExposure *models.LocationSunExposure,
+	hasSeepageRisk bool,
 ) models.RockDryingStatus {
 	if len(rockTypes) == 0 {
 		return models.RockDryingStatus{
-			IsWet:         false,
-			IsSafe:        true,
-			Status:        "good",
-			Message:       "No rock type data available",
-			RockTypes:     []string{},
+			IsWet:           false,
+			IsSafe:          true,
+			Status:          "good",
+			Message:         "No rock type data available",
+			RockTypes:       []string{},
+			ConfidenceScore: 30, // Low confidence due to missing data
 		}
 	}
 
@@ -38,9 +41,6 @@ func (c *RockDryingCalculator) CalculateDryingStatus(
 		}
 	}
 
-	// Find last significant rain event
-	lastRainTime, totalRain := c.findLastRainEvent(historicalWeather, currentWeather)
-
 	// If currently raining
 	if currentWeather.Precipitation > 0.01 {
 		status := "poor"
@@ -51,23 +51,30 @@ func (c *RockDryingCalculator) CalculateDryingStatus(
 			message = "DO NOT CLIMB - " + primaryRock.GroupName + " is wet-sensitive and currently raining"
 		}
 
+		// Estimate drying time from current rain
+		dryingTime := c.estimateDryingTime(primaryRock, currentWeather, historicalWeather,
+			sunExposure, hasSeepageRisk, currentWeather.Precipitation)
+
 		return models.RockDryingStatus{
 			IsWet:             true,
 			IsSafe:            false,
 			IsWetSensitive:    hasWetSensitive,
-			HoursUntilDry:     c.estimateDryingTime(primaryRock, currentWeather, totalRain),
+			HoursUntilDry:     dryingTime,
 			LastRainTimestamp: time.Now().Format(time.RFC3339),
 			Status:            status,
 			Message:           message,
 			RockTypes:         rockTypeNames,
 			PrimaryRockType:   primaryRock.Name,
 			PrimaryGroupName:  primaryRock.GroupName,
+			ConfidenceScore:   c.calculateConfidence(false, time.Now(), historicalWeather, hasWetSensitive, sunExposure),
 		}
 	}
 
-	// Calculate time since last rain
-	if lastRainTime.IsZero() {
-		// No recent rain
+	// Find last rain event
+	lastRainEvent := c.findLastRainEvent(historicalWeather, currentWeather)
+
+	// If no recent rain
+	if lastRainEvent == nil {
 		return models.RockDryingStatus{
 			IsWet:            false,
 			IsSafe:           true,
@@ -78,34 +85,42 @@ func (c *RockDryingCalculator) CalculateDryingStatus(
 			RockTypes:        rockTypeNames,
 			PrimaryRockType:  primaryRock.Name,
 			PrimaryGroupName: primaryRock.GroupName,
+			ConfidenceScore:  c.calculateConfidence(true, time.Time{}, historicalWeather, hasWetSensitive, sunExposure),
 		}
 	}
 
-	hoursSinceRain := time.Since(lastRainTime).Hours()
-	requiredDryingTime := c.estimateDryingTime(primaryRock, currentWeather, totalRain)
+	// Calculate time-weighted drying progress
+	requiredDryingTime := c.estimateDryingTime(primaryRock, currentWeather, historicalWeather,
+		sunExposure, hasSeepageRisk, lastRainEvent.TotalRain)
+
+	// Calculate how much drying has occurred (time-weighted)
+	dryingProgress := c.calculateTimeWeightedDrying(lastRainEvent.EndTime, currentWeather, historicalWeather, sunExposure)
+
+	// Adjust required time based on actual drying progress
+	effectiveDryingTime := requiredDryingTime * (1.0 - dryingProgress)
 
 	// Check if rock has dried
-	if hoursSinceRain >= requiredDryingTime {
+	if effectiveDryingTime <= 0 {
 		return models.RockDryingStatus{
 			IsWet:             false,
 			IsSafe:            true,
 			IsWetSensitive:    hasWetSensitive,
 			HoursUntilDry:     0,
-			LastRainTimestamp: lastRainTime.Format(time.RFC3339),
+			LastRainTimestamp: lastRainEvent.EndTime.Format(time.RFC3339),
 			Status:            "good",
 			Message:           "Rock is dry and safe to climb",
 			RockTypes:         rockTypeNames,
 			PrimaryRockType:   primaryRock.Name,
 			PrimaryGroupName:  primaryRock.GroupName,
+			ConfidenceScore:   c.calculateConfidence(true, lastRainEvent.EndTime, historicalWeather, hasWetSensitive, sunExposure),
 		}
 	}
 
 	// Rock is still drying
-	hoursRemaining := requiredDryingTime - hoursSinceRain
 	status := "fair"
 	message := "Rock is drying"
 
-	if hoursRemaining > requiredDryingTime*0.5 {
+	if effectiveDryingTime > requiredDryingTime*0.5 {
 		// More than 50% of drying time remaining
 		status = "poor"
 		message = "Rock is still wet"
@@ -121,40 +136,236 @@ func (c *RockDryingCalculator) CalculateDryingStatus(
 		IsWet:             true,
 		IsSafe:            status != "critical",
 		IsWetSensitive:    hasWetSensitive,
-		HoursUntilDry:     math.Ceil(hoursRemaining),
-		LastRainTimestamp: lastRainTime.Format(time.RFC3339),
+		HoursUntilDry:     math.Ceil(effectiveDryingTime),
+		LastRainTimestamp: lastRainEvent.EndTime.Format(time.RFC3339),
 		Status:            status,
 		Message:           message,
 		RockTypes:         rockTypeNames,
 		PrimaryRockType:   primaryRock.Name,
 		PrimaryGroupName:  primaryRock.GroupName,
+		ConfidenceScore:   c.calculateConfidence(false, lastRainEvent.EndTime, historicalWeather, hasWetSensitive, sunExposure),
 	}
 }
 
-// findLastRainEvent finds the most recent significant rain event
-func (c *RockDryingCalculator) findLastRainEvent(historical []models.WeatherData, current *models.WeatherData) (time.Time, float64) {
-	var lastRainTime time.Time
+// findLastRainEvent finds the most recent rain event and calculates its characteristics
+func (c *RockDryingCalculator) findLastRainEvent(historical []models.WeatherData, current *models.WeatherData) *models.RainEvent {
+	if len(historical) == 0 {
+		return nil
+	}
+
+	var event *models.RainEvent
 	var totalRain float64
+	var maxRate float64
+	var rainHours int
+	var startTime, endTime time.Time
 
 	// Check historical data (reversed to go from most recent to oldest)
 	for i := len(historical) - 1; i >= 0; i-- {
 		h := historical[i]
 		if h.Precipitation > 0.01 {
-			if lastRainTime.IsZero() {
-				lastRainTime = h.Timestamp
+			// Part of rain event
+			if event == nil {
+				// Start of new rain event
+				event = &models.RainEvent{
+					StartTime: h.Timestamp,
+					EndTime:   h.Timestamp,
+				}
+				endTime = h.Timestamp
 			}
+			startTime = h.Timestamp
 			totalRain += h.Precipitation
-		} else if !lastRainTime.IsZero() {
-			// Found end of rain event
+			rainHours++
+
+			// Track max hourly rate
+			if h.Precipitation > maxRate {
+				maxRate = h.Precipitation
+			}
+		} else if event != nil {
+			// End of rain event (found dry period)
 			break
 		}
 	}
 
-	return lastRainTime, totalRain
+	if event == nil {
+		return nil
+	}
+
+	// Finalize rain event
+	event.StartTime = startTime
+	event.EndTime = endTime
+	event.TotalRain = totalRain
+	event.Duration = endTime.Sub(startTime).Hours()
+	event.MaxHourlyRate = maxRate
+
+	if rainHours > 0 {
+		event.AvgHourlyRate = totalRain / float64(rainHours)
+	}
+
+	return event
+}
+
+// calculateTimeWeightedDrying calculates how much drying has occurred since rain ended
+// Returns a value from 0.0 (no drying) to 1.0 (complete drying)
+func (c *RockDryingCalculator) calculateTimeWeightedDrying(
+	rainEndTime time.Time,
+	currentWeather *models.WeatherData,
+	historicalWeather []models.WeatherData,
+	sunExposure *models.LocationSunExposure,
+) float64 {
+	totalDryingPower := 0.0
+
+	// Analyze each hour since rain stopped
+	for _, h := range historicalWeather {
+		if h.Timestamp.After(rainEndTime) {
+			// Calculate drying power for this hour
+			hourlyPower := c.calculateHourlyDryingPower(h, sunExposure)
+			totalDryingPower += hourlyPower
+		}
+	}
+
+	// Include current conditions if applicable
+	if currentWeather.Timestamp.After(rainEndTime) {
+		hourlyPower := c.calculateHourlyDryingPower(*currentWeather, sunExposure)
+		hoursSinceLast := time.Since(currentWeather.Timestamp).Hours()
+		if hoursSinceLast < 1.0 {
+			totalDryingPower += hourlyPower * hoursSinceLast
+		}
+	}
+
+	// Normalize: totalDryingPower represents "effective drying hours"
+	// We'll return this as a fraction (capped at 1.0)
+	// The caller will use this to adjust required drying time
+	hoursSinceRain := time.Since(rainEndTime).Hours()
+	if hoursSinceRain <= 0 {
+		return 0.0
+	}
+
+	// Progress = (effective drying hours) / (actual elapsed hours)
+	// This gives us a multiplier for how fast drying is occurring
+	progress := totalDryingPower / hoursSinceRain
+
+	// Cap at 1.0 (fully dry)
+	if progress > 1.0 {
+		return 1.0
+	}
+
+	return progress
+}
+
+// calculateHourlyDryingPower calculates drying effectiveness for a single hour
+// Returns a value where 1.0 = baseline drying, >1.0 = faster, <1.0 = slower
+func (c *RockDryingCalculator) calculateHourlyDryingPower(
+	weather models.WeatherData,
+	sunExposure *models.LocationSunExposure,
+) float64 {
+	power := 1.0
+
+	// Temperature effect (warm = faster drying)
+	if weather.Temperature > 70 {
+		power *= 1.3 // +30% for hot weather
+	} else if weather.Temperature > 65 {
+		power *= 1.15 // +15% for warm weather
+	} else if weather.Temperature < 50 {
+		power *= 0.6 // -40% for cold weather
+	} else if weather.Temperature < 55 {
+		power *= 0.8 // -20% for cool weather
+	}
+
+	// Wind effect (5-15 mph is ideal)
+	if weather.WindSpeed >= 5 && weather.WindSpeed <= 15 {
+		power *= 1.25 // +25% for ideal wind
+	} else if weather.WindSpeed > 15 && weather.WindSpeed <= 25 {
+		power *= 1.1 // +10% for moderate wind
+	} else if weather.WindSpeed < 3 {
+		power *= 0.85 // -15% for calm conditions
+	}
+
+	// Humidity effect
+	if weather.Humidity < 40 {
+		power *= 1.3 // +30% for very dry air
+	} else if weather.Humidity < 50 {
+		power *= 1.15 // +15% for dry air
+	} else if weather.Humidity > 80 {
+		power *= 0.6 // -40% for very humid
+	} else if weather.Humidity > 70 {
+		power *= 0.75 // -25% for humid
+	}
+
+	// Sun exposure effect
+	if sunExposure != nil {
+		sunFactor := c.calculateSunExposureFactor(*sunExposure, weather)
+		power *= sunFactor
+	}
+
+	// Cloud cover effect (affects sun drying)
+	if weather.CloudCover < 30 {
+		power *= 1.2 // +20% for sunny
+	} else if weather.CloudCover < 50 {
+		power *= 1.1 // +10% for partly cloudy
+	} else if weather.CloudCover > 80 {
+		power *= 0.85 // -15% for overcast
+	}
+
+	return power
+}
+
+// calculateSunExposureFactor calculates sun exposure multiplier based on location profile
+func (c *RockDryingCalculator) calculateSunExposureFactor(
+	sunExposure models.LocationSunExposure,
+	weather models.WeatherData,
+) float64 {
+	factor := 1.0
+
+	// Aspect weighting (south is best, north is worst)
+	// South: 1.3x, West: 1.15x, East: 1.05x, North: 0.85x
+	aspectBonus := 0.0
+	aspectBonus += (sunExposure.SouthFacingPercent / 100.0) * 0.3  // South: +30%
+	aspectBonus += (sunExposure.WestFacingPercent / 100.0) * 0.15  // West: +15%
+	aspectBonus += (sunExposure.EastFacingPercent / 100.0) * 0.05  // East: +5%
+	aspectBonus += (sunExposure.NorthFacingPercent / 100.0) * -0.15 // North: -15%
+	factor += aspectBonus
+
+	// Rock angle weighting
+	// Slabs: +20% (water runs off, more sun exposure)
+	// Overhangs: -10% (less sun, stays wet longer)
+	angleBonus := 0.0
+	angleBonus += (sunExposure.SlabPercent / 100.0) * 0.2    // Slabs: +20%
+	angleBonus += (sunExposure.OverhangPercent / 100.0) * -0.1 // Overhangs: -10%
+	factor += angleBonus
+
+	// Tree coverage penalty (shade reduces drying)
+	// 0-25% trees: no penalty
+	// 25-50% trees: -10%
+	// 50-75% trees: -20%
+	// 75-100% trees: -30%
+	if sunExposure.TreeCoveragePercent > 75 {
+		factor *= 0.7 // -30%
+	} else if sunExposure.TreeCoveragePercent > 50 {
+		factor *= 0.8 // -20%
+	} else if sunExposure.TreeCoveragePercent > 25 {
+		factor *= 0.9 // -10%
+	}
+
+	// Ensure factor stays within reasonable bounds
+	if factor < 0.5 {
+		factor = 0.5 // Minimum 50% drying rate
+	}
+	if factor > 1.5 {
+		factor = 1.5 // Maximum 150% drying rate
+	}
+
+	return factor
 }
 
 // estimateDryingTime calculates hours needed for rock to dry
-func (c *RockDryingCalculator) estimateDryingTime(rockType models.RockType, weather *models.WeatherData, rainAmount float64) float64 {
+func (c *RockDryingCalculator) estimateDryingTime(
+	rockType models.RockType,
+	currentWeather *models.WeatherData,
+	historicalWeather []models.WeatherData,
+	sunExposure *models.LocationSunExposure,
+	hasSeepageRisk bool,
+	rainAmount float64,
+) float64 {
 	// Start with base drying time (hours to dry after 0.1" rain in ideal conditions)
 	baseDrying := rockType.BaseDryingHours
 
@@ -169,30 +380,65 @@ func (c *RockDryingCalculator) estimateDryingTime(rockType models.RockType, weat
 
 	dryingTime := baseDrying * rainFactor
 
+	// POROSITY FACTOR (previously missing!)
+	// Higher porosity = slower drying (rock absorbs more water)
+	// Baseline porosity: 5%
+	// Scale: 1% porosity = 0.95x time, 20% porosity = 1.3x time
+	porosityFactor := 1.0 + ((rockType.PorosityPercent - 5.0) / 100.0)
+	if porosityFactor < 0.7 {
+		porosityFactor = 0.7 // Min 70% time for non-porous rocks
+	}
+	if porosityFactor > 1.5 {
+		porosityFactor = 1.5 // Max 150% time for porous rocks
+	}
+	dryingTime *= porosityFactor
+
+	// Current weather modifiers (for baseline estimate)
 	// Temperature modifier
-	if weather.Temperature > 65 {
-		dryingTime *= 0.8 // -20% for warm weather
-	} else if weather.Temperature < 55 {
-		dryingTime *= 1.3 // +30% for cold weather
+	if currentWeather.Temperature > 70 {
+		dryingTime *= 0.75 // -25% for hot weather
+	} else if currentWeather.Temperature > 65 {
+		dryingTime *= 0.85 // -15% for warm weather
+	} else if currentWeather.Temperature < 50 {
+		dryingTime *= 1.4 // +40% for cold weather
+	} else if currentWeather.Temperature < 55 {
+		dryingTime *= 1.2 // +20% for cool weather
 	}
 
 	// Cloud cover modifier (affects sun drying)
-	if weather.CloudCover < 50 {
-		dryingTime *= 0.75 // -25% for sunny conditions
+	if currentWeather.CloudCover < 30 {
+		dryingTime *= 0.8 // -20% for sunny conditions
+	} else if currentWeather.CloudCover < 50 {
+		dryingTime *= 0.9 // -10% for partly cloudy
 	}
 
 	// Wind modifier (5-15 mph is ideal)
-	if weather.WindSpeed >= 5 && weather.WindSpeed <= 15 {
+	if currentWeather.WindSpeed >= 5 && currentWeather.WindSpeed <= 15 {
 		dryingTime *= 0.8 // -20% for good wind
-	} else if weather.WindSpeed < 3 {
+	} else if currentWeather.WindSpeed < 3 {
 		dryingTime *= 1.1 // +10% for calm conditions
 	}
 
 	// Humidity modifier
-	if weather.Humidity < 50 {
+	if currentWeather.Humidity < 40 {
+		dryingTime *= 0.75 // -25% for very low humidity
+	} else if currentWeather.Humidity < 50 {
 		dryingTime *= 0.85 // -15% for low humidity
-	} else if weather.Humidity > 70 {
-		dryingTime *= 1.25 // +25% for high humidity
+	} else if currentWeather.Humidity > 80 {
+		dryingTime *= 1.35 // +35% for very high humidity
+	} else if currentWeather.Humidity > 70 {
+		dryingTime *= 1.2 // +20% for high humidity
+	}
+
+	// Sun exposure modifier
+	if sunExposure != nil {
+		sunFactor := c.calculateSunExposureFactor(*sunExposure, *currentWeather)
+		dryingTime /= sunFactor // Divide because higher sunFactor = faster drying
+	}
+
+	// Seepage risk modifier (groundwater, snowmelt, etc.)
+	if hasSeepageRisk {
+		dryingTime *= 1.4 // +40% for seepage areas
 	}
 
 	// Wet-sensitive rocks need extra drying time for safety
@@ -201,4 +447,92 @@ func (c *RockDryingCalculator) estimateDryingTime(rockType models.RockType, weat
 	}
 
 	return dryingTime
+}
+
+// calculateConfidence calculates confidence score (0-100) for the prediction
+func (c *RockDryingCalculator) calculateConfidence(
+	isDry bool,
+	lastRainTime time.Time,
+	historicalWeather []models.WeatherData,
+	isWetSensitive bool,
+	sunExposure *models.LocationSunExposure,
+) int {
+	confidence := 75.0 // Start with baseline
+
+	// Data completeness factor
+	if len(historicalWeather) < 24 {
+		confidence -= 15 // -15 for insufficient historical data
+	} else if len(historicalWeather) < 48 {
+		confidence -= 8 // -8 for limited historical data
+	}
+
+	// Sun exposure profile availability
+	if sunExposure == nil {
+		confidence -= 10 // -10 for missing sun exposure data
+	}
+
+	// Time since rain factor (affects uncertainty)
+	if !isDry && !lastRainTime.IsZero() {
+		hoursSinceRain := time.Since(lastRainTime).Hours()
+
+		if hoursSinceRain < 6 {
+			confidence -= 5 // Recent rain = slightly more uncertain
+		} else if hoursSinceRain > 72 {
+			confidence += 8 // Long time = more confident in dryness
+		}
+	}
+
+	// Weather stability (check for variable conditions)
+	if len(historicalWeather) >= 12 {
+		tempVariance := c.calculateTemperatureVariance(historicalWeather)
+		if tempVariance > 15 {
+			confidence -= 8 // High variance = less confident
+		} else if tempVariance > 10 {
+			confidence -= 4
+		}
+	}
+
+	// Wet-sensitive rock factor (err on side of caution)
+	if isWetSensitive && !isDry {
+		confidence -= 5 // Lower confidence when wet-sensitive rock is wet
+	}
+
+	// Dry conditions boost
+	if isDry && (lastRainTime.IsZero() || time.Since(lastRainTime).Hours() > 96) {
+		confidence += 10 // High confidence in long-term dry conditions
+	}
+
+	// Clamp to realistic range (20-95)
+	if confidence < 20 {
+		confidence = 20
+	}
+	if confidence > 95 {
+		confidence = 95
+	}
+
+	return int(confidence)
+}
+
+// calculateTemperatureVariance calculates temperature variance in recent weather
+func (c *RockDryingCalculator) calculateTemperatureVariance(weather []models.WeatherData) float64 {
+	if len(weather) == 0 {
+		return 0
+	}
+
+	// Calculate mean
+	sum := 0.0
+	for _, w := range weather {
+		sum += w.Temperature
+	}
+	mean := sum / float64(len(weather))
+
+	// Calculate variance
+	varianceSum := 0.0
+	for _, w := range weather {
+		diff := w.Temperature - mean
+		varianceSum += diff * diff
+	}
+	variance := varianceSum / float64(len(weather))
+
+	return math.Sqrt(variance) // Return standard deviation
 }

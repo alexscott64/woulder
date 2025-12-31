@@ -96,6 +96,8 @@ INSERT OR IGNORE INTO rock_types (name, base_drying_hours, porosity_percent, is_
  (SELECT id FROM rock_type_groups WHERE name = 'Medium-Drying Rocks')),
 
 -- Slow-drying rocks
+('Schist', 12.0, 3.5, 0, 'Foliated metamorphic rock. Water can seep between layers.',
+ (SELECT id FROM rock_type_groups WHERE name = 'Slow-Drying Rocks')),
 ('Phyllite', 20.0, 10.0, 0, 'Fine-grained metamorphic rock. Holds moisture in foliation.',
  (SELECT id FROM rock_type_groups WHERE name = 'Slow-Drying Rocks')),
 ('Argillite', 24.0, 12.0, 0, 'Clay-rich sedimentary rock. Absorbs and retains water.',
@@ -104,6 +106,72 @@ INSERT OR IGNORE INTO rock_types (name, base_drying_hours, porosity_percent, is_
  (SELECT id FROM rock_type_groups WHERE name = 'Slow-Drying Rocks')),
 ('Metavolcanic', 14.0, 4.0, 0, 'Metamorphosed volcanic rock. Moderate absorption.',
  (SELECT id FROM rock_type_groups WHERE name = 'Slow-Drying Rocks'));
+
+-- Sun Exposure Profiles
+-- Pacific Northwest locations - moderate tree coverage, mixed aspects
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 35.0, 25.0, 25.0, 15.0, 40.0, 20.0, 60.0, 'Forest bouldering with mixed aspects and moderate tree shade'
+FROM locations WHERE name = 'Skykomish - Money Creek';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 30.0, 30.0, 20.0, 20.0, 35.0, 25.0, 50.0, 'Wall climbing with good west/south exposure, moderate tree coverage'
+FROM locations WHERE name = 'Index';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 40.0, 25.0, 20.0, 15.0, 45.0, 15.0, 55.0, 'Forest bouldering with good south exposure'
+FROM locations WHERE name = 'Gold Bar';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 20.0, 30.0, 25.0, 25.0, 30.0, 30.0, 70.0, 'Dense forest bouldering, mostly sandstone with heavy tree coverage'
+FROM locations WHERE name = 'Bellingham';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 45.0, 25.0, 20.0, 10.0, 50.0, 10.0, 35.0, 'Excellent south exposure, moderate tree coverage, many slabs'
+FROM locations WHERE name = 'Icicle Creek (Leavenworth)';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 40.0, 30.0, 20.0, 10.0, 40.0, 20.0, 45.0, 'Mixed wall and boulder climbing with good sun exposure'
+FROM locations WHERE name = 'Squamish';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 35.0, 25.0, 25.0, 15.0, 45.0, 15.0, 65.0, 'High elevation forest bouldering, good slab percentage but heavy tree shade'
+FROM locations WHERE name = 'Skykomish - Paradise';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 30.0, 30.0, 25.0, 15.0, 40.0, 20.0, 60.0, 'High alpine bouldering with moderate tree coverage and snowmelt seepage risk'
+FROM locations WHERE name = 'Treasury';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 45.0, 25.0, 20.0, 10.0, 55.0, 10.0, 40.0, 'Excellent south/slab exposure with moderate tree coverage'
+FROM locations WHERE name = 'Calendar Butte';
+
+-- Southern California locations - minimal tree coverage, excellent sun exposure
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 40.0, 30.0, 20.0, 10.0, 35.0, 25.0, 5.0, 'Desert granite bouldering, excellent sun exposure, minimal shade'
+FROM locations WHERE name = 'Joshua Tree';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 50.0, 25.0, 15.0, 10.0, 50.0, 10.0, 20.0, 'High alpine bouldering, excellent south/slab exposure, minimal trees'
+FROM locations WHERE name = 'Black Mountain';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 45.0, 30.0, 15.0, 10.0, 45.0, 15.0, 10.0, 'High desert bouldering, excellent sun exposure, sparse tree coverage'
+FROM locations WHERE name = 'Buttermilks';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 40.0, 30.0, 20.0, 10.0, 40.0, 20.0, 15.0, 'High desert bouldering, good sun exposure, minimal tree coverage'
+FROM locations WHERE name = 'Happy / Sad Boulders';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 35.0, 30.0, 20.0, 15.0, 40.0, 20.0, 30.0, 'Mixed alpine climbing, moderate tree coverage at lower elevations'
+FROM locations WHERE name = 'Yosemite';
+
+INSERT OR IGNORE INTO location_sun_exposure (location_id, south_facing_percent, west_facing_percent, east_facing_percent, north_facing_percent, slab_percent, overhang_percent, tree_coverage_percent, description)
+SELECT id, 45.0, 30.0, 15.0, 10.0, 50.0, 10.0, 25.0, 'High alpine bouldering, excellent south exposure, sparse trees'
+FROM locations WHERE name = 'Tramway';
+
+-- Update seepage risk flags
+UPDATE locations SET has_seepage_risk = 1 WHERE name IN ('Treasury', 'Skykomish - Paradise', 'Bellingham');
 
 -- Location Rock Types
 -- Skykomish - Money Creek: andesite basalt, phyllite, chert metavolcanic, granodiorite granite
