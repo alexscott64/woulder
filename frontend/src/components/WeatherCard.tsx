@@ -5,16 +5,14 @@ import { ConditionCalculator, WindAnalyzer } from '../utils/weather/analyzers';
 import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl } from './weather/weatherDisplay';
 import { PestAnalyzer } from '../utils/pests/analyzers';
 import type { PestConditions } from '../utils/pests/analyzers/PestAnalyzer';
-import { getPestLevelColor } from './pests/pestDisplay';
 import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
-import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, Waves, Sunrise, Sunset, Bug } from 'lucide-react';
+import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, Sunrise, Sunset, Info } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { RiverInfoModal } from './RiverInfoModal';
 import { PestInfoModal } from './PestInfoModal';
 import { ConditionDetailsModal } from './ConditionDetailsModal';
-import { RockStatusIndicator } from './RockStatusIndicator';
-import { RockStatusModal } from './RockStatusModal';
+import { ConditionsModal } from './ConditionsModal';
 
 interface WeatherCardProps {
   forecast: WeatherForecast;
@@ -45,7 +43,6 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   // River crossing state
   const [showRiverModal, setShowRiverModal] = useState(false);
   const [riverData, setRiverData] = useState<RiverData[]>([]);
-  const [loadingRivers, setLoadingRivers] = useState(false);
   const [hasRivers, setHasRivers] = useState(false);
 
   // Pest info state
@@ -54,8 +51,8 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   // Condition details state
   const [showConditionModal, setShowConditionModal] = useState(false);
 
-  // Rock status modal state
-  const [showRockModal, setShowRockModal] = useState(false);
+  // Comprehensive conditions modal state
+  const [showConditionsModal, setShowConditionsModal] = useState(false);
 
   // Calculate pest conditions
   const pestConditions: PestConditions | null = useMemo(() => {
@@ -83,20 +80,20 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
     fetchRiverData();
   }, [location.id]);
 
-  const handleRiverClick = async () => {
-    setLoadingRivers(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/rivers/location/${location.id}`);
-      if (response.ok) {
-        const data = await response.json();
-        setRiverData(data.rivers);
-        setShowRiverModal(true);
+  const handleConditionsClick = async () => {
+    // Fetch river data if we have rivers but haven't loaded the data yet
+    if (hasRivers && riverData.length === 0) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/rivers/location/${location.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          setRiverData(data.rivers || []);
+        }
+      } catch (error) {
+        console.error('Error fetching river data:', error);
       }
-    } catch (error) {
-      console.error('Error fetching river data:', error);
-    } finally {
-      setLoadingRivers(false);
     }
+    setShowConditionsModal(true);
   };
 
   // Safely handle potentially null/undefined arrays
@@ -171,54 +168,25 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
               <span>{conditionLabel}</span>
             </button>
           </div>
-          {/* Date and info icons row */}
+          {/* Date and conditions button row */}
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {formatInTimeZone(current.timestamp, 'America/Los_Angeles', 'MMM d, h:mm a')} {new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'short' }).formatToParts(new Date()).find(part => part.type === 'timeZoneName')?.value}
             </p>
-            {/* Info Icons */}
+            {/* Conditions Button */}
             {(pestConditions || hasRivers || rock_drying_status) && (
-              <div className="flex items-center gap-1">
-                {/* Pest Activity Icon */}
-                {pestConditions && (
-                  <button
-                    onClick={() => setShowPestModal(true)}
-                    className="relative p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/30 active:bg-amber-100 dark:active:bg-amber-900/50 rounded-full transition-colors"
-                    title="Pest Activity Info"
-                  >
-                    <Bug className={`w-5 h-5 ${getPestLevelColor(pestConditions.mosquitoLevel)}`} />
-                    <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-gray-800 ${
-                      pestConditions.mosquitoScore >= 60 || pestConditions.outdoorPestScore >= 60 ? 'bg-red-500' :
-                      pestConditions.mosquitoScore >= 40 || pestConditions.outdoorPestScore >= 40 ? 'bg-yellow-500' :
-                      'bg-green-500'
-                    }`} />
-                  </button>
-                )}
-                {/* River Crossing Icon */}
-                {hasRivers && (
-                  <button
-                    onClick={handleRiverClick}
-                    disabled={loadingRivers}
-                    className="relative p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 dark:active:bg-blue-900/50 rounded-full transition-colors"
-                    title="River Crossing Info"
-                  >
-                    <Waves className={`w-5 h-5 text-blue-600 dark:text-blue-400 ${loadingRivers ? 'animate-pulse' : ''}`} />
-                    {riverData.length > 0 && (
-                      <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-gray-800 ${
-                        riverData.every(r => r.is_safe) ? 'bg-green-500' : 'bg-red-500'
-                      }`} />
-                    )}
-                  </button>
-                )}
-                {/* Rock Drying Status Icon */}
-                {rock_drying_status && (
-                  <RockStatusIndicator
-                    status={rock_drying_status}
-                    onClick={() => setShowRockModal(true)}
-                    compact={true}
-                  />
-                )}
-              </div>
+              <button
+                onClick={handleConditionsClick}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                title="View all conditions"
+              >
+                <Info className="w-3.5 h-3.5" />
+                <span>Conditions</span>
+                {/* Badge count */}
+                <span className="bg-blue-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold">
+                  {[rock_drying_status, hasRivers, pestConditions].filter(Boolean).length}
+                </span>
+              </button>
             )}
           </div>
         </div>
@@ -400,12 +368,14 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
         />
       )}
 
-      {/* Rock Status Modal */}
-      {showRockModal && rock_drying_status && (
-        <RockStatusModal
-          rockStatus={rock_drying_status}
+      {/* Comprehensive Conditions Modal */}
+      {showConditionsModal && (
+        <ConditionsModal
           locationName={location.name}
-          onClose={() => setShowRockModal(false)}
+          rockStatus={rock_drying_status}
+          pestConditions={pestConditions || undefined}
+          riverData={riverData.length > 0 ? riverData : undefined}
+          onClose={() => setShowConditionsModal(false)}
         />
       )}
     </div>
