@@ -95,6 +95,41 @@ CREATE TABLE IF NOT EXISTS woulder.rivers (
     FOREIGN KEY (location_id) REFERENCES woulder.locations(id) ON DELETE CASCADE
 );
 
+-- Rock Type Groups table
+-- Stores categories of rock types based on drying characteristics
+CREATE TABLE IF NOT EXISTS woulder.rock_type_groups (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Rock Types table
+-- Stores individual rock types with drying characteristics
+CREATE TABLE IF NOT EXISTS woulder.rock_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    base_drying_hours DECIMAL(4,1) NOT NULL,
+    porosity_percent DECIMAL(4,1),
+    is_wet_sensitive BOOLEAN DEFAULT FALSE,
+    description TEXT,
+    rock_type_group_id INTEGER NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (rock_type_group_id) REFERENCES woulder.rock_type_groups(id) ON DELETE RESTRICT
+);
+
+-- Location Rock Types junction table
+-- Links locations with their rock types (many-to-many relationship)
+CREATE TABLE IF NOT EXISTS woulder.location_rock_types (
+    location_id INTEGER NOT NULL,
+    rock_type_id INTEGER NOT NULL,
+    is_primary BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (location_id, rock_type_id),
+    FOREIGN KEY (location_id) REFERENCES woulder.locations(id) ON DELETE CASCADE,
+    FOREIGN KEY (rock_type_id) REFERENCES woulder.rock_types(id) ON DELETE CASCADE
+);
+
 -- ============================================================================
 -- INDEXES
 -- ============================================================================
@@ -114,6 +149,11 @@ CREATE INDEX IF NOT EXISTS idx_weather_data_created_at ON woulder.weather_data(c
 -- River indexes
 CREATE INDEX IF NOT EXISTS idx_rivers_location ON woulder.rivers(location_id);
 CREATE INDEX IF NOT EXISTS idx_rivers_gauge_id ON woulder.rivers(gauge_id);
+
+-- Rock type indexes
+CREATE INDEX IF NOT EXISTS idx_rock_types_group ON woulder.rock_types(rock_type_group_id);
+CREATE INDEX IF NOT EXISTS idx_location_rock_types_location ON woulder.location_rock_types(location_id);
+CREATE INDEX IF NOT EXISTS idx_location_rock_types_rock_type ON woulder.location_rock_types(rock_type_id);
 
 -- ============================================================================
 -- TRIGGERS
@@ -152,12 +192,18 @@ COMMENT ON TABLE woulder.areas IS 'Geographic areas for grouping climbing locati
 COMMENT ON TABLE woulder.locations IS 'Climbing locations with coordinates and elevation';
 COMMENT ON TABLE woulder.weather_data IS 'Historical and forecast weather data';
 COMMENT ON TABLE woulder.rivers IS 'River crossing information with USGS gauge data';
+COMMENT ON TABLE woulder.rock_type_groups IS 'Categories of rock types based on drying characteristics';
+COMMENT ON TABLE woulder.rock_types IS 'Individual rock types with drying and porosity data';
+COMMENT ON TABLE woulder.location_rock_types IS 'Junction table linking locations to their rock types';
 COMMENT ON COLUMN woulder.areas.display_order IS 'Order in which areas should be displayed (lower = first)';
 COMMENT ON COLUMN woulder.locations.area_id IS 'Foreign key to areas table';
 COMMENT ON COLUMN woulder.rivers.is_estimated IS 'Whether flow is estimated from nearby gauge or direct reading';
 COMMENT ON COLUMN woulder.rivers.flow_divisor IS 'Divisor to apply to gauge reading (e.g., 2.0 means divide by 2)';
 COMMENT ON COLUMN woulder.rivers.drainage_area_sq_mi IS 'Drainage area of the river at crossing point';
 COMMENT ON COLUMN woulder.rivers.gauge_drainage_area_sq_mi IS 'Drainage area at the gauge location';
+COMMENT ON COLUMN woulder.rock_types.base_drying_hours IS 'Base hours required to dry after 0.1" of rain';
+COMMENT ON COLUMN woulder.rock_types.is_wet_sensitive IS 'True for rocks that are permanently damaged when climbed wet';
+COMMENT ON COLUMN woulder.location_rock_types.is_primary IS 'Marks the primary rock type for the location';
 
 -- ============================================================================
 -- SEED DATA
@@ -287,6 +333,182 @@ FROM woulder.locations l
 WHERE l.name = 'Skykomish - Paradise'
 ON CONFLICT DO NOTHING;
 
+-- Rock Type Groups
+INSERT INTO woulder.rock_type_groups (name, description)
+VALUES
+    ('Wet-Sensitive Rocks', 'Soft rocks that are permanently damaged when climbed wet. DO NOT CLIMB WHEN WET.'),
+    ('Fast-Drying Rocks', 'Hard, non-porous rocks that dry quickly after rain.'),
+    ('Medium-Drying Rocks', 'Rocks with moderate porosity that take longer to dry.'),
+    ('Slow-Drying Rocks', 'Rocks that absorb and retain water, requiring extended drying time.')
+ON CONFLICT (name) DO NOTHING;
+
+-- Rock Types
+DO $$
+BEGIN
+    -- Wet-sensitive rocks
+    INSERT INTO woulder.rock_types (name, base_drying_hours, porosity_percent, is_wet_sensitive, description, rock_type_group_id)
+    VALUES
+        ('Sandstone', 36.0, 20.0, TRUE, 'Soft sedimentary rock that absorbs water and becomes friable when wet. DO NOT CLIMB WHEN WET.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Wet-Sensitive Rocks')),
+        ('Arkose', 36.0, 18.0, TRUE, 'Feldspar-rich sandstone. Soft and water-absorbent. DO NOT CLIMB WHEN WET.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Wet-Sensitive Rocks')),
+        ('Graywacke', 30.0, 15.0, TRUE, 'Hard sandstone with clay matrix. Absorbs water. DO NOT CLIMB WHEN WET.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Wet-Sensitive Rocks')),
+
+        -- Fast-drying rocks
+        ('Granite', 6.0, 1.0, FALSE, 'Hard crystalline igneous rock. Non-porous, dries quickly.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Fast-Drying Rocks')),
+        ('Granodiorite', 6.0, 1.2, FALSE, 'Coarse-grained igneous rock similar to granite. Dries quickly.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Fast-Drying Rocks')),
+        ('Tonalite', 6.5, 1.5, FALSE, 'Plagioclase-rich igneous rock. Similar to granite, dries quickly.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Fast-Drying Rocks')),
+        ('Rhyolite', 8.0, 7.0, FALSE, 'Fine-grained volcanic rock. Glassy texture sheds water well.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Fast-Drying Rocks')),
+
+        -- Medium-drying rocks
+        ('Basalt', 10.0, 5.0, FALSE, 'Dense volcanic rock. May have vesicles that trap water.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Medium-Drying Rocks')),
+        ('Andesite', 10.0, 6.0, FALSE, 'Intermediate volcanic rock. Moderate drying time.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Medium-Drying Rocks')),
+        ('Schist', 12.0, 3.5, FALSE, 'Foliated metamorphic rock. Water can seep between layers.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Medium-Drying Rocks')),
+
+        -- Slow-drying rocks
+        ('Phyllite', 20.0, 10.0, FALSE, 'Fine-grained metamorphic rock. Holds moisture in foliation.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Slow-Drying Rocks')),
+        ('Argillite', 24.0, 12.0, FALSE, 'Clay-rich sedimentary rock. Absorbs and retains water.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Slow-Drying Rocks')),
+        ('Chert', 14.0, 3.0, FALSE, 'Dense sedimentary rock. Micro-pores can hold water.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Slow-Drying Rocks')),
+        ('Metavolcanic', 14.0, 4.0, FALSE, 'Metamorphosed volcanic rock. Moderate absorption.',
+         (SELECT id FROM woulder.rock_type_groups WHERE name = 'Slow-Drying Rocks'))
+    ON CONFLICT (name) DO NOTHING;
+END $$;
+
+-- Location Rock Types
+DO $$
+BEGIN
+    -- Skykomish - Money Creek: andesite basalt, phyllite, chert metavolcanic, granodiorite granite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, CASE WHEN rt.name = 'Andesite' THEN TRUE ELSE FALSE END
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Skykomish - Money Creek' AND rt.name IN ('Andesite', 'Basalt', 'Phyllite', 'Chert', 'Metavolcanic', 'Granodiorite', 'Granite')
+    ON CONFLICT DO NOTHING;
+
+    -- Index: Granite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, TRUE
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Index' AND rt.name = 'Granite'
+    ON CONFLICT DO NOTHING;
+
+    -- Gold Bar: Granodiorite Granite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, CASE WHEN rt.name = 'Granodiorite' THEN TRUE ELSE FALSE END
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Gold Bar' AND rt.name IN ('Granodiorite', 'Granite')
+    ON CONFLICT DO NOTHING;
+
+    -- Bellingham: Arkose Sandstone
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, CASE WHEN rt.name = 'Arkose' THEN TRUE ELSE FALSE END
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Bellingham' AND rt.name IN ('Arkose', 'Sandstone')
+    ON CONFLICT DO NOTHING;
+
+    -- Icicle Creek (Leavenworth): Granodiorite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, TRUE
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Icicle Creek (Leavenworth)' AND rt.name = 'Granodiorite'
+    ON CONFLICT DO NOTHING;
+
+    -- Squamish: Granodiorite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, TRUE
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Squamish' AND rt.name = 'Granodiorite'
+    ON CONFLICT DO NOTHING;
+
+    -- Paradise: Granodiorite Granite Andesite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, CASE WHEN rt.name = 'Granodiorite' THEN TRUE ELSE FALSE END
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Skykomish - Paradise' AND rt.name IN ('Granodiorite', 'Granite', 'Andesite')
+    ON CONFLICT DO NOTHING;
+
+    -- Treasury: Granodiorite Granite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, CASE WHEN rt.name = 'Granodiorite' THEN TRUE ELSE FALSE END
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Treasury' AND rt.name IN ('Granodiorite', 'Granite')
+    ON CONFLICT DO NOTHING;
+
+    -- Calendar Butte: Granite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, TRUE
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Calendar Butte' AND rt.name = 'Granite'
+    ON CONFLICT DO NOTHING;
+
+    -- Joshua Tree: Granodiorite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, TRUE
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Joshua Tree' AND rt.name = 'Granodiorite'
+    ON CONFLICT DO NOTHING;
+
+    -- Black Mountain: Tonalite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, TRUE
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Black Mountain' AND rt.name = 'Tonalite'
+    ON CONFLICT DO NOTHING;
+
+    -- Buttermilks: Granodiorite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, TRUE
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Buttermilks' AND rt.name = 'Granodiorite'
+    ON CONFLICT DO NOTHING;
+
+    -- Happy / Sad Boulders: Rhyolite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, TRUE
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Happy / Sad Boulders' AND rt.name = 'Rhyolite'
+    ON CONFLICT DO NOTHING;
+
+    -- Yosemite: Granodiorite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, TRUE
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Yosemite' AND rt.name = 'Granodiorite'
+    ON CONFLICT DO NOTHING;
+
+    -- Tramway: Tonalite
+    INSERT INTO woulder.location_rock_types (location_id, rock_type_id, is_primary)
+    SELECT l.id, rt.id, TRUE
+    FROM woulder.locations l
+    CROSS JOIN woulder.rock_types rt
+    WHERE l.name = 'Tramway' AND rt.name = 'Tonalite'
+    ON CONFLICT DO NOTHING;
+END $$;
+
 -- ============================================================================
 -- VERIFICATION
 -- ============================================================================
@@ -297,10 +519,16 @@ DECLARE
     area_count INTEGER;
     location_count INTEGER;
     river_count INTEGER;
+    rock_group_count INTEGER;
+    rock_type_count INTEGER;
+    location_rock_type_count INTEGER;
 BEGIN
     SELECT COUNT(*) INTO area_count FROM woulder.areas;
     SELECT COUNT(*) INTO location_count FROM woulder.locations;
     SELECT COUNT(*) INTO river_count FROM woulder.rivers;
+    SELECT COUNT(*) INTO rock_group_count FROM woulder.rock_type_groups;
+    SELECT COUNT(*) INTO rock_type_count FROM woulder.rock_types;
+    SELECT COUNT(*) INTO location_rock_type_count FROM woulder.location_rock_types;
 
     RAISE NOTICE '';
     RAISE NOTICE '========================================';
@@ -309,8 +537,11 @@ BEGIN
     RAISE NOTICE 'Areas created: %', area_count;
     RAISE NOTICE 'Locations created: %', location_count;
     RAISE NOTICE 'Rivers created: %', river_count;
+    RAISE NOTICE 'Rock type groups created: %', rock_group_count;
+    RAISE NOTICE 'Rock types created: %', rock_type_count;
+    RAISE NOTICE 'Location-rock type associations: %', location_rock_type_count;
     RAISE NOTICE '';
     RAISE NOTICE 'Schema: woulder';
-    RAISE NOTICE 'Tables: areas, locations, weather_data, rivers';
+    RAISE NOTICE 'Tables: areas, locations, weather_data, rivers, rock_type_groups, rock_types, location_rock_types';
     RAISE NOTICE '========================================';
 END $$;

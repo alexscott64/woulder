@@ -207,45 +207,50 @@ export function ConditionsModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Climbing Conditions</h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400">{locationName}</p>
+        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="min-w-0 flex-1 pr-2">
+            <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white truncate">Conditions</h2>
+            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 truncate">{locationName}</p>
           </div>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+            className="flex-shrink-0 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
           >
             <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-          {availableTabs.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex items-center gap-2 px-4 py-3 font-medium text-sm transition-colors border-b-2 ${
-                activeTab === tab
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-800'
-                  : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-              }`}
-            >
-              <div className="flex items-center gap-2">
+        {/* Mobile-Friendly Tab Navigation */}
+        <div className="px-3 sm:px-4 pt-3 pb-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+            {availableTabs.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full font-medium text-xs sm:text-sm transition-all whitespace-nowrap flex-shrink-0 ${
+                  activeTab === tab
+                    ? 'bg-blue-500 text-white shadow-md scale-105'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shadow-sm'
+                }`}
+              >
                 {getTabIcon(tab)}
-                <span className={`w-2 h-2 rounded-full ${getTabStatusDot(tab)}`} />
-              </div>
-              {getTabLabel(tab)}
-            </button>
-          ))}
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  activeTab === tab ? 'bg-white' : getTabStatusDot(tab)
+                }`} />
+                <span className="hidden sm:inline">{getTabLabel(tab)}</span>
+                <span className="sm:hidden">
+                  {tab === 'rock' ? 'Rock' : tab === 'rivers' ? 'Rivers' : 'Pests'}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4">
           {/* Rock Conditions Tab */}
           {activeTab === 'rock' && rockStatus && (
             <div className="space-y-4">
@@ -510,10 +515,10 @@ export function ConditionsModal({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+        <div className="p-3 sm:p-4 border-t border-gray-200 dark:border-gray-700">
           <button
             onClick={onClose}
-            className="w-full py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors"
+            className="w-full py-2.5 sm:py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors text-sm sm:text-base"
           >
             Close
           </button>
