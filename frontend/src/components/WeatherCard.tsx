@@ -9,8 +9,6 @@ import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, Sunrise, Sunset, Info } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { RiverInfoModal } from './RiverInfoModal';
-import { PestInfoModal } from './PestInfoModal';
 import { ConditionDetailsModal } from './ConditionDetailsModal';
 import { ConditionsModal } from './ConditionsModal';
 
