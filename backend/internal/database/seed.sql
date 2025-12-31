@@ -31,7 +31,7 @@ INSERT OR IGNORE INTO locations (name, latitude, longitude, elevation_ft, area_i
 -- Rivers (using active USGS gauges)
 -- Money Creek - estimated from South Fork Skykomish at Skykomish (12131500)
 INSERT OR IGNORE INTO rivers (location_id, gauge_id, river_name, safe_crossing_cfs, caution_crossing_cfs, drainage_area_sq_mi, gauge_drainage_area_sq_mi, is_estimated, description)
-SELECT id, '12131500', 'Money Creek (estimated)', 60, 90, 18.0, 355.0, 1,
+SELECT id, '12131500', 'Money Creek', 60, 90, 18.0, 355.0, 1,
        'Flow estimated from South Fork Skykomish at Skykomish. Watershed includes Lake Elizabeth, Goat Creek, Crosby Mountain, Apex Mine drainage'
 FROM locations WHERE name = 'Skykomish - Money Creek';
 

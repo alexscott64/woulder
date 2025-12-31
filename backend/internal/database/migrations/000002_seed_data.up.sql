@@ -59,7 +59,7 @@ INSERT INTO woulder.rivers (location_id, gauge_id, river_name, safe_crossing_cfs
 SELECT
     l.id,
     '12131500',
-    'Money Creek (estimated)',
+    'Money Creek',
     60,
     90,
     18.0,
