@@ -1,5 +1,5 @@
 import { WeatherData, DailySunTimes } from '../types/weather';
-import { ConditionCalculator, TemperatureAnalyzer, PrecipitationAnalyzer } from '../utils/weather/analyzers';
+import { ConditionCalculator, TemperatureAnalyzer } from '../utils/weather/analyzers';
 import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl, getSnowDepthColor } from './weather/weatherDisplay';
 import { calculateSnowAccumulation } from '../utils/weather/calculations/snow';
 import { PestAnalyzer } from '../utils/pests/analyzers';
@@ -26,10 +26,9 @@ function getTempColor(temp: number): string {
 
 // Get precipitation color for climbing conditions (using PrecipitationAnalyzer)
 function getPrecipColor(precip: number): string {
-  const intensity = PrecipitationAnalyzer.getIntensity(precip);
-  if (intensity === 'none') return 'text-green-600 dark:text-green-400';
-  if (intensity === 'light') return 'text-yellow-600 dark:text-yellow-400';
-  return 'text-red-600 dark:text-red-400'; // moderate or heavy
+  if (precip < 0.01) return 'text-green-600 dark:text-green-400'; // None/trace
+  if (precip <= 0.04) return 'text-yellow-600 dark:text-yellow-400'; // Fair (0.01-0.04)
+  return 'text-red-600 dark:text-red-400'; // Poor (> 0.04)
 }
 
 interface ForecastViewProps {
@@ -162,6 +161,68 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hourElementsRef = useRef<(HTMLDivElement | null)[]>([]);
 
+  // Filter hourly data to show 3-hour intervals (1am, 4am, 7am, 10am, 1pm, 4pm, 7pm, 10pm)
+  const filteredHourlyData = (() => {
+    if (!hourlyData || hourlyData.length === 0) return [];
+
+    // Target hours for 3-hour intervals: 1, 4, 7, 10, 13, 16, 19, 22
+    const targetHours = [1, 4, 7, 10, 13, 16, 19, 22];
+
+    const filtered: WeatherData[] = [];
+
+    // Get current time in Pacific timezone
+    const nowPacific = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+    const currentHour = nowPacific.getHours();
+    const currentDate = formatInTimeZone(nowPacific, 'America/Los_Angeles', 'yyyy-MM-dd');
+
+    // Find the current or most recent target hour
+    // E.g., if it's 4:15pm (hour 16), current target = 16
+    // E.g., if it's 5:30pm (hour 17), current target = 16 (most recent)
+    let currentTargetHour = targetHours[0];
+    for (const targetHour of targetHours) {
+      if (currentHour >= targetHour) {
+        currentTargetHour = targetHour;
+      } else {
+        break;
+      }
+    }
+
+    let foundCurrent = false;
+
+    // Go through all hourly data and pick target hours
+    for (let i = 0; i < hourlyData.length && filtered.length < 48; i++) {
+      const timestamp = hourlyData[i].timestamp;
+
+      // Get hour in Pacific timezone
+      const hourPacific = parseInt(formatInTimeZone(timestamp, 'America/Los_Angeles', 'H'));
+      const datePacific = formatInTimeZone(timestamp, 'America/Los_Angeles', 'yyyy-MM-dd');
+
+      // Only process target hours
+      if (!targetHours.includes(hourPacific)) continue;
+
+      if (!foundCurrent) {
+        // Try to find current target hour on today
+        if (datePacific === currentDate && hourPacific === currentTargetHour) {
+          filtered.push(hourlyData[i]);
+          foundCurrent = true;
+          continue;
+        }
+
+        // Fallback: If we're on today and this hour is >= current hour, this becomes "Now"
+        if (datePacific === currentDate && hourPacific >= currentHour) {
+          filtered.push(hourlyData[i]);
+          foundCurrent = true;
+          continue;
+        }
+      } else {
+        // After we've found the current hour, include all future target hours
+        filtered.push(hourlyData[i]);
+      }
+    }
+
+    return filtered;
+  })();
+
   // Update floating day label based on scroll position
   useEffect(() => {
     const handleScroll = () => {
@@ -180,7 +241,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
 
         // If this element is visible at the left edge (within 100px threshold)
         if (relativeLeft >= -50 && relativeLeft <= 100) {
-          const hour = hourlyData[i];
+          const hour = filteredHourlyData[i];
           if (hour) {
             const dayName = formatInTimeZone(hour.timestamp, 'America/Los_Angeles', 'EEEE');
             setCurrentDay(dayName);
@@ -197,7 +258,7 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
       container.addEventListener('scroll', handleScroll);
       return () => container.removeEventListener('scroll', handleScroll);
     }
-  }, [hourlyData]);
+  }, [filteredHourlyData]);
 
   // Calculate total rain from last 48 hours (affects climbing conditions)
   // Filter historical data to only include last 48 hours, then sum precipitation
@@ -561,12 +622,11 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
                   </div>
                 )}
 
-                {day.avgWind > 10 && (
-                  <div className={`flex items-center justify-center gap-1 text-xs ${getWindColor(day.avgWind)}`}>
-                    <Wind className="w-3 h-3" />
-                    <span>{Math.round(day.avgWind)} mph</span>
-                  </div>
-                )}
+                {/* Wind - always show */}
+                <div className={`flex items-center justify-center gap-1 text-xs ${getWindColor(day.avgWind)}`}>
+                  <Wind className="w-3 h-3" />
+                  <span>{Math.round(day.avgWind)} mph</span>
+                </div>
 
                 {/* Humidity */}
                 <div className="flex items-center justify-center gap-1 text-xs text-gray-600 dark:text-gray-400">
@@ -643,12 +703,12 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
             {/* Day labels row */}
             <div className="mb-4 pb-2 relative">
               {/* Full-width border line */}
-              <div className="absolute bottom-0 left-0 right-0 h-px bg-gray-200 dark:bg-gray-700" style={{width: 'calc(48 * 5rem + 47 * 1.5rem)'}}></div>
+              <div className="absolute bottom-0 left-0 right-0 h-px bg-gray-200 dark:bg-gray-700" style={{width: `calc(${filteredHourlyData.length} * 5rem + ${filteredHourlyData.length - 1} * 1.5rem)`}}></div>
 
               <div className="flex gap-6">
-                {hourlyData.slice(0, 48).map((hour, index) => {
+                {filteredHourlyData.map((hour, index) => {
                   const date = new Date(hour.timestamp);
-                  const prevDate = index > 0 ? new Date(hourlyData[index - 1].timestamp) : null;
+                  const prevDate = index > 0 ? new Date(filteredHourlyData[index - 1].timestamp) : null;
                   const showDayLabel = !prevDate || format(date, 'yyyy-MM-dd') !== format(prevDate, 'yyyy-MM-dd');
 
                   return (
@@ -668,10 +728,9 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
 
             {/* Hourly data row */}
             <div className="flex gap-6 pb-2">
-              {hourlyData.slice(0, 48).map((hour, index) => {
-              // Check if this hour matches the current weather timestamp
-              const isCurrentHour = currentWeather &&
-                Math.abs(new Date(hour.timestamp).getTime() - new Date(currentWeather.timestamp).getTime()) < 60 * 60 * 1000;
+              {filteredHourlyData.map((hour, index) => {
+              // The first hour in filtered data is "Now" (closest future target hour)
+              const isCurrentHour = index === 0;
 
               // Find the sunrise/sunset for this hour's date
               const dateKey = formatInTimeZone(hour.timestamp, 'America/Los_Angeles', 'yyyy-MM-dd');

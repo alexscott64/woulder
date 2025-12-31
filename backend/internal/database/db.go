@@ -232,7 +232,7 @@ func (db *Database) GetForecastWeather(locationID int) ([]models.WeatherData, er
 			   humidity, wind_speed, wind_direction, cloud_cover, pressure,
 			   description, icon, created_at
 		FROM woulder.weather_data
-		WHERE location_id = $1 AND timestamp > NOW()
+		WHERE location_id = $1 AND timestamp >= NOW() - INTERVAL '3 hours'
 		ORDER BY timestamp ASC
 	`
 

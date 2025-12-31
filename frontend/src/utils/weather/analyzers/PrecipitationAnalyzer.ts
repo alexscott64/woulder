@@ -125,31 +125,23 @@ export class PrecipitationAnalyzer {
     level: 'good' | 'marginal' | 'bad';
     reason: string | null;
   } {
-    const intensity = this.getIntensity(current.precipitation);
+    const drying = this.assessDryingConditions(current);
 
-    // Heavy rain = bad
-    if (intensity === 'heavy') {
+    // Poor (bad): > 0.04 in/hr
+    if (current.precipitation > 0.04) {
       return {
         level: 'bad',
         reason: `Heavy rain (${current.precipitation.toFixed(2)}in/hr)`
       };
     }
 
-    // Moderate rain = marginal
-    if (intensity === 'moderate') {
-      return {
-        level: 'marginal',
-        reason: `Moderate rain (${current.precipitation.toFixed(2)}in/hr)`
-      };
-    }
-
-    // Light rain - depends on pattern
-    if (intensity === 'light' && current.precipitation > 0.01) {
+    // Fair (marginal): 0.01 to 0.04 in/hr
+    // But consider drying conditions - if it can dry quickly, don't downgrade as much
+    if (current.precipitation >= 0.01 && current.precipitation <= 0.04) {
       const recentTotal = recentWeather ? this.getTotalPrecipitation(recentWeather) : 0;
       const isPersistent = recentWeather ? this.hasPersistentPrecipitation(recentWeather) : false;
-      const drying = this.assessDryingConditions(current);
 
-      // Persistent drizzle
+      // Persistent drizzle over multiple hours
       if (isPersistent) {
         const hours = recentWeather ? recentWeather.length : 0;
         return {
@@ -158,7 +150,7 @@ export class PrecipitationAnalyzer {
         };
       }
 
-      // Light rain with poor drying
+      // Light rain with poor drying conditions
       if (!drying.canDryQuickly) {
         return {
           level: 'marginal',
@@ -166,10 +158,10 @@ export class PrecipitationAnalyzer {
         };
       }
 
-      // Brief light rain with good drying
+      // Brief light rain with good drying - still marginal but note it's drying
       return {
-        level: 'good',
-        reason: `Brief light rain (${current.precipitation.toFixed(2)}in/hr, drying fast)`
+        level: 'marginal',
+        reason: `Light rain (${current.precipitation.toFixed(2)}in/hr, drying fast)`
       };
     }
 
@@ -177,7 +169,6 @@ export class PrecipitationAnalyzer {
     if (recentWeather) {
       // Only look at last 24 hours for "recent" rain assessment
       const last24hTotal = this.getPrecipitationInWindow(recentWeather, 24);
-      const drying = this.assessDryingConditions(current);
 
       if (last24hTotal > 0.05 && !drying.canDryQuickly) {
         return {

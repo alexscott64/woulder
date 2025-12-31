@@ -73,19 +73,27 @@ func parseTimestampUTC(timeStr string) (time.Time, error) {
 		return timestamp.UTC(), nil
 	}
 
-	// Try parsing without timezone (e.g., "2025-12-21T23:15")
-	// Open-Meteo returns times in the requested timezone (UTC) but without the Z suffix
+	// Try parsing without timezone (e.g., "2025-12-30T16:00")
+	// Open-Meteo returns times in Pacific timezone when we request timezone=America/Los_Angeles
 	timestamp, err = time.Parse("2006-01-02T15:04", timeStr)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to parse timestamp '%s': %w", timeStr, err)
 	}
 
-	// Explicitly set the location to UTC since we requested timezone=UTC from the API
-	return time.Date(
+	// Load Pacific timezone
+	pacificTZ, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to load Pacific timezone: %w", err)
+	}
+
+	// Interpret the timestamp as Pacific time, then convert to UTC
+	timestampInPacific := time.Date(
 		timestamp.Year(), timestamp.Month(), timestamp.Day(),
 		timestamp.Hour(), timestamp.Minute(), timestamp.Second(), 0,
-		time.UTC,
-	), nil
+		pacificTZ,
+	)
+
+	return timestampInPacific.UTC(), nil
 }
 
 // GetCurrentWeather fetches current weather with both current conditions and hourly forecast
@@ -229,9 +237,9 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 		Icon:          getWeatherIconWithTime(data.Current.WeatherCode, isNight),
 	}
 
-	// Parse forecast data (3-hour intervals)
+	// Parse forecast data (all hourly data)
 	var forecast []models.WeatherData
-	for i := 0; i < len(data.Hourly.Time); i += 3 {
+	for i := 0; i < len(data.Hourly.Time); i++ {
 		timestamp, err := parseTimestampUTC(data.Hourly.Time[i])
 		if err != nil {
 			log.Printf("Failed to parse hourly timestamp '%s': %v", data.Hourly.Time[i], err)
@@ -287,8 +295,8 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 	}
 
 	var forecast []models.WeatherData
-	// Only return every 3rd hour (3-hour intervals) to match previous behavior
-	for i := 0; i < len(data.Hourly.Time); i += 3 {
+	// Return all hourly data
+	for i := 0; i < len(data.Hourly.Time); i++ {
 		timestamp, err := parseTimestampUTC(data.Hourly.Time[i])
 		if err != nil {
 			log.Printf("Failed to parse hourly timestamp '%s': %v", data.Hourly.Time[i], err)

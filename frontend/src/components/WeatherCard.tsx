@@ -7,6 +7,7 @@ import { PestAnalyzer } from '../utils/pests/analyzers';
 import type { PestConditions } from '../utils/pests/analyzers/PestAnalyzer';
 import { getPestLevelColor } from './pests/pestDisplay';
 import { format } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, Waves, Sunrise, Sunset, Bug } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { RiverInfoModal } from './RiverInfoModal';
@@ -153,7 +154,9 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
         <div className="mb-4">
           {/* Title row with condition badge */}
           <div className="flex items-center justify-between gap-2 mb-1">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{location.name}</h2>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{location.name}</h2>
+            </div>
             <button
               onClick={() => setShowConditionModal(true)}
               className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${conditionBadge.bg} ${conditionBadge.text} ${conditionBadge.border} flex items-center gap-1.5 flex-shrink-0 hover:opacity-80 active:opacity-100 transition-opacity cursor-pointer`}
@@ -166,7 +169,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           {/* Date and info icons row */}
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              {format(new Date(current.timestamp), 'MMM d, h:mm a')}
+              {formatInTimeZone(current.timestamp, 'America/Los_Angeles', 'MMM d, h:mm a')} {new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'short' }).formatToParts(new Date()).find(part => part.type === 'timeZoneName')?.value}
             </p>
             {/* Info Icons */}
             {(pestConditions || hasRivers) && (
@@ -197,9 +200,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
                     <Waves className={`w-5 h-5 text-blue-600 dark:text-blue-400 ${loadingRivers ? 'animate-pulse' : ''}`} />
                     {riverData.length > 0 && (
                       <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-gray-800 ${
-                        riverData.every(r => r.is_safe) ? 'bg-green-500' :
-                        riverData.some(r => r.status === 'unsafe') ? 'bg-red-500' :
-                        'bg-yellow-500'
+                        riverData.every(r => r.is_safe) ? 'bg-green-500' : 'bg-red-500'
                       }`} />
                     )}
                   </button>
