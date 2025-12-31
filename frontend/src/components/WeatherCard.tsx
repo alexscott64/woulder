@@ -39,12 +39,9 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const conditionLabel = getConditionLabel(condition.level);
 
   // River crossing state
-  const [showRiverModal, setShowRiverModal] = useState(false);
   const [riverData, setRiverData] = useState<RiverData[]>([]);
   const [hasRivers, setHasRivers] = useState(false);
 
-  // Pest info state
-  const [showPestModal, setShowPestModal] = useState(false);
 
   // Condition details state
   const [showConditionModal, setShowConditionModal] = useState(false);
