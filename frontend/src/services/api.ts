@@ -25,7 +25,8 @@ export const weatherApi = {
   // Get weather for all locations (optionally filtered by area)
   getAllWeather: async (areaId?: number | null): Promise<AllWeatherResponse> => {
     const params = areaId ? { area_id: areaId } : {};
-    const response = await api.get('/weather/all', { params });
+    // Use longer timeout for getAllWeather since it fetches multiple locations
+    const response = await api.get('/weather/all', { params, timeout: 30000 });
     return response.data;
   },
 

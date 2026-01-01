@@ -54,7 +54,7 @@ function Dashboard() {
   });
 
   // Sort weather data: Skykomish locations first, then Index, then alphabetically
-  const sortedWeather = data?.weather.sort((a, b) => {
+  const sortedWeather = data?.forecasts.sort((a, b) => {
     // Skykomish - Money Creek first
     if (a.location.name === 'Skykomish - Money Creek') return -1;
     if (b.location.name === 'Skykomish - Money Creek') return 1;
@@ -269,7 +269,7 @@ function Dashboard() {
           </>
         )}
 
-        {!isLoading && !error && (!data || data.weather.length === 0) && (
+        {!isLoading && !error && (!data || data.forecasts.length === 0) && (
           <div className="text-center py-12">
             <p className="text-gray-700 dark:text-gray-300 font-medium">No weather data available</p>
           </div>

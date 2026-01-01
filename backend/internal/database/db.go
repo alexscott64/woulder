@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	_ "embed"
 	"fmt"
@@ -8,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/lib/pq"
 	"github.com/alexscott64/woulder/backend/internal/models"
+	_ "github.com/lib/pq"
 )
 
 //go:embed setup_postgres.sql
@@ -20,7 +21,6 @@ type Database struct {
 }
 
 func New() (*Database, error) {
-	// Build PostgreSQL connection string from environment variables
 	host := os.Getenv("DB_HOST")
 	port := os.Getenv("DB_PORT")
 	user := os.Getenv("DB_USER")
@@ -28,7 +28,6 @@ func New() (*Database, error) {
 	dbname := os.Getenv("DB_NAME")
 	sslmode := os.Getenv("DB_SSLMODE")
 
-	// Set defaults
 	if port == "" {
 		port = "5432"
 	}
@@ -36,64 +35,52 @@ func New() (*Database, error) {
 		sslmode = "require"
 	}
 
-	// Validate required fields
 	if host == "" || user == "" || password == "" || dbname == "" {
-		return nil, fmt.Errorf("missing required database configuration: DB_HOST, DB_USER, DB_PASSWORD, DB_NAME must be set")
+		return nil, fmt.Errorf("missing required database configuration")
 	}
 
-	// Build connection string
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname, sslmode)
+	connStr := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbname, sslmode,
+	)
 
-	// Open PostgreSQL database
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, err
 	}
 
-	// Test the connection
 	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+		return nil, err
 	}
 
-	// PostgreSQL connection pool settings
-	db.SetMaxOpenConns(25)                 // Maximum number of open connections
-	db.SetMaxIdleConns(5)                  // Maximum number of idle connections
-	db.SetConnMaxLifetime(5 * time.Minute) // Maximum lifetime of a connection
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
 
 	database := &Database{conn: db}
 
-	// Check if schema needs initialization
 	needsInit, err := database.needsInitialization()
 	if err != nil {
-		return nil, fmt.Errorf("failed to check initialization status: %w", err)
+		return nil, err
 	}
 
 	if needsInit {
 		log.Println("Database schema not found, running setup...")
 		if err := database.runSetup(); err != nil {
-			return nil, fmt.Errorf("failed to run database setup: %w", err)
+			return nil, err
 		}
-		log.Println("Database setup complete (schema + seed data)")
 	}
-
-	log.Printf("PostgreSQL connection established: %s@%s:%s/%s", user, host, port, dbname)
 
 	return database, nil
 }
 
-// needsInitialization checks if the woulder schema exists
 func (db *Database) needsInitialization() (bool, error) {
 	var exists bool
 	query := `SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = 'woulder')`
 	err := db.conn.QueryRow(query).Scan(&exists)
-	if err != nil {
-		return false, err
-	}
-	return !exists, nil
+	return !exists, err
 }
 
-// runSetup creates the database schema and seeds initial data
 func (db *Database) runSetup() error {
 	_, err := db.conn.Exec(setupSQL)
 	return err
@@ -103,12 +90,21 @@ func (db *Database) Close() error {
 	return db.conn.Close()
 }
 
-// GetAllLocations retrieves all saved locations
-func (db *Database) GetAllLocations() ([]models.Location, error) {
-	query := `SELECT id, name, latitude, longitude, elevation_ft, area_id, created_at, updated_at
-	          FROM woulder.locations ORDER BY name`
+func (db *Database) Ping(ctx context.Context) error {
+	return db.conn.PingContext(ctx)
+}
 
-	rows, err := db.conn.Query(query)
+// -------------------- Locations --------------------
+
+func (db *Database) GetAllLocations(ctx context.Context) ([]models.Location, error) {
+	query := `
+		SELECT id, name, latitude, longitude, elevation_ft, area_id,
+		       has_seepage_risk, created_at, updated_at
+		FROM woulder.locations
+		ORDER BY name
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +113,64 @@ func (db *Database) GetAllLocations() ([]models.Location, error) {
 	var locations []models.Location
 	for rows.Next() {
 		var loc models.Location
-		if err := rows.Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude, &loc.ElevationFt, &loc.AreaID, &loc.CreatedAt, &loc.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude,
+			&loc.ElevationFt, &loc.AreaID, &loc.HasSeepageRisk,
+			&loc.CreatedAt, &loc.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		locations = append(locations, loc)
+	}
+
+	return locations, rows.Err()
+}
+
+func (db *Database) GetLocation(ctx context.Context, id int) (*models.Location, error) {
+	query := `
+		SELECT id, name, latitude, longitude, elevation_ft, area_id,
+		       created_at, updated_at
+		FROM woulder.locations
+		WHERE id = $1
+	`
+
+	var loc models.Location
+	err := db.conn.QueryRowContext(ctx, query, id).Scan(
+		&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude,
+		&loc.ElevationFt, &loc.AreaID,
+		&loc.CreatedAt, &loc.UpdatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &loc, nil
+}
+
+func (db *Database) GetLocationsByArea(ctx context.Context, areaID int) ([]models.Location, error) {
+	query := `
+		SELECT id, name, latitude, longitude, elevation_ft, area_id,
+		       created_at, updated_at
+		FROM woulder.locations
+		WHERE area_id = $1
+		ORDER BY name
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query, areaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var locations []models.Location
+	for rows.Next() {
+		var loc models.Location
+		if err := rows.Scan(
+			&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude,
+			&loc.ElevationFt, &loc.AreaID,
+			&loc.CreatedAt, &loc.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		locations = append(locations, loc)
@@ -126,28 +179,16 @@ func (db *Database) GetAllLocations() ([]models.Location, error) {
 	return locations, nil
 }
 
-// GetLocation retrieves a location by ID
-func (db *Database) GetLocation(id int) (*models.Location, error) {
-	query := `SELECT id, name, latitude, longitude, elevation_ft, area_id, created_at, updated_at
-	          FROM woulder.locations WHERE id = $1`
+// -------------------- Weather --------------------
 
-	var loc models.Location
-	err := db.conn.QueryRow(query, id).Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude, &loc.ElevationFt, &loc.AreaID, &loc.CreatedAt, &loc.UpdatedAt)
-	if err != nil {
-		return nil, err
-	}
-
-	return &loc, nil
-}
-
-// SaveWeatherData saves weather data to the database
-func (db *Database) SaveWeatherData(data *models.WeatherData) error {
+func (db *Database) SaveWeatherData(ctx context.Context, data *models.WeatherData) error {
 	query := `
 		INSERT INTO woulder.weather_data (
 			location_id, timestamp, temperature, feels_like, precipitation,
 			humidity, wind_speed, wind_direction, cloud_cover, pressure,
 			description, icon
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		ON CONFLICT(location_id, timestamp) DO UPDATE SET
 			temperature = EXCLUDED.temperature,
 			feels_like = EXCLUDED.feels_like,
@@ -161,7 +202,7 @@ func (db *Database) SaveWeatherData(data *models.WeatherData) error {
 			icon = EXCLUDED.icon
 	`
 
-	_, err := db.conn.Exec(query,
+	_, err := db.conn.ExecContext(ctx, query,
 		data.LocationID,
 		data.Timestamp,
 		data.Temperature,
@@ -179,12 +220,11 @@ func (db *Database) SaveWeatherData(data *models.WeatherData) error {
 	return err
 }
 
-// GetHistoricalWeather retrieves historical weather data for a location (past only, not future)
-func (db *Database) GetHistoricalWeather(locationID int, days int) ([]models.WeatherData, error) {
+func (db *Database) GetHistoricalWeather(ctx context.Context, locationID, days int) ([]models.WeatherData, error) {
 	query := `
-		SELECT id, location_id, timestamp, temperature, feels_like, precipitation,
-			   humidity, wind_speed, wind_direction, cloud_cover, pressure,
-			   description, icon, created_at
+		SELECT id, location_id, timestamp, temperature, feels_like,
+		       precipitation, humidity, wind_speed, wind_direction,
+		       cloud_cover, pressure, description, icon, created_at
 		FROM woulder.weather_data
 		WHERE location_id = $1
 		  AND timestamp >= NOW() - INTERVAL '1 day' * $2
@@ -192,148 +232,127 @@ func (db *Database) GetHistoricalWeather(locationID int, days int) ([]models.Wea
 		ORDER BY timestamp ASC
 	`
 
-	rows, err := db.conn.Query(query, locationID, days)
+	rows, err := db.conn.QueryContext(ctx, query, locationID, days)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var weatherData []models.WeatherData
+	var result []models.WeatherData
 	for rows.Next() {
-		var data models.WeatherData
+		var d models.WeatherData
 		if err := rows.Scan(
-			&data.ID,
-			&data.LocationID,
-			&data.Timestamp,
-			&data.Temperature,
-			&data.FeelsLike,
-			&data.Precipitation,
-			&data.Humidity,
-			&data.WindSpeed,
-			&data.WindDirection,
-			&data.CloudCover,
-			&data.Pressure,
-			&data.Description,
-			&data.Icon,
-			&data.CreatedAt,
+			&d.ID, &d.LocationID, &d.Timestamp,
+			&d.Temperature, &d.FeelsLike, &d.Precipitation,
+			&d.Humidity, &d.WindSpeed, &d.WindDirection,
+			&d.CloudCover, &d.Pressure, &d.Description,
+			&d.Icon, &d.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
-		weatherData = append(weatherData, data)
+		result = append(result, d)
 	}
 
-	return weatherData, nil
+	return result, nil
 }
 
-// GetForecastWeather retrieves future weather data (forecast) for a location
-func (db *Database) GetForecastWeather(locationID int) ([]models.WeatherData, error) {
+func (db *Database) GetForecastWeather(
+	ctx context.Context,
+	locationID int,
+	hours int,
+) ([]models.WeatherData, error) {
+
 	query := `
-		SELECT id, location_id, timestamp, temperature, feels_like, precipitation,
-			   humidity, wind_speed, wind_direction, cloud_cover, pressure,
-			   description, icon, created_at
+		SELECT id, location_id, timestamp, temperature, feels_like,
+		       precipitation, humidity, wind_speed, wind_direction,
+		       cloud_cover, pressure, description, icon, created_at
 		FROM woulder.weather_data
-		WHERE location_id = $1 AND timestamp >= NOW() - INTERVAL '3 hours'
+		WHERE location_id = $1
+		  AND timestamp >= NOW() - ($2 * INTERVAL '1 hour')
 		ORDER BY timestamp ASC
 	`
 
-	rows, err := db.conn.Query(query, locationID)
+	rows, err := db.conn.QueryContext(ctx, query, locationID, hours)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var weatherData []models.WeatherData
+	var result []models.WeatherData
 	for rows.Next() {
-		var data models.WeatherData
+		var d models.WeatherData
 		if err := rows.Scan(
-			&data.ID,
-			&data.LocationID,
-			&data.Timestamp,
-			&data.Temperature,
-			&data.FeelsLike,
-			&data.Precipitation,
-			&data.Humidity,
-			&data.WindSpeed,
-			&data.WindDirection,
-			&data.CloudCover,
-			&data.Pressure,
-			&data.Description,
-			&data.Icon,
-			&data.CreatedAt,
+			&d.ID,
+			&d.LocationID,
+			&d.Timestamp,
+			&d.Temperature,
+			&d.FeelsLike,
+			&d.Precipitation,
+			&d.Humidity,
+			&d.WindSpeed,
+			&d.WindDirection,
+			&d.CloudCover,
+			&d.Pressure,
+			&d.Description,
+			&d.Icon,
+			&d.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
-		weatherData = append(weatherData, data)
+		result = append(result, d)
 	}
 
-	return weatherData, nil
+	return result, nil
 }
 
-// CleanOldWeatherData removes weather data older than specified days
-func (db *Database) CleanOldWeatherData(days int) error {
-	query := `DELETE FROM woulder.weather_data WHERE timestamp < NOW() - INTERVAL '1 day' * $1`
-	_, err := db.conn.Exec(query, days)
-	return err
-}
-
-// GetCurrentWeather retrieves the most recent weather data for a location (closest to now)
-func (db *Database) GetCurrentWeather(locationID int) (*models.WeatherData, error) {
-	// Use PostgreSQL's ABS and ORDER BY to find the closest timestamp
+func (db *Database) GetCurrentWeather(ctx context.Context, locationID int) (*models.WeatherData, error) {
 	query := `
-		SELECT id, location_id, timestamp, temperature, feels_like, precipitation,
-			   humidity, wind_speed, wind_direction, cloud_cover, pressure,
-			   description, icon, created_at
+		SELECT id, location_id, timestamp, temperature, feels_like,
+		       precipitation, humidity, wind_speed, wind_direction,
+		       cloud_cover, pressure, description, icon, created_at
 		FROM woulder.weather_data
 		WHERE location_id = $1
 		ORDER BY ABS(EXTRACT(EPOCH FROM (timestamp - NOW())))
 		LIMIT 1
 	`
 
-	var data models.WeatherData
-	err := db.conn.QueryRow(query, locationID).Scan(
-		&data.ID,
-		&data.LocationID,
-		&data.Timestamp,
-		&data.Temperature,
-		&data.FeelsLike,
-		&data.Precipitation,
-		&data.Humidity,
-		&data.WindSpeed,
-		&data.WindDirection,
-		&data.CloudCover,
-		&data.Pressure,
-		&data.Description,
-		&data.Icon,
-		&data.CreatedAt,
+	var d models.WeatherData
+	err := db.conn.QueryRowContext(ctx, query, locationID).Scan(
+		&d.ID, &d.LocationID, &d.Timestamp,
+		&d.Temperature, &d.FeelsLike, &d.Precipitation,
+		&d.Humidity, &d.WindSpeed, &d.WindDirection,
+		&d.CloudCover, &d.Pressure, &d.Description,
+		&d.Icon, &d.CreatedAt,
 	)
+
 	if err != nil {
 		return nil, err
 	}
 
-	return &data, nil
+	return &d, nil
 }
 
-// GetLastRefreshTime returns the most recent weather data timestamp for any location
-func (db *Database) GetLastRefreshTime() (string, error) {
-	query := `SELECT MAX(created_at) FROM woulder.weather_data`
-	var lastRefresh sql.NullTime
-	err := db.conn.QueryRow(query).Scan(&lastRefresh)
-	if err != nil {
-		return "", err
-	}
-	if !lastRefresh.Valid {
-		return "", nil
-	}
-	return lastRefresh.Time.Format(time.RFC3339), nil
+func (db *Database) CleanOldWeatherData(ctx context.Context, days int) error {
+	query := `DELETE FROM woulder.weather_data WHERE timestamp < NOW() - INTERVAL '1 day' * $1`
+	_, err := db.conn.ExecContext(ctx, query, days)
+	return err
 }
 
-// GetRiversByLocation retrieves all rivers for a location
-func (db *Database) GetRiversByLocation(locationID int) ([]models.River, error) {
-	query := `SELECT id, location_id, gauge_id, river_name, safe_crossing_cfs, caution_crossing_cfs,
-			  drainage_area_sq_mi, gauge_drainage_area_sq_mi, flow_divisor, is_estimated, description, created_at, updated_at
-			  FROM woulder.rivers WHERE location_id = $1 ORDER BY river_name`
+// -------------------- Rivers --------------------
 
-	rows, err := db.conn.Query(query, locationID)
+func (db *Database) GetRiversByLocation(ctx context.Context, locationID int) ([]models.River, error) {
+	query := `
+		SELECT id, location_id, gauge_id, river_name,
+		       safe_crossing_cfs, caution_crossing_cfs,
+		       drainage_area_sq_mi, gauge_drainage_area_sq_mi,
+		       flow_divisor, is_estimated, description,
+		       created_at, updated_at
+		FROM woulder.rivers
+		WHERE location_id = $1
+		ORDER BY river_name
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query, locationID)
 	if err != nil {
 		return nil, err
 	}
@@ -341,44 +360,60 @@ func (db *Database) GetRiversByLocation(locationID int) ([]models.River, error) 
 
 	var rivers []models.River
 	for rows.Next() {
-		var river models.River
-		if err := rows.Scan(&river.ID, &river.LocationID, &river.GaugeID, &river.RiverName,
-			&river.SafeCrossingCFS, &river.CautionCrossingCFS, &river.DrainageAreaSqMi,
-			&river.GaugeDrainageAreaSqMi, &river.FlowDivisor, &river.IsEstimated, &river.Description,
-			&river.CreatedAt, &river.UpdatedAt); err != nil {
+		var r models.River
+		if err := rows.Scan(
+			&r.ID, &r.LocationID, &r.GaugeID, &r.RiverName,
+			&r.SafeCrossingCFS, &r.CautionCrossingCFS,
+			&r.DrainageAreaSqMi, &r.GaugeDrainageAreaSqMi,
+			&r.FlowDivisor, &r.IsEstimated, &r.Description,
+			&r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
-		rivers = append(rivers, river)
+		rivers = append(rivers, r)
 	}
 
 	return rivers, nil
 }
 
-// GetRiverByID retrieves a specific river by ID
-func (db *Database) GetRiverByID(riverID int) (*models.River, error) {
-	query := `SELECT id, location_id, gauge_id, river_name, safe_crossing_cfs, caution_crossing_cfs,
-			  drainage_area_sq_mi, gauge_drainage_area_sq_mi, flow_divisor, is_estimated, description, created_at, updated_at
-			  FROM woulder.rivers WHERE id = $1`
+func (db *Database) GetRiverByID(ctx context.Context, id int) (*models.River, error) {
+	query := `
+		SELECT id, location_id, gauge_id, river_name,
+		       safe_crossing_cfs, caution_crossing_cfs,
+		       drainage_area_sq_mi, gauge_drainage_area_sq_mi,
+		       flow_divisor, is_estimated, description,
+		       created_at, updated_at
+		FROM woulder.rivers
+		WHERE id = $1
+	`
 
-	var river models.River
-	err := db.conn.QueryRow(query, riverID).Scan(&river.ID, &river.LocationID, &river.GaugeID,
-		&river.RiverName, &river.SafeCrossingCFS, &river.CautionCrossingCFS, &river.DrainageAreaSqMi,
-		&river.GaugeDrainageAreaSqMi, &river.FlowDivisor, &river.IsEstimated, &river.Description,
-		&river.CreatedAt, &river.UpdatedAt)
+	var r models.River
+	err := db.conn.QueryRowContext(ctx, query, id).Scan(
+		&r.ID, &r.LocationID, &r.GaugeID, &r.RiverName,
+		&r.SafeCrossingCFS, &r.CautionCrossingCFS,
+		&r.DrainageAreaSqMi, &r.GaugeDrainageAreaSqMi,
+		&r.FlowDivisor, &r.IsEstimated, &r.Description,
+		&r.CreatedAt, &r.UpdatedAt,
+	)
+
 	if err != nil {
 		return nil, err
 	}
 
-	return &river, nil
+	return &r, nil
 }
 
-// GetAllAreas retrieves all areas ordered by display_order
-func (db *Database) GetAllAreas() ([]models.Area, error) {
-	query := `SELECT id, name, description, region, display_order, created_at, updated_at
-	          FROM woulder.areas
-	          ORDER BY display_order, name`
+// -------------------- Areas --------------------
 
-	rows, err := db.conn.Query(query)
+func (db *Database) GetAllAreas(ctx context.Context) ([]models.Area, error) {
+	query := `
+		SELECT id, name, description, region,
+		       display_order, created_at, updated_at
+		FROM woulder.areas
+		ORDER BY display_order, name
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -386,28 +421,32 @@ func (db *Database) GetAllAreas() ([]models.Area, error) {
 
 	var areas []models.Area
 	for rows.Next() {
-		var area models.Area
-		if err := rows.Scan(&area.ID, &area.Name, &area.Description, &area.Region,
-			&area.DisplayOrder, &area.CreatedAt, &area.UpdatedAt); err != nil {
+		var a models.Area
+		if err := rows.Scan(
+			&a.ID, &a.Name, &a.Description,
+			&a.Region, &a.DisplayOrder,
+			&a.CreatedAt, &a.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
-		areas = append(areas, area)
+		areas = append(areas, a)
 	}
 
 	return areas, nil
 }
 
-// GetAreasWithLocationCounts retrieves all areas with location counts
-func (db *Database) GetAreasWithLocationCounts() ([]models.AreaWithLocationCount, error) {
+func (db *Database) GetAreasWithLocationCounts(ctx context.Context) ([]models.AreaWithLocationCount, error) {
 	query := `
-		SELECT a.id, a.name, a.description, a.region, a.display_order,
-		       a.created_at, a.updated_at, COUNT(l.id) as location_count
+		SELECT a.id, a.name, a.description, a.region,
+		       a.display_order, a.created_at, a.updated_at,
+		       COUNT(l.id) AS location_count
 		FROM woulder.areas a
 		LEFT JOIN woulder.locations l ON l.area_id = a.id
 		GROUP BY a.id
-		ORDER BY a.display_order, a.name`
+		ORDER BY a.display_order, a.name
+	`
 
-	rows, err := db.conn.Query(query)
+	rows, err := db.conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -415,65 +454,51 @@ func (db *Database) GetAreasWithLocationCounts() ([]models.AreaWithLocationCount
 
 	var areas []models.AreaWithLocationCount
 	for rows.Next() {
-		var area models.AreaWithLocationCount
-		if err := rows.Scan(&area.ID, &area.Name, &area.Description, &area.Region,
-			&area.DisplayOrder, &area.CreatedAt, &area.UpdatedAt,
-			&area.LocationCount); err != nil {
+		var a models.AreaWithLocationCount
+		if err := rows.Scan(
+			&a.ID, &a.Name, &a.Description,
+			&a.Region, &a.DisplayOrder,
+			&a.CreatedAt, &a.UpdatedAt,
+			&a.LocationCount,
+		); err != nil {
 			return nil, err
 		}
-		areas = append(areas, area)
+		areas = append(areas, a)
 	}
 
 	return areas, nil
 }
 
-// GetAreaByID retrieves a single area by ID
-func (db *Database) GetAreaByID(id int) (*models.Area, error) {
-	query := `SELECT id, name, description, region, display_order, created_at, updated_at
-	          FROM woulder.areas WHERE id = $1`
-
-	var area models.Area
-	err := db.conn.QueryRow(query, id).Scan(&area.ID, &area.Name, &area.Description,
-		&area.Region, &area.DisplayOrder,
-		&area.CreatedAt, &area.UpdatedAt)
-	if err != nil {
-		return nil, err
-	}
-
-	return &area, nil
-}
-
-// GetLocationsByArea retrieves all locations for a specific area
-func (db *Database) GetLocationsByArea(areaID int) ([]models.Location, error) {
-	query := `SELECT id, name, latitude, longitude, elevation_ft, area_id, created_at, updated_at
-	          FROM woulder.locations
-	          WHERE area_id = $1
-	          ORDER BY name`
-
-	rows, err := db.conn.Query(query, areaID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var locations []models.Location
-	for rows.Next() {
-		var loc models.Location
-		if err := rows.Scan(&loc.ID, &loc.Name, &loc.Latitude, &loc.Longitude,
-			&loc.ElevationFt, &loc.AreaID, &loc.CreatedAt, &loc.UpdatedAt); err != nil {
-			return nil, err
-		}
-		locations = append(locations, loc)
-	}
-
-	return locations, nil
-}
-
-// GetRockTypesByLocation retrieves all rock types for a specific location
-func (db *Database) GetRockTypesByLocation(locationID int) ([]models.RockType, error) {
+func (db *Database) GetAreaByID(ctx context.Context, id int) (*models.Area, error) {
 	query := `
-		SELECT rt.id, rt.name, rt.base_drying_hours, rt.porosity_percent,
-		       rt.is_wet_sensitive, rt.description, rt.rock_type_group_id, rtg.group_name
+		SELECT id, name, description, region,
+		       display_order, created_at, updated_at
+		FROM woulder.areas
+		WHERE id = $1
+	`
+
+	var a models.Area
+	err := db.conn.QueryRowContext(ctx, query, id).Scan(
+		&a.ID, &a.Name, &a.Description,
+		&a.Region, &a.DisplayOrder,
+		&a.CreatedAt, &a.UpdatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &a, nil
+}
+
+// -------------------- Rock + Sun Exposure --------------------
+
+func (db *Database) GetRockTypesByLocation(ctx context.Context, locationID int) ([]models.RockType, error) {
+	query := `
+		SELECT rt.id, rt.name, rt.base_drying_hours,
+		       rt.porosity_percent, rt.is_wet_sensitive,
+		       rt.description, rt.rock_type_group_id,
+		       rtg.group_name
 		FROM woulder.rock_types rt
 		INNER JOIN woulder.location_rock_types lrt ON rt.id = lrt.rock_type_id
 		INNER JOIN woulder.rock_type_groups rtg ON rt.rock_type_group_id = rtg.id
@@ -481,7 +506,7 @@ func (db *Database) GetRockTypesByLocation(locationID int) ([]models.RockType, e
 		ORDER BY lrt.is_primary DESC, rt.name ASC
 	`
 
-	rows, err := db.conn.Query(query, locationID)
+	rows, err := db.conn.QueryContext(ctx, query, locationID)
 	if err != nil {
 		return nil, err
 	}
@@ -490,8 +515,12 @@ func (db *Database) GetRockTypesByLocation(locationID int) ([]models.RockType, e
 	var rockTypes []models.RockType
 	for rows.Next() {
 		var rt models.RockType
-		if err := rows.Scan(&rt.ID, &rt.Name, &rt.BaseDryingHours, &rt.PorosityPercent,
-			&rt.IsWetSensitive, &rt.Description, &rt.RockTypeGroupID, &rt.GroupName); err != nil {
+		if err := rows.Scan(
+			&rt.ID, &rt.Name, &rt.BaseDryingHours,
+			&rt.PorosityPercent, &rt.IsWetSensitive,
+			&rt.Description, &rt.RockTypeGroupID,
+			&rt.GroupName,
+		); err != nil {
 			return nil, err
 		}
 		rockTypes = append(rockTypes, rt)
@@ -500,11 +529,12 @@ func (db *Database) GetRockTypesByLocation(locationID int) ([]models.RockType, e
 	return rockTypes, nil
 }
 
-// GetPrimaryRockType retrieves the primary rock type for a location
-func (db *Database) GetPrimaryRockType(locationID int) (*models.RockType, error) {
+func (db *Database) GetPrimaryRockType(ctx context.Context, locationID int) (*models.RockType, error) {
 	query := `
-		SELECT rt.id, rt.name, rt.base_drying_hours, rt.porosity_percent,
-		       rt.is_wet_sensitive, rt.description, rt.rock_type_group_id, rtg.group_name
+		SELECT rt.id, rt.name, rt.base_drying_hours,
+		       rt.porosity_percent, rt.is_wet_sensitive,
+		       rt.description, rt.rock_type_group_id,
+		       rtg.group_name
 		FROM woulder.rock_types rt
 		INNER JOIN woulder.location_rock_types lrt ON rt.id = lrt.rock_type_id
 		INNER JOIN woulder.rock_type_groups rtg ON rt.rock_type_group_id = rtg.id
@@ -513,17 +543,19 @@ func (db *Database) GetPrimaryRockType(locationID int) (*models.RockType, error)
 	`
 
 	var rt models.RockType
-	err := db.conn.QueryRow(query, locationID).Scan(
-		&rt.ID, &rt.Name, &rt.BaseDryingHours, &rt.PorosityPercent,
-		&rt.IsWetSensitive, &rt.Description, &rt.RockTypeGroupID, &rt.GroupName)
+	err := db.conn.QueryRowContext(ctx, query, locationID).Scan(
+		&rt.ID, &rt.Name, &rt.BaseDryingHours,
+		&rt.PorosityPercent, &rt.IsWetSensitive,
+		&rt.Description, &rt.RockTypeGroupID,
+		&rt.GroupName,
+	)
 
 	if err == sql.ErrNoRows {
-		// If no primary rock type, get the first one
-		rockTypes, err := db.GetRockTypesByLocation(locationID)
-		if err != nil || len(rockTypes) == 0 {
+		rocks, err := db.GetRockTypesByLocation(ctx, locationID)
+		if err != nil || len(rocks) == 0 {
 			return nil, fmt.Errorf("no rock types found for location %d", locationID)
 		}
-		return &rockTypes[0], nil
+		return &rocks[0], nil
 	}
 
 	if err != nil {
@@ -533,26 +565,27 @@ func (db *Database) GetPrimaryRockType(locationID int) (*models.RockType, error)
 	return &rt, nil
 }
 
-// GetSunExposureByLocation retrieves sun exposure profile for a specific location
-func (db *Database) GetSunExposureByLocation(locationID int) (*models.LocationSunExposure, error) {
+func (db *Database) GetSunExposureByLocation(ctx context.Context, locationID int) (*models.LocationSunExposure, error) {
 	query := `
-		SELECT id, location_id, south_facing_percent, west_facing_percent,
-		       east_facing_percent, north_facing_percent, slab_percent,
-		       overhang_percent, tree_coverage_percent, description
+		SELECT id, location_id,
+		       south_facing_percent, west_facing_percent,
+		       east_facing_percent, north_facing_percent,
+		       slab_percent, overhang_percent,
+		       tree_coverage_percent, description
 		FROM woulder.location_sun_exposure
 		WHERE location_id = $1
 	`
 
-	var sunExposure models.LocationSunExposure
-	err := db.conn.QueryRow(query, locationID).Scan(
-		&sunExposure.ID, &sunExposure.LocationID,
-		&sunExposure.SouthFacingPercent, &sunExposure.WestFacingPercent,
-		&sunExposure.EastFacingPercent, &sunExposure.NorthFacingPercent,
-		&sunExposure.SlabPercent, &sunExposure.OverhangPercent,
-		&sunExposure.TreeCoveragePercent, &sunExposure.Description)
+	var se models.LocationSunExposure
+	err := db.conn.QueryRowContext(ctx, query, locationID).Scan(
+		&se.ID, &se.LocationID,
+		&se.SouthFacingPercent, &se.WestFacingPercent,
+		&se.EastFacingPercent, &se.NorthFacingPercent,
+		&se.SlabPercent, &se.OverhangPercent,
+		&se.TreeCoveragePercent, &se.Description,
+	)
 
 	if err == sql.ErrNoRows {
-		// No sun exposure data for this location
 		return nil, nil
 	}
 
@@ -560,5 +593,5 @@ func (db *Database) GetSunExposureByLocation(locationID int) (*models.LocationSu
 		return nil, err
 	}
 
-	return &sunExposure, nil
+	return &se, nil
 }

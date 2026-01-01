@@ -11,6 +11,8 @@ import (
 
 	"github.com/alexscott64/woulder/backend/internal/api"
 	"github.com/alexscott64/woulder/backend/internal/database"
+	"github.com/alexscott64/woulder/backend/internal/rivers"
+	"github.com/alexscott64/woulder/backend/internal/service"
 	"github.com/alexscott64/woulder/backend/internal/weather"
 )
 
@@ -27,11 +29,17 @@ func main() {
 	}
 	defer db.Close()
 
-	// Initialize weather service (Open-Meteo with OpenWeatherMap fallback)
-	weatherService := weather.NewWeatherService()
+	// Initialize external API clients
+	weatherClient := weather.NewWeatherService()
+	riverClient := rivers.NewUSGSClient()
 
-	// Initialize API handler
-	handler := api.NewHandler(db, weatherService)
+	// Initialize services with dependency injection
+	locationService := service.NewLocationService(db)
+	weatherServiceLayer := service.NewWeatherService(db, weatherClient)
+	riverServiceLayer := service.NewRiverService(db, riverClient)
+
+	// Initialize API handler with services
+	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer)
 
 	// Start background weather refresh (every 2 hours)
 	handler.StartBackgroundRefresh(2 * time.Hour)

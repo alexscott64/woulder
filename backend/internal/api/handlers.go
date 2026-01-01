@@ -4,229 +4,91 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/alexscott64/woulder/backend/internal/database"
-	"github.com/alexscott64/woulder/backend/internal/models"
-	"github.com/alexscott64/woulder/backend/internal/weather"
-	"github.com/alexscott64/woulder/backend/internal/rivers"
+	"github.com/alexscott64/woulder/backend/internal/service"
 )
 
 type Handler struct {
-	db             *database.Database
-	weatherService *weather.WeatherService
-	riverClient    *rivers.USGSClient
-	refreshMutex   sync.Mutex
-	lastRefresh    time.Time
-	isRefreshing   bool
+	locationService *service.LocationService
+	weatherService  *service.WeatherService
+	riverService    *service.RiverService
 }
 
-func NewHandler(db *database.Database, weatherService *weather.WeatherService) *Handler {
-	h := &Handler{
-		db:             db,
-		weatherService: weatherService,
-		riverClient:    rivers.NewUSGSClient(),
+func NewHandler(
+	locationService *service.LocationService,
+	weatherService *service.WeatherService,
+	riverService *service.RiverService,
+) *Handler {
+	return &Handler{
+		locationService: locationService,
+		weatherService:  weatherService,
+		riverService:    riverService,
 	}
-	return h
 }
 
 // StartBackgroundRefresh starts a goroutine that refreshes weather data periodically
 func (h *Handler) StartBackgroundRefresh(interval time.Duration) {
-	// Do initial refresh on startup
-	go func() {
-		log.Println("Starting initial weather data refresh...")
-		h.refreshAllWeatherData()
-	}()
-
-	// Start periodic refresh
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			log.Println("Starting scheduled weather data refresh...")
-			h.refreshAllWeatherData()
-		}
-	}()
-
+	// Start periodic refresh using weather service
+	h.weatherService.StartBackgroundRefresh(interval)
 	log.Printf("Background weather refresh scheduled every %v", interval)
 }
 
-// refreshAllWeatherData fetches fresh weather data for all locations
-func (h *Handler) refreshAllWeatherData() {
-	h.refreshMutex.Lock()
-	if h.isRefreshing {
-		h.refreshMutex.Unlock()
-		log.Println("Refresh already in progress, skipping")
-		return
-	}
-	h.isRefreshing = true
-	h.refreshMutex.Unlock()
-
-	defer func() {
-		h.refreshMutex.Lock()
-		h.isRefreshing = false
-		h.lastRefresh = time.Now()
-		h.refreshMutex.Unlock()
-	}()
-
-	locations, err := h.db.GetAllLocations()
-	if err != nil {
-		log.Printf("Error fetching locations for refresh: %v", err)
-		return
-	}
-
-	// Fetch sequentially with delay to avoid rate limiting
-	for _, location := range locations {
-		log.Printf("Refreshing weather data for location %d (%s)", location.ID, location.Name)
-
-		// Fetch current + forecast
-		current, forecast, _, err := h.weatherService.GetCurrentAndForecast(location.Latitude, location.Longitude)
-		if err != nil {
-			log.Printf("Error refreshing weather for location %d: %v", location.ID, err)
-			continue
-		}
-
-		current.LocationID = location.ID
-		if err := h.db.SaveWeatherData(current); err != nil {
-			log.Printf("Error saving current weather: %v", err)
-		}
-
-		for _, f := range forecast {
-			f.LocationID = location.ID
-			if err := h.db.SaveWeatherData(&f); err != nil {
-				log.Printf("Error saving forecast data: %v", err)
-			}
-		}
-
-		// Fetch historical data (last 14 days) from Open-Meteo for rain/pest calculations
-		historical, err := h.weatherService.GetHistoricalWeather(location.Latitude, location.Longitude, 14)
-		if err != nil {
-			log.Printf("Error fetching historical weather for location %d: %v", location.ID, err)
-		} else {
-			for _, hist := range historical {
-				hist.LocationID = location.ID
-				if err := h.db.SaveWeatherData(&hist); err != nil {
-					log.Printf("Error saving historical data: %v", err)
-				}
-			}
-			log.Printf("Saved %d historical data points for location %d", len(historical), location.ID)
-		}
-
-		// Small delay between locations to be nice to the API
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	// Clean old data (keep 21 days: 14 historical + 7 buffer)
-	if err := h.db.CleanOldWeatherData(21); err != nil {
-		log.Printf("Error cleaning old weather data: %v", err)
-	}
-
-	log.Println("Weather data refresh complete")
-}
-
-// HealthCheck returns API health status
+// HealthCheck returns service health status
 func (h *Handler) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"status":  "ok",
-		"message": "Woulder API is running",
+		"status":  "healthy",
+		"service": "woulder-api",
 		"time":    time.Now().Format(time.RFC3339),
 	})
 }
 
 // GetAllLocations returns all saved locations
 func (h *Handler) GetAllLocations(c *gin.Context) {
-	locations, err := h.db.GetAllLocations()
+	ctx := c.Request.Context()
+
+	locations, err := h.locationService.GetAllLocations(ctx)
 	if err != nil {
-		log.Printf("Error fetching locations: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch locations"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"locations": locations,
+		"count":     len(locations),
 	})
 }
 
-// GetWeatherForLocation returns current weather and forecast for a location
+// GetWeatherForLocation returns complete weather forecast for a location
 func (h *Handler) GetWeatherForLocation(c *gin.Context) {
+	ctx := c.Request.Context()
+
 	locationID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
 		return
 	}
 
-	// Get location details
-	location, err := h.db.GetLocation(locationID)
-	if err != nil {
-		log.Printf("Error fetching location %d: %v", locationID, err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Location not found"})
-		return
-	}
-
-	// Fetch current weather and forecast in a single API call
-	current, forecast, sunTimes, err := h.weatherService.GetCurrentAndForecast(location.Latitude, location.Longitude)
+	forecast, err := h.weatherService.GetLocationWeather(ctx, locationID)
 	if err != nil {
 		log.Printf("Error fetching weather for location %d: %v", locationID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch weather"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch weather data"})
 		return
 	}
-	current.LocationID = locationID
 
-	// Save current weather to database
-	if err := h.db.SaveWeatherData(current); err != nil {
-		log.Printf("Error saving current weather: %v", err)
-	}
-
-	// Save forecast to database
-	for _, f := range forecast {
-		f.LocationID = locationID
-		if err := h.db.SaveWeatherData(&f); err != nil {
-			log.Printf("Error saving forecast data: %v", err)
-		}
-	}
-
-	// Get historical data (last 14 days for pest calculations)
-	historical, err := h.db.GetHistoricalWeather(locationID, 14)
-	if err != nil {
-		log.Printf("Error fetching historical weather: %v", err)
-		historical = []models.WeatherData{}
-	}
-
-	response := models.WeatherForecast{
-		LocationID: locationID,
-		Location:   *location,
-		Current:    *current,
-		Hourly:     forecast,
-		Historical: historical,
-	}
-
-	// Add sunrise/sunset if available
-	if sunTimes != nil {
-		response.Sunrise = sunTimes.Sunrise
-		response.Sunset = sunTimes.Sunset
-		// Add daily sun times for 6-day forecast
-		for _, d := range sunTimes.Daily {
-			response.DailySunTimes = append(response.DailySunTimes, models.DailySunTimes{
-				Date:    d.Date,
-				Sunrise: d.Sunrise,
-				Sunset:  d.Sunset,
-			})
-		}
-	}
-
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, forecast)
 }
 
-// GetWeatherByCoordinates returns weather for specific coordinates (for custom locations)
+// GetWeatherByCoordinates returns weather for arbitrary coordinates
 func (h *Handler) GetWeatherByCoordinates(c *gin.Context) {
+	ctx := c.Request.Context()
+
 	latStr := c.Query("lat")
 	lonStr := c.Query("lon")
 
 	if latStr == "" || lonStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "lat and lon query parameters are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing lat or lon query parameters"})
 		return
 	}
 
@@ -242,232 +104,83 @@ func (h *Handler) GetWeatherByCoordinates(c *gin.Context) {
 		return
 	}
 
-	// Fetch current weather
-	current, err := h.weatherService.GetCurrentWeather(lat, lon)
+	forecast, err := h.weatherService.GetWeatherByCoordinates(ctx, lat, lon)
 	if err != nil {
-		log.Printf("Error fetching weather for coordinates (%.6f, %.6f): %v", lat, lon, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch weather"})
+		log.Printf("Error fetching weather for coordinates (%.2f, %.2f): %v", lat, lon, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch weather data"})
 		return
 	}
 
-	// Fetch forecast
-	forecast, err := h.weatherService.GetForecast(lat, lon)
-	if err != nil {
-		log.Printf("Error fetching forecast for coordinates (%.6f, %.6f): %v", lat, lon, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch forecast"})
-		return
-	}
-
-	response := gin.H{
-		"current":  current,
-		"forecast": forecast,
-	}
-
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, forecast)
 }
 
-// GetAllWeather returns weather for all locations from cache (fast response)
+// GetAllWeather returns weather for all locations or filtered by area
 func (h *Handler) GetAllWeather(c *gin.Context) {
-	// Check for area_id query parameter
-	areaIDStr := c.Query("area_id")
-	var locations []models.Location
-	var err error
+	ctx := c.Request.Context()
 
-	if areaIDStr != "" {
-		// Filter by area
-		areaID, parseErr := strconv.Atoi(areaIDStr)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area_id parameter"})
+	var areaID *int
+	if areaIDStr := c.Query("area_id"); areaIDStr != "" {
+		parsedID, err := strconv.Atoi(areaIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area_id"})
 			return
 		}
-		locations, err = h.db.GetLocationsByArea(areaID)
-	} else {
-		// Get all locations
-		locations, err = h.db.GetAllLocations()
+		areaID = &parsedID
 	}
 
+	forecasts, err := h.weatherService.GetAllWeather(ctx, areaID)
 	if err != nil {
-		log.Printf("Error fetching locations: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch locations"})
+		log.Printf("Error fetching all weather: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch weather data"})
 		return
-	}
-
-	// Serve data from cache/database immediately
-	allWeather := make([]models.WeatherForecast, 0, len(locations))
-
-	for _, location := range locations {
-		// Get current weather from database
-		current, err := h.db.GetCurrentWeather(location.ID)
-		if err != nil {
-			log.Printf("No cached weather for location %d: %v", location.ID, err)
-			continue
-		}
-
-		// Get forecast from database
-		forecast, err := h.db.GetForecastWeather(location.ID)
-		if err != nil {
-			log.Printf("Error fetching forecast for location %d: %v", location.ID, err)
-			forecast = []models.WeatherData{}
-		}
-
-		// Get historical data (14 days for pest calculations)
-		historical, err := h.db.GetHistoricalWeather(location.ID, 14)
-		if err != nil {
-			log.Printf("Error fetching historical weather: %v", err)
-			historical = []models.WeatherData{}
-		}
-
-		// Fetch fresh sunrise/sunset (quick API call)
-		_, _, sunTimes, _ := h.weatherService.GetCurrentAndForecast(location.Latitude, location.Longitude)
-
-		weatherForecast := models.WeatherForecast{
-			LocationID: location.ID,
-			Location:   location,
-			Current:    *current,
-			Hourly:     forecast,
-			Historical: historical,
-		}
-
-		if sunTimes != nil {
-			weatherForecast.Sunrise = sunTimes.Sunrise
-			weatherForecast.Sunset = sunTimes.Sunset
-			// Add daily sun times for 6-day forecast
-			for _, d := range sunTimes.Daily {
-				weatherForecast.DailySunTimes = append(weatherForecast.DailySunTimes, models.DailySunTimes{
-					Date:    d.Date,
-					Sunrise: d.Sunrise,
-					Sunset:  d.Sunset,
-				})
-			}
-		}
-
-		// Calculate rock drying status
-		rockTypes, err := h.db.GetRockTypesByLocation(location.ID)
-		if err == nil && len(rockTypes) > 0 {
-			// Get sun exposure profile for this location
-			sunExposure, _ := h.db.GetSunExposureByLocation(location.ID)
-
-			calc := weather.RockDryingCalculator{}
-			rockStatus := calc.CalculateDryingStatus(
-				rockTypes,
-				current,
-				historical,
-				sunExposure,
-				location.HasSeepageRisk,
-			)
-			weatherForecast.RockDryingStatus = &rockStatus
-		}
-
-		allWeather = append(allWeather, weatherForecast)
-	}
-
-	// Get last refresh time
-	h.refreshMutex.Lock()
-	lastRefresh := h.lastRefresh
-	isRefreshing := h.isRefreshing
-	h.refreshMutex.Unlock()
-
-	updatedAt := lastRefresh.Format(time.RFC3339)
-	if lastRefresh.IsZero() {
-		updatedAt = "refreshing..."
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"weather":      allWeather,
-		"updated_at":   updatedAt,
-		"is_refreshing": isRefreshing,
+		"forecasts":  forecasts,
+		"count":      len(forecasts),
+		"updated_at": time.Now().Format(time.RFC3339),
 	})
 }
 
-// RefreshWeather triggers a manual refresh of weather data (runs in background)
+// RefreshWeather manually triggers a weather data refresh
 func (h *Handler) RefreshWeather(c *gin.Context) {
-	h.refreshMutex.Lock()
-	isRefreshing := h.isRefreshing
-	h.refreshMutex.Unlock()
+	ctx := c.Request.Context()
 
-	if isRefreshing {
-		c.JSON(http.StatusAccepted, gin.H{
-			"message": "Refresh already in progress",
-			"status":  "in_progress",
-		})
+	log.Println("Manual weather refresh triggered")
+
+	err := h.weatherService.RefreshAllWeather(ctx)
+	if err != nil {
+		log.Printf("Error during manual refresh: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Trigger refresh in background
-	go h.refreshAllWeatherData()
-
-	c.JSON(http.StatusAccepted, gin.H{
-		"message": "Refresh started",
-		"status":  "started",
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Weather data refresh completed",
+		"updated_at": time.Now().Format(time.RFC3339),
 	})
 }
 
-// GetRiverDataForLocation returns current river crossing data for a location
+// GetRiverDataForLocation returns current river data for all rivers at a location
 func (h *Handler) GetRiverDataForLocation(c *gin.Context) {
+	ctx := c.Request.Context()
+
 	locationID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
 		return
 	}
 
-	// Get all rivers for this location
 	log.Printf("Fetching rivers for location ID: %d", locationID)
-	locationRivers, err := h.db.GetRiversByLocation(locationID)
+
+	riverData, err := h.riverService.GetRiverDataForLocation(ctx, locationID)
 	if err != nil {
 		log.Printf("Error fetching rivers for location %d: %v", locationID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch river data"})
 		return
 	}
 
-	log.Printf("Found %d rivers for location %d", len(locationRivers), locationID)
-	if len(locationRivers) == 0 {
-		log.Printf("No rivers found for location %d, returning empty array", locationID)
-		c.JSON(http.StatusOK, gin.H{"rivers": []models.RiverData{}})
-		return
-	}
-
-	// Fetch current data for each river
-	var riverData []models.RiverData
-	for _, river := range locationRivers {
-		gaugeFlowCFS, gaugeHeightFt, timestamp, err := h.riverClient.GetRiverData(river.GaugeID)
-		if err != nil {
-			log.Printf("Error fetching USGS data for gauge %s: %v", river.GaugeID, err)
-			continue
-		}
-
-		// Apply flow estimation if needed
-		actualFlowCFS := gaugeFlowCFS
-		if river.IsEstimated {
-			if river.FlowDivisor != nil && *river.FlowDivisor > 0 {
-				// Simple divisor method (e.g., gauge / 2 for North Fork at Index)
-				actualFlowCFS = gaugeFlowCFS / *river.FlowDivisor
-				log.Printf("Estimated flow for %s: gauge %.0f CFS / %.1f = river %.0f CFS",
-					river.RiverName, gaugeFlowCFS, *river.FlowDivisor, actualFlowCFS)
-			} else if river.DrainageAreaSqMi != nil && river.GaugeDrainageAreaSqMi != nil {
-				// Drainage area ratio method
-				actualFlowCFS = rivers.EstimateFlowFromDrainageRatio(
-					gaugeFlowCFS,
-					*river.DrainageAreaSqMi,
-					*river.GaugeDrainageAreaSqMi,
-				)
-				log.Printf("Estimated flow for %s: gauge %.0f CFS -> river %.0f CFS (drainage ratio %.3f)",
-					river.RiverName, gaugeFlowCFS, actualFlowCFS, *river.DrainageAreaSqMi / *river.GaugeDrainageAreaSqMi)
-			}
-		}
-
-		status, message, isSafe, percentOfSafe := rivers.CalculateCrossingStatus(river, actualFlowCFS)
-
-		riverData = append(riverData, models.RiverData{
-			River:         river,
-			FlowCFS:       actualFlowCFS,
-			GaugeHeightFt: gaugeHeightFt,
-			IsSafe:        isSafe,
-			Status:        status,
-			StatusMessage: message,
-			Timestamp:     timestamp,
-			PercentOfSafe: percentOfSafe,
-		})
-	}
+	log.Printf("Found %d rivers for location %d", len(riverData), locationID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"rivers":     riverData,
@@ -477,67 +190,31 @@ func (h *Handler) GetRiverDataForLocation(c *gin.Context) {
 
 // GetRiverDataByID returns current data for a specific river crossing
 func (h *Handler) GetRiverDataByID(c *gin.Context) {
+	ctx := c.Request.Context()
+
 	riverID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid river ID"})
 		return
 	}
 
-	// Get river info from database
-	river, err := h.db.GetRiverByID(riverID)
+	log.Printf("Fetching river ID: %d", riverID)
+
+	riverData, err := h.riverService.GetRiverDataByID(ctx, riverID)
 	if err != nil {
 		log.Printf("Error fetching river %d: %v", riverID, err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "River not found"})
-		return
-	}
-
-	// Fetch current USGS data
-	gaugeFlowCFS, gaugeHeightFt, timestamp, err := h.riverClient.GetRiverData(river.GaugeID)
-	if err != nil {
-		log.Printf("Error fetching USGS data for gauge %s: %v", river.GaugeID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch river data"})
 		return
-	}
-
-	// Apply flow estimation if needed
-	actualFlowCFS := gaugeFlowCFS
-	if river.IsEstimated {
-		if river.FlowDivisor != nil && *river.FlowDivisor > 0 {
-			// Simple divisor method (e.g., gauge / 2 for North Fork at Index)
-			actualFlowCFS = gaugeFlowCFS / *river.FlowDivisor
-			log.Printf("Estimated flow for %s: gauge %.0f CFS / %.1f = river %.0f CFS",
-				river.RiverName, gaugeFlowCFS, *river.FlowDivisor, actualFlowCFS)
-		} else if river.DrainageAreaSqMi != nil && river.GaugeDrainageAreaSqMi != nil {
-			// Drainage area ratio method
-			actualFlowCFS = rivers.EstimateFlowFromDrainageRatio(
-				gaugeFlowCFS,
-				*river.DrainageAreaSqMi,
-				*river.GaugeDrainageAreaSqMi,
-			)
-			log.Printf("Estimated flow for %s: gauge %.0f CFS -> river %.0f CFS (drainage ratio %.3f)",
-				river.RiverName, gaugeFlowCFS, actualFlowCFS, *river.DrainageAreaSqMi / *river.GaugeDrainageAreaSqMi)
-		}
-	}
-
-	status, message, isSafe, percentOfSafe := rivers.CalculateCrossingStatus(*river, actualFlowCFS)
-
-	riverData := models.RiverData{
-		River:         *river,
-		FlowCFS:       actualFlowCFS,
-		GaugeHeightFt: gaugeHeightFt,
-		IsSafe:        isSafe,
-		Status:        status,
-		StatusMessage: message,
-		Timestamp:     timestamp,
-		PercentOfSafe: percentOfSafe,
 	}
 
 	c.JSON(http.StatusOK, riverData)
 }
 
-// GetAllAreas returns all areas with location counts
+// GetAllAreas returns all climbing areas with location counts
 func (h *Handler) GetAllAreas(c *gin.Context) {
-	areas, err := h.db.GetAreasWithLocationCounts()
+	ctx := c.Request.Context()
+
+	areas, err := h.locationService.GetAreasWithLocationCounts(ctx)
 	if err != nil {
 		log.Printf("Error fetching areas: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch areas"})
@@ -546,26 +223,21 @@ func (h *Handler) GetAllAreas(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"areas": areas,
+		"count": len(areas),
 	})
 }
 
-// GetLocationsByArea returns all locations for a specific area
+// GetLocationsByArea returns all locations in a specific area
 func (h *Handler) GetLocationsByArea(c *gin.Context) {
+	ctx := c.Request.Context()
+
 	areaID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area ID"})
 		return
 	}
 
-	// Verify area exists
-	area, err := h.db.GetAreaByID(areaID)
-	if err != nil {
-		log.Printf("Error fetching area %d: %v", areaID, err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Area not found"})
-		return
-	}
-
-	locations, err := h.db.GetLocationsByArea(areaID)
+	locations, err := h.locationService.GetLocationsByArea(ctx, areaID)
 	if err != nil {
 		log.Printf("Error fetching locations for area %d: %v", areaID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch locations"})
@@ -573,7 +245,7 @@ func (h *Handler) GetLocationsByArea(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"area":      area,
 		"locations": locations,
+		"count":     len(locations),
 	})
 }
