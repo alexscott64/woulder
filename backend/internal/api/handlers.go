@@ -344,8 +344,17 @@ func (h *Handler) GetAllWeather(c *gin.Context) {
 		// Calculate rock drying status
 		rockTypes, err := h.db.GetRockTypesByLocation(location.ID)
 		if err == nil && len(rockTypes) > 0 {
+			// Get sun exposure profile for this location
+			sunExposure, _ := h.db.GetSunExposureByLocation(location.ID)
+
 			calc := weather.RockDryingCalculator{}
-			rockStatus := calc.CalculateDryingStatus(rockTypes, current, historical)
+			rockStatus := calc.CalculateDryingStatus(
+				rockTypes,
+				current,
+				historical,
+				sunExposure,
+				location.HasSeepageRisk,
+			)
 			weatherForecast.RockDryingStatus = &rockStatus
 		}
 

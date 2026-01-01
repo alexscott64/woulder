@@ -532,3 +532,33 @@ func (db *Database) GetPrimaryRockType(locationID int) (*models.RockType, error)
 
 	return &rt, nil
 }
+
+// GetSunExposureByLocation retrieves sun exposure profile for a specific location
+func (db *Database) GetSunExposureByLocation(locationID int) (*models.LocationSunExposure, error) {
+	query := `
+		SELECT id, location_id, south_facing_percent, west_facing_percent,
+		       east_facing_percent, north_facing_percent, slab_percent,
+		       overhang_percent, tree_coverage_percent, description
+		FROM woulder.location_sun_exposure
+		WHERE location_id = $1
+	`
+
+	var sunExposure models.LocationSunExposure
+	err := db.conn.QueryRow(query, locationID).Scan(
+		&sunExposure.ID, &sunExposure.LocationID,
+		&sunExposure.SouthFacingPercent, &sunExposure.WestFacingPercent,
+		&sunExposure.EastFacingPercent, &sunExposure.NorthFacingPercent,
+		&sunExposure.SlabPercent, &sunExposure.OverhangPercent,
+		&sunExposure.TreeCoveragePercent, &sunExposure.Description)
+
+	if err == sql.ErrNoRows {
+		// No sun exposure data for this location
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &sunExposure, nil
+}
