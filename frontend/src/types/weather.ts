@@ -67,7 +67,8 @@ export interface WeatherForecast {
 }
 
 export interface AllWeatherResponse {
-  weather: WeatherForecast[];
+  forecasts: WeatherForecast[];
+  count: number;
   updated_at: string;
 }
 

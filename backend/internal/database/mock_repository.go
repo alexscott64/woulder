@@ -1,0 +1,183 @@
+package database
+
+import (
+	"context"
+
+	"github.com/alexscott64/woulder/backend/internal/models"
+)
+
+// MockRepository implements Repository interface for testing
+type MockRepository struct {
+	// Location mocks
+	GetAllLocationsFn    func(ctx context.Context) ([]models.Location, error)
+	GetLocationFn        func(ctx context.Context, id int) (*models.Location, error)
+	GetLocationsByAreaFn func(ctx context.Context, areaID int) ([]models.Location, error)
+
+	// Weather mocks
+	SaveWeatherDataFn      func(ctx context.Context, data *models.WeatherData) error
+	GetHistoricalWeatherFn func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error)
+	GetForecastWeatherFn   func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error)
+	GetCurrentWeatherFn    func(ctx context.Context, locationID int) (*models.WeatherData, error)
+	CleanOldWeatherDataFn  func(ctx context.Context, daysToKeep int) error
+
+	// River mocks
+	GetRiversByLocationFn func(ctx context.Context, locationID int) ([]models.River, error)
+	GetRiverByIDFn        func(ctx context.Context, id int) (*models.River, error)
+
+	// Area mocks
+	GetAllAreasFn                func(ctx context.Context) ([]models.Area, error)
+	GetAreasWithLocationCountsFn func(ctx context.Context) ([]models.AreaWithLocationCount, error)
+	GetAreaByIDFn                func(ctx context.Context, id int) (*models.Area, error)
+
+	// Rock type mocks
+	GetRockTypesByLocationFn   func(ctx context.Context, locationID int) ([]models.RockType, error)
+	GetPrimaryRockTypeFn       func(ctx context.Context, locationID int) (*models.RockType, error)
+	GetSunExposureByLocationFn func(ctx context.Context, locationID int) (*models.LocationSunExposure, error)
+
+	// Health
+	PingFn  func(ctx context.Context) error
+	CloseFn func() error
+}
+
+// GetAllLocations mock
+func (m *MockRepository) GetAllLocations(ctx context.Context) ([]models.Location, error) {
+	if m.GetAllLocationsFn != nil {
+		return m.GetAllLocationsFn(ctx)
+	}
+	return nil, nil
+}
+
+// GetLocation mock
+func (m *MockRepository) GetLocation(ctx context.Context, id int) (*models.Location, error) {
+	if m.GetLocationFn != nil {
+		return m.GetLocationFn(ctx, id)
+	}
+	return nil, nil
+}
+
+func (m *MockRepository) GetLocationsByArea(ctx context.Context, areaID int) ([]models.Location, error) {
+	if m.GetLocationsByAreaFn != nil {
+		return m.GetLocationsByAreaFn(ctx, areaID)
+	}
+	return nil, nil
+}
+
+// SaveWeatherData mock
+func (m *MockRepository) SaveWeatherData(ctx context.Context, data *models.WeatherData) error {
+	if m.SaveWeatherDataFn != nil {
+		return m.SaveWeatherDataFn(ctx, data)
+	}
+	return nil
+}
+
+// GetHistoricalWeather mock
+func (m *MockRepository) GetHistoricalWeather(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error) {
+	if m.GetHistoricalWeatherFn != nil {
+		return m.GetHistoricalWeatherFn(ctx, locationID, hours)
+	}
+	return nil, nil
+}
+
+// GetForecastWeather mock
+func (m *MockRepository) GetForecastWeather(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error) {
+	if m.GetForecastWeatherFn != nil {
+		return m.GetForecastWeatherFn(ctx, locationID, hours)
+	}
+	return nil, nil
+}
+
+// GetCurrentWeather mock
+func (m *MockRepository) GetCurrentWeather(ctx context.Context, locationID int) (*models.WeatherData, error) {
+	if m.GetCurrentWeatherFn != nil {
+		return m.GetCurrentWeatherFn(ctx, locationID)
+	}
+	return nil, nil
+}
+
+// CleanOldWeatherData mock
+func (m *MockRepository) CleanOldWeatherData(ctx context.Context, daysToKeep int) error {
+	if m.CleanOldWeatherDataFn != nil {
+		return m.CleanOldWeatherDataFn(ctx, daysToKeep)
+	}
+	return nil
+}
+
+// GetRiversByLocation mock
+func (m *MockRepository) GetRiversByLocation(ctx context.Context, locationID int) ([]models.River, error) {
+	if m.GetRiversByLocationFn != nil {
+		return m.GetRiversByLocationFn(ctx, locationID)
+	}
+	return nil, nil
+}
+
+// GetRiverByID mock
+func (m *MockRepository) GetRiverByID(ctx context.Context, id int) (*models.River, error) {
+	if m.GetRiverByIDFn != nil {
+		return m.GetRiverByIDFn(ctx, id)
+	}
+	return nil, nil
+}
+
+// GetAllAreas mock
+func (m *MockRepository) GetAllAreas(ctx context.Context) ([]models.Area, error) {
+	if m.GetAllAreasFn != nil {
+		return m.GetAllAreasFn(ctx)
+	}
+	return nil, nil
+}
+
+// GetAreasWithLocationCounts mock
+func (m *MockRepository) GetAreasWithLocationCounts(ctx context.Context) ([]models.AreaWithLocationCount, error) {
+	if m.GetAreasWithLocationCountsFn != nil {
+		return m.GetAreasWithLocationCountsFn(ctx)
+	}
+	return nil, nil
+}
+
+// GetAreaByID mock
+func (m *MockRepository) GetAreaByID(ctx context.Context, id int) (*models.Area, error) {
+	if m.GetAreaByIDFn != nil {
+		return m.GetAreaByIDFn(ctx, id)
+	}
+	return nil, nil
+}
+
+// GetRockTypesByLocation mock
+func (m *MockRepository) GetRockTypesByLocation(ctx context.Context, locationID int) ([]models.RockType, error) {
+	if m.GetRockTypesByLocationFn != nil {
+		return m.GetRockTypesByLocationFn(ctx, locationID)
+	}
+	return nil, nil
+}
+
+// GetPrimaryRockType mock
+func (m *MockRepository) GetPrimaryRockType(ctx context.Context, locationID int) (*models.RockType, error) {
+	if m.GetPrimaryRockTypeFn != nil {
+		return m.GetPrimaryRockTypeFn(ctx, locationID)
+	}
+	return nil, nil
+}
+
+// GetSunExposureByLocation mock
+func (m *MockRepository) GetSunExposureByLocation(ctx context.Context, locationID int) (*models.LocationSunExposure, error) {
+	if m.GetSunExposureByLocationFn != nil {
+		return m.GetSunExposureByLocationFn(ctx, locationID)
+	}
+	return nil, nil
+}
+
+// Ping mock
+func (m *MockRepository) Ping(ctx context.Context) error {
+	if m.PingFn != nil {
+		return m.PingFn(ctx)
+	}
+	return nil
+}
+
+// Close mock
+func (m *MockRepository) Close() error {
+	if m.CloseFn != nil {
+		return m.CloseFn()
+	}
+	return nil
+}
