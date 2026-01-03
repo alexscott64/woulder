@@ -155,11 +155,11 @@ describe('PrecipitationAnalyzer', () => {
       expect(result.reason).toContain('in/hr');
     });
 
-    it('should rate moderate rain as marginal (0.1-0.3 in/hr)', () => {
+    it('should rate moderate rain as bad (>= 0.05 in/hr)', () => {
       const moderateRain = createWeatherData({ precipitation: 0.15 });
       const result = PrecipitationAnalyzer.assessCondition(moderateRain);
 
-      expect(result.level).toBe('marginal');
+      expect(result.level).toBe('bad');
       expect(result.reason).toContain('Moderate rain');
       expect(result.reason).toContain('in/hr');
     });
@@ -177,9 +177,9 @@ describe('PrecipitationAnalyzer', () => {
       expect(result.reason).toContain('Persistent drizzle');
     });
 
-    it('should rate brief light rain with good drying as good', () => {
+    it('should rate light rain as marginal regardless of drying', () => {
       const current = createWeatherData({
-        precipitation: 0.02,
+        precipitation: 0.02, // Light rain (0.01-0.05) is always marginal
         temperature: 70,
         cloud_cover: 20,
         wind_speed: 10
@@ -187,8 +187,8 @@ describe('PrecipitationAnalyzer', () => {
 
       const result = PrecipitationAnalyzer.assessCondition(current);
 
-      expect(result.level).toBe('good');
-      expect(result.reason).toContain('drying fast');
+      expect(result.level).toBe('marginal');
+      expect(result.reason).toContain('Light rain');
     });
 
     it('should rate recent rain with poor drying as marginal', () => {

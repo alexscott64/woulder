@@ -127,25 +127,17 @@ export class PrecipitationAnalyzer {
   } {
     const drying = this.assessDryingConditions(current);
 
-    // Poor (bad): > 0.3 in/hr (heavy rain)
-    if (current.precipitation > 0.3) {
+    // Bad: >= 0.05 in/hr (moderate to heavy rain - too much for safe climbing)
+    if (current.precipitation >= 0.05) {
+      const description = current.precipitation >= 0.3 ? 'Heavy' : 'Moderate';
       return {
         level: 'bad',
-        reason: `Heavy rain (${current.precipitation.toFixed(2)}in/hr)`
+        reason: `${description} rain (${current.precipitation.toFixed(2)}in/hr)`
       };
     }
 
-    // Marginal: 0.1 to 0.3 in/hr (moderate rain)
-    if (current.precipitation >= 0.1 && current.precipitation <= 0.3) {
-      return {
-        level: 'marginal',
-        reason: `Moderate rain (${current.precipitation.toFixed(2)}in/hr)`
-      };
-    }
-
-    // Light rain/drizzle: 0.01 to 0.1 in/hr
-    // Consider drying conditions and persistence
-    if (current.precipitation >= 0.01 && current.precipitation < 0.1) {
+    // Marginal: 0.01 to 0.05 in/hr (light rain/drizzle)
+    if (current.precipitation >= 0.01 && current.precipitation < 0.05) {
       const recentTotal = recentWeather ? this.getTotalPrecipitation(recentWeather) : 0;
       const isPersistent = recentWeather ? this.hasPersistentPrecipitation(recentWeather) : false;
 
@@ -158,18 +150,10 @@ export class PrecipitationAnalyzer {
         };
       }
 
-      // Light rain with poor drying conditions
-      if (!drying.canDryQuickly) {
-        return {
-          level: 'marginal',
-          reason: `Light rain, poor drying (${current.precipitation.toFixed(2)}in/hr)`
-        };
-      }
-
-      // Brief light rain with good drying conditions - can climb!
+      // Any light rain is marginal for climbing
       return {
-        level: 'good',
-        reason: `Light rain (${current.precipitation.toFixed(2)}in/hr, drying fast)`
+        level: 'marginal',
+        reason: `Light rain (${current.precipitation.toFixed(2)}in/hr)`
       };
     }
 

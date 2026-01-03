@@ -21,6 +21,7 @@ export class ConditionCalculator {
   ): WeatherCondition {
     const reasons: string[] = [];
     let level: ConditionLevel = 'good';
+    let marginalFactors = 0;
 
     // Check rock drying status FIRST - this overrides all other conditions for wet-sensitive rocks
     if (rockStatus && rockStatus.status === 'critical' && rockStatus.is_wet_sensitive) {
@@ -31,9 +32,18 @@ export class ConditionCalculator {
     }
 
     // Helper to downgrade condition level
+    // Multiple marginal factors compound to bad (2+ marginal = bad)
     const downgradeCondition = (newLevel: ConditionLevel) => {
-      if (newLevel === 'bad' || level === 'good') {
-        level = newLevel;
+      if (newLevel === 'bad') {
+        level = 'bad';
+        marginalFactors = 0; // Reset since we're already at bad
+      } else if (newLevel === 'marginal') {
+        marginalFactors++;
+        if (marginalFactors >= 2) {
+          level = 'bad';
+        } else if (level === 'good') {
+          level = 'marginal';
+        }
       }
     };
 
@@ -66,7 +76,7 @@ export class ConditionCalculator {
     // High humidity (>85%) affects climbing comfort and grip
     if (weather.humidity > 85) {
       reasons.push(`High humidity (${weather.humidity}%)`);
-      if (level === 'good') level = 'marginal';
+      downgradeCondition('marginal');
     }
 
     // If no issues found, note good conditions

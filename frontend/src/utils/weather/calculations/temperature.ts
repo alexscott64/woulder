@@ -5,11 +5,11 @@
 
 // Climbing temperature thresholds (Fahrenheit)
 export const IDEAL_MIN = 41;
-export const IDEAL_MAX = 65;
+export const IDEAL_MAX = 70;
 export const COLD_MIN = 30;
 export const COLD_MAX = 40;
-export const WARM_MIN = 66;
-export const WARM_MAX = 79;
+export const WARM_MIN = 71;
+export const WARM_MAX = 85;
 export const FREEZING = 32;
 
 /**

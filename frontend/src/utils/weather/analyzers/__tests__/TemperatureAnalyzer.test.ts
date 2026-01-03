@@ -18,17 +18,17 @@ describe('TemperatureAnalyzer', () => {
     it('should categorize temperature as ideal', () => {
       expect(TemperatureAnalyzer.getCategory(41)).toBe('ideal');
       expect(TemperatureAnalyzer.getCategory(50)).toBe('ideal');
-      expect(TemperatureAnalyzer.getCategory(65)).toBe('ideal');
+      expect(TemperatureAnalyzer.getCategory(70)).toBe('ideal'); // Updated: 70 now ideal
     });
 
     it('should categorize temperature as warm', () => {
-      expect(TemperatureAnalyzer.getCategory(66)).toBe('warm');
-      expect(TemperatureAnalyzer.getCategory(70)).toBe('warm');
-      expect(TemperatureAnalyzer.getCategory(79)).toBe('warm');
+      expect(TemperatureAnalyzer.getCategory(71)).toBe('warm'); // Updated: starts at 71
+      expect(TemperatureAnalyzer.getCategory(78)).toBe('warm');
+      expect(TemperatureAnalyzer.getCategory(85)).toBe('warm'); // Updated: ends at 85
     });
 
     it('should categorize temperature as too-hot', () => {
-      expect(TemperatureAnalyzer.getCategory(80)).toBe('too-hot');
+      expect(TemperatureAnalyzer.getCategory(86)).toBe('too-hot'); // Updated: starts at 86
       expect(TemperatureAnalyzer.getCategory(90)).toBe('too-hot');
       expect(TemperatureAnalyzer.getCategory(100)).toBe('too-hot');
     });
@@ -42,12 +42,12 @@ describe('TemperatureAnalyzer', () => {
 
     it('should return yellow for cold/warm temperatures', () => {
       expect(TemperatureAnalyzer.getColor(35)).toBe('text-yellow-600 dark:text-yellow-400');
-      expect(TemperatureAnalyzer.getColor(70)).toBe('text-yellow-600 dark:text-yellow-400');
+      expect(TemperatureAnalyzer.getColor(75)).toBe('text-yellow-600 dark:text-yellow-400'); // Updated: 75 is warm
     });
 
     it('should return red for too-cold/too-hot temperatures', () => {
       expect(TemperatureAnalyzer.getColor(25)).toBe('text-red-600 dark:text-red-400');
-      expect(TemperatureAnalyzer.getColor(85)).toBe('text-red-600 dark:text-red-400');
+      expect(TemperatureAnalyzer.getColor(90)).toBe('text-red-600 dark:text-red-400'); // Updated: 90 is too-hot
     });
   });
 
@@ -77,9 +77,9 @@ describe('TemperatureAnalyzer', () => {
     });
 
     it('should assess too-hot temperature as bad', () => {
-      const result = TemperatureAnalyzer.assessCondition(85);
+      const result = TemperatureAnalyzer.assessCondition(90); // Updated: 90 is too-hot
       expect(result.level).toBe('bad');
-      expect(result.reason).toBe('Too hot (85°F)');
+      expect(result.reason).toBe('Too hot (90°F)');
     });
   });
 
@@ -211,13 +211,13 @@ describe('TemperatureAnalyzer', () => {
 
   describe('edge cases', () => {
     it('should handle boundary temperatures correctly', () => {
-      // Test exact boundary values
+      // Test exact boundary values (updated thresholds: ideal 41-70, warm 71-85, too-hot 86+)
       expect(TemperatureAnalyzer.getCategory(30)).toBe('cold');
       expect(TemperatureAnalyzer.getCategory(41)).toBe('ideal');
-      expect(TemperatureAnalyzer.getCategory(65)).toBe('ideal');
-      expect(TemperatureAnalyzer.getCategory(66)).toBe('warm');
-      expect(TemperatureAnalyzer.getCategory(79)).toBe('warm');
-      expect(TemperatureAnalyzer.getCategory(80)).toBe('too-hot');
+      expect(TemperatureAnalyzer.getCategory(70)).toBe('ideal'); // Updated: 70 now ideal
+      expect(TemperatureAnalyzer.getCategory(71)).toBe('warm'); // Updated: 71 starts warm
+      expect(TemperatureAnalyzer.getCategory(85)).toBe('warm'); // Updated: 85 ends warm
+      expect(TemperatureAnalyzer.getCategory(86)).toBe('too-hot'); // Updated: 86 starts too-hot
     });
 
     it('should handle extreme temperatures', () => {

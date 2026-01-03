@@ -47,11 +47,11 @@ describe('ConditionCalculator', () => {
         expect(result.reasons).toContain('Heavy rain (0.35in/hr)');
       });
 
-      it('should return marginal for moderate rain', () => {
-        const moderateRain = createWeatherData({ precipitation: 0.15 }); // 0.1-0.3 in/hr
+      it('should return bad for moderate rain', () => {
+        const moderateRain = createWeatherData({ precipitation: 0.15 }); // >= 0.05 in/hr
         const result = ConditionCalculator.calculateCondition(moderateRain);
 
-        expect(result.level).toBe('marginal');
+        expect(result.level).toBe('bad');
         expect(result.reasons).toContain('Moderate rain (0.15in/hr)');
       });
 
@@ -73,9 +73,9 @@ describe('ConditionCalculator', () => {
         expect(result.reasons.some(r => r.includes('Persistent drizzle'))).toBe(true);
       });
 
-      it('should return good for brief light rain with good drying', () => {
+      it('should return marginal for light rain even with good drying', () => {
         const current = createWeatherData({
-          precipitation: 0.02,
+          precipitation: 0.02, // Light rain is always marginal
           temperature: 60, // Ideal temp (not warm)
           cloud_cover: 20,
           wind_speed: 10
@@ -83,8 +83,8 @@ describe('ConditionCalculator', () => {
 
         const result = ConditionCalculator.calculateCondition(current);
 
-        expect(result.level).toBe('good');
-        expect(result.reasons.some(r => r.includes('drying fast'))).toBe(true);
+        expect(result.level).toBe('marginal');
+        expect(result.reasons.some(r => r.includes('Light rain'))).toBe(true);
       });
     });
 
@@ -113,12 +113,12 @@ describe('ConditionCalculator', () => {
         expect(result.reasons).toContain('Warm (72°F)');
       });
 
-      it('should return bad for too hot', () => {
-        const tooHot = createWeatherData({ temperature: 85 });
+      it('should return marginal for warm weather', () => {
+        const tooHot = createWeatherData({ temperature: 85 }); // Warm (71-85°F)
         const result = ConditionCalculator.calculateCondition(tooHot);
 
-        expect(result.level).toBe('bad');
-        expect(result.reasons).toContain('Too hot (85°F)');
+        expect(result.level).toBe('marginal');
+        expect(result.reasons).toContain('Warm (85°F)');
       });
     });
 
@@ -166,7 +166,7 @@ describe('ConditionCalculator', () => {
     });
 
     describe('multi-factor conditions', () => {
-      it('should combine multiple marginal factors and stay marginal', () => {
+      it('should combine multiple marginal factors into bad', () => {
         const marginal = createWeatherData({
           temperature: 38, // Cold (marginal)
           wind_speed: 15,  // Moderate wind (marginal)
@@ -175,7 +175,8 @@ describe('ConditionCalculator', () => {
 
         const result = ConditionCalculator.calculateCondition(marginal);
 
-        expect(result.level).toBe('marginal');
+        // 2+ marginal factors = bad
+        expect(result.level).toBe('bad');
         expect(result.reasons).toHaveLength(3);
         expect(result.reasons).toContain('Cold (38°F)');
         expect(result.reasons).toContain('Moderate winds (15mph)');
@@ -330,29 +331,31 @@ describe('ConditionCalculator', () => {
 
     it('should handle cold windy day with no precipitation', () => {
       const weather = createWeatherData({
-        temperature: 35,
-        wind_speed: 18,
+        temperature: 35, // Cold (marginal)
+        wind_speed: 18,  // Moderate wind (marginal)
         precipitation: 0
       });
 
       const result = ConditionCalculator.calculateCondition(weather);
 
-      expect(result.level).toBe('marginal');
+      // 2 marginal factors = bad
+      expect(result.level).toBe('bad');
       expect(result.reasons).toContain('Cold (35°F)');
       expect(result.reasons).toContain('Moderate winds (18mph)');
     });
 
     it('should handle hot humid afternoon', () => {
       const weather = createWeatherData({
-        temperature: 82,
-        humidity: 88,
+        temperature: 82, // Warm (71-85°F, marginal)
+        humidity: 88,    // High humidity (marginal)
         wind_speed: 4
       });
 
       const result = ConditionCalculator.calculateCondition(weather);
 
+      // 2 marginal factors = bad
       expect(result.level).toBe('bad');
-      expect(result.reasons).toContain('Too hot (82°F)');
+      expect(result.reasons).toContain('Warm (82°F)');
       expect(result.reasons).toContain('High humidity (88%)');
     });
 
