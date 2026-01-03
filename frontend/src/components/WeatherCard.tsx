@@ -30,7 +30,7 @@ function formatSunTime(isoTime: string | undefined): string {
 }
 
 export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCardProps) {
-  const { location, current, hourly, historical, sunrise, sunset, rock_drying_status } = forecast;
+  const { location, current, hourly, historical, sunrise, sunset, rock_drying_status, snow_depth_inches } = forecast;
 
   // Pass recent historical data for precipitation pattern analysis and rock drying status
   const condition = ConditionCalculator.calculateCondition(current, historical, rock_drying_status);
@@ -123,9 +123,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const totalRainNext48h = next48h.reduce((sum, d) => sum + d.precipitation, 0);
   const rainNext48h = totalRainNext48h / 2; // Average per day
 
-  // Check for snow on ground (use recent historical data)
-  const recentData = [...safeHistorical].reverse().slice(0, 8); // Last 24 hours
-  const snowInfo = ConditionCalculator.calculateSnowProbability(recentData);
+  // Note: Snow depth now comes from backend (snow_depth_inches field)
 
   // Determine precipitation type for last 48h
   const hasSnowLast48h = past48h.some(d => d.temperature <= 32 && d.precipitation > 0);
@@ -270,10 +268,10 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
           {/* Snow on Ground */}
           <div className="flex flex-col items-center text-center">
-            <Snowflake className="w-5 h-5 mb-1 text-blue-400" />
-            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Snow</div>
-            <div className="text-sm font-semibold text-gray-900 dark:text-white">
-              {snowInfo.probability}
+            <Snowflake className={`w-5 h-5 mb-1 ${snow_depth_inches && snow_depth_inches > 0.5 ? 'text-red-500 fill-current' : 'text-blue-400'}`} />
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">On Ground</div>
+            <div className={`text-sm font-semibold ${snow_depth_inches && snow_depth_inches > 0.5 ? 'text-red-900 dark:text-red-300' : 'text-gray-900 dark:text-white'}`}>
+              {snow_depth_inches && snow_depth_inches > 0.1 ? `${snow_depth_inches.toFixed(1)}"` : '0"'}
             </div>
           </div>
 

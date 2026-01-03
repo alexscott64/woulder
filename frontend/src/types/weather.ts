@@ -64,6 +64,8 @@ export interface WeatherForecast {
   sunset?: string;   // Today's sunset time (ISO 8601)
   daily_sun_times?: DailySunTimes[]; // Sunrise/sunset for each forecast day
   rock_drying_status?: RockDryingStatus; // Rock drying status
+  snow_depth_inches?: number; // Current snow depth on ground in inches (calculated by backend)
+  daily_snow_depth?: Record<string, number>; // Daily snow depth forecast by date (YYYY-MM-DD)
 }
 
 export interface AllWeatherResponse {

@@ -1,21 +1,19 @@
-package weather
+package client
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
-const (
-	baseURL = "https://api.openweathermap.org/data/2.5"
-)
+const openWeatherMapBaseURL = "https://api.openweathermap.org/data/2.5"
 
-type Client struct {
+// OpenWeatherMapClient handles API calls to OpenWeatherMap
+type OpenWeatherMapClient struct {
 	apiKey     string
 	httpClient *http.Client
 }
@@ -75,9 +73,10 @@ type owmCurrentResponse struct {
 	} `json:"rain"`
 }
 
-func NewClient() *Client {
-	return &Client{
-		apiKey: os.Getenv("OPENWEATHERMAP_API_KEY"),
+// NewOpenWeatherMapClient creates a new OpenWeatherMap API client
+func NewOpenWeatherMapClient(apiKey string) *OpenWeatherMapClient {
+	return &OpenWeatherMapClient{
+		apiKey: apiKey,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -85,8 +84,9 @@ func NewClient() *Client {
 }
 
 // GetCurrentWeather fetches current weather for a location
-func (c *Client) GetCurrentWeather(lat, lon float64) (*models.WeatherData, error) {
-	url := fmt.Sprintf("%s/weather?lat=%.8f&lon=%.8f&appid=%s&units=imperial", baseURL, lat, lon, c.apiKey)
+func (c *OpenWeatherMapClient) GetCurrentWeather(lat, lon float64) (*models.WeatherData, error) {
+	url := fmt.Sprintf("%s/weather?lat=%.8f&lon=%.8f&appid=%s&units=imperial",
+		openWeatherMapBaseURL, lat, lon, c.apiKey)
 
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
@@ -125,8 +125,9 @@ func (c *Client) GetCurrentWeather(lat, lon float64) (*models.WeatherData, error
 }
 
 // GetForecast fetches 5-day/3-hour forecast for a location
-func (c *Client) GetForecast(lat, lon float64) ([]models.WeatherData, error) {
-	url := fmt.Sprintf("%s/forecast?lat=%.8f&lon=%.8f&appid=%s&units=imperial", baseURL, lat, lon, c.apiKey)
+func (c *OpenWeatherMapClient) GetForecast(lat, lon float64) ([]models.WeatherData, error) {
+	url := fmt.Sprintf("%s/forecast?lat=%.8f&lon=%.8f&appid=%s&units=imperial",
+		openWeatherMapBaseURL, lat, lon, c.apiKey)
 
 	resp, err := c.httpClient.Get(url)
 	if err != nil {

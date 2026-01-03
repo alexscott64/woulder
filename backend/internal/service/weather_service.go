@@ -10,6 +10,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/alexscott64/woulder/backend/internal/weather"
+	"github.com/alexscott64/woulder/backend/internal/weather/calculator"
 )
 
 type WeatherService struct {
@@ -60,20 +61,25 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 		hourlyForecast[i].LocationID = locationID
 	}
 
-	// 3. Get historical data from database for rock drying calculation
-	historical, err := s.repo.GetHistoricalWeather(ctx, locationID, 72)
+	// 3. Get historical data from database for rock drying and snow calculation
+	// Get 7 days (168 hours) for better snow accumulation tracking
+	historical, err := s.repo.GetHistoricalWeather(ctx, locationID, 168)
 	if err != nil {
 		log.Printf("Warning: failed to get historical weather: %v", err)
 		historical = []models.WeatherData{}
 	}
 
-	// 4. Calculate rock drying status
-	rockStatus, err := s.calculateRockDryingStatus(ctx, location, current, historical)
+	// 4. Calculate snow depth
+	snowDepth := s.calculateSnowDepth(location, current, hourlyForecast, historical)
+	dailySnowDepth := s.calculateDailySnowDepth(location, current, hourlyForecast, historical)
+
+	// 5. Calculate rock drying status
+	rockStatus, err := s.calculateRockDryingStatus(ctx, location, current, historical, snowDepth)
 	if err != nil {
 		log.Printf("Warning: failed to calculate rock drying: %v", err)
 	}
 
-	// 5. Build response with fresh API data
+	// 6. Build response with fresh API data
 	forecast := &models.WeatherForecast{
 		LocationID:       locationID,
 		Location:         *location,
@@ -83,9 +89,101 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 		Sunrise:          sunrise,
 		Sunset:           sunset,
 		RockDryingStatus: rockStatus,
+		SnowDepthInches:  snowDepth,
+		DailySnowDepth:   dailySnowDepth,
 	}
 
 	return forecast, nil
+}
+
+// calculateSnowDepth calculates current snow depth on ground
+func (s *WeatherService) calculateSnowDepth(
+	location *models.Location,
+	current *models.WeatherData,
+	hourly []models.WeatherData,
+	historical []models.WeatherData,
+) *float64 {
+	// Combine current and hourly into future data
+	futureData := append([]models.WeatherData{*current}, hourly...)
+
+	// DEBUG: Log data being used (only for Money Creek - location ID 1)
+	if location.ID == 1 {
+		log.Printf("[SNOW DEBUG] calculateSnowDepth for location %d (%s)", location.ID, location.Name)
+		log.Printf("  Historical count: %d", len(historical))
+		if len(historical) > 0 {
+			log.Printf("  Historical range: %s to %s", historical[0].Timestamp, historical[len(historical)-1].Timestamp)
+		}
+		log.Printf("  FutureData count: %d", len(futureData))
+		if len(futureData) > 0 {
+			log.Printf("  FutureData range: %s to %s", futureData[0].Timestamp, futureData[len(futureData)-1].Timestamp)
+		}
+	}
+
+	// Calculate snow depth
+	snowDepth := calculator.GetCurrentSnowDepth(historical, futureData, float64(location.ElevationFt))
+
+	if location.ID == 1 {
+		log.Printf("  Result: %.2f\"", snowDepth)
+	}
+
+	// Return snow depth (even if zero, for visibility)
+	return &snowDepth
+}
+
+// calculateDailySnowDepth calculates daily snow depth forecast for 6 days
+func (s *WeatherService) calculateDailySnowDepth(
+	location *models.Location,
+	current *models.WeatherData,
+	hourly []models.WeatherData,
+	historical []models.WeatherData,
+) map[string]float64 {
+	// Combine current and hourly into future data
+	futureData := append([]models.WeatherData{*current}, hourly...)
+
+	// DEBUG: Log data being used (only for Money Creek - location ID 1)
+	if location.ID == 1 {
+		log.Printf("[SNOW DEBUG] calculateDailySnowDepth for location %d (%s)", location.ID, location.Name)
+		log.Printf("  Historical count: %d", len(historical))
+		if len(historical) > 0 {
+			log.Printf("  Historical range: %s to %s", historical[0].Timestamp, historical[len(historical)-1].Timestamp)
+		}
+		log.Printf("  FutureData count: %d", len(futureData))
+		if len(futureData) > 0 {
+			log.Printf("  FutureData range: %s to %s", futureData[0].Timestamp, futureData[len(futureData)-1].Timestamp)
+		}
+	}
+
+	// Calculate daily snow depth forecast
+	dailySnowDepth := calculator.CalculateSnowAccumulation(historical, futureData, float64(location.ElevationFt))
+
+	// Ensure today's date is in the map by using current snow depth
+	// This fixes the issue where today's date might be missing or 0 if forecast starts tomorrow
+	pacificTZ, _ := time.LoadLocation("America/Los_Angeles")
+	if pacificTZ == nil {
+		pacificTZ = time.UTC
+	}
+	todayKey := current.Timestamp.In(pacificTZ).Format("2006-01-02")
+
+	// If today is missing or zero, calculate current snow depth and add it
+	if depth, exists := dailySnowDepth[todayKey]; !exists || depth == 0 {
+		currentSnowDepth := calculator.GetCurrentSnowDepth(historical, futureData, float64(location.ElevationFt))
+		if currentSnowDepth > 0 {
+			dailySnowDepth[todayKey] = currentSnowDepth
+			if location.ID == 1 {
+				log.Printf("  Added missing today (%s) with current snow depth: %.2f\"", todayKey, currentSnowDepth)
+			}
+		}
+	}
+
+	// DEBUG: Log results (only for Money Creek - location ID 1)
+	if location.ID == 1 {
+		log.Printf("  Daily snow depth map:")
+		for date, depth := range dailySnowDepth {
+			log.Printf("    %s: %.2f\"", date, depth)
+		}
+	}
+
+	return dailySnowDepth
 }
 
 // calculateRockDryingStatus computes rock drying status
@@ -94,6 +192,7 @@ func (s *WeatherService) calculateRockDryingStatus(
 	location *models.Location,
 	current *models.WeatherData,
 	historical []models.WeatherData,
+	snowDepth *float64,
 ) (*models.RockDryingStatus, error) {
 	// Get rock types
 	rockTypes, err := s.repo.GetRockTypesByLocation(ctx, location.ID)
@@ -111,6 +210,7 @@ func (s *WeatherService) calculateRockDryingStatus(
 		historical,
 		sunExposure,
 		location.HasSeepageRisk,
+		snowDepth,
 	)
 
 	return &status, nil

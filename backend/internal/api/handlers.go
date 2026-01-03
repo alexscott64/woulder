@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/alexscott64/woulder/backend/internal/service"
+	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
@@ -171,16 +171,12 @@ func (h *Handler) GetRiverDataForLocation(c *gin.Context) {
 		return
 	}
 
-	log.Printf("Fetching rivers for location ID: %d", locationID)
-
 	riverData, err := h.riverService.GetRiverDataForLocation(ctx, locationID)
 	if err != nil {
 		log.Printf("Error fetching rivers for location %d: %v", locationID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch river data"})
 		return
 	}
-
-	log.Printf("Found %d rivers for location %d", len(riverData), locationID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"rivers":     riverData,

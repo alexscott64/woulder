@@ -17,6 +17,7 @@ func (c *RockDryingCalculator) CalculateDryingStatus(
 	historicalWeather []models.WeatherData,
 	sunExposure *models.LocationSunExposure,
 	hasSeepageRisk bool,
+	snowDepthInches *float64,
 ) models.RockDryingStatus {
 	if len(rockTypes) == 0 {
 		return models.RockDryingStatus{
@@ -38,6 +39,68 @@ func (c *RockDryingCalculator) CalculateDryingStatus(
 		rockTypeNames[i] = rt.Name
 		if rt.IsWetSensitive {
 			hasWetSensitive = true
+		}
+	}
+
+	// Check for snow on ground - this is CRITICAL for climbing conditions
+	if snowDepthInches != nil && *snowDepthInches > 0.5 {
+		status := "critical"
+		message := "DO NOT CLIMB - Snow on ground"
+
+		if hasWetSensitive {
+			message = "DO NOT CLIMB - " + primaryRock.GroupName + " is wet-sensitive and there is snow on ground"
+		} else if *snowDepthInches > 2.0 {
+			message = "DO NOT CLIMB - Significant snow accumulation on ground"
+		}
+
+		return models.RockDryingStatus{
+			IsWet:             true,
+			IsSafe:            false,
+			IsWetSensitive:    hasWetSensitive,
+			HoursUntilDry:     999, // Unknown when snow will melt
+			LastRainTimestamp: time.Now().Format(time.RFC3339),
+			Status:            status,
+			Message:           message,
+			RockTypes:         rockTypeNames,
+			PrimaryRockType:   primaryRock.Name,
+			PrimaryGroupName:  primaryRock.GroupName,
+			ConfidenceScore:   95, // High confidence - snow is visible
+		}
+	}
+
+	// Check for freezing temperatures - water frozen on rock
+	if currentWeather.Temperature <= 32 {
+		// Check if there was recent precipitation that's now frozen
+		recentPrecip := 0.0
+		cutoffTime := time.Now().Add(-48 * time.Hour)
+
+		for _, h := range historicalWeather {
+			if h.Timestamp.After(cutoffTime) && h.Precipitation > 0.01 {
+				recentPrecip += h.Precipitation
+			}
+		}
+
+		if recentPrecip > 0.1 {
+			status := "critical"
+			message := "DO NOT CLIMB - Freezing temps with recent precipitation (ice on rock)"
+
+			if hasWetSensitive {
+				message = "DO NOT CLIMB - " + primaryRock.GroupName + " is wet-sensitive and may have ice"
+			}
+
+			return models.RockDryingStatus{
+				IsWet:             true,
+				IsSafe:            false,
+				IsWetSensitive:    hasWetSensitive,
+				HoursUntilDry:     999, // Unknown when ice will melt
+				LastRainTimestamp: time.Now().Format(time.RFC3339),
+				Status:            status,
+				Message:           message,
+				RockTypes:         rockTypeNames,
+				PrimaryRockType:   primaryRock.Name,
+				PrimaryGroupName:  primaryRock.GroupName,
+				ConfidenceScore:   90,
+			}
 		}
 	}
 
