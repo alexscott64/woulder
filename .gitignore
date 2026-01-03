@@ -49,3 +49,10 @@ lerna-debug.log*
 .claude*
 notes*
 scripts*
+
+# Go
+*.exe
+woulder
+woulder-*
+!woulder.go
+backend/tmp/

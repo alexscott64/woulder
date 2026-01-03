@@ -2,14 +2,13 @@ package main
 
 import (
 	"log"
-	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 
 	"github.com/alexscott64/woulder/backend/internal/api"
+	"github.com/alexscott64/woulder/backend/internal/config"
 	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/rivers"
 	"github.com/alexscott64/woulder/backend/internal/service"
@@ -17,9 +16,10 @@ import (
 )
 
 func main() {
-	// Load environment variables
-	if err := godotenv.Load(); err != nil {
-		log.Println("Warning: .env file not found, using environment variables")
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
 	// Initialize database
@@ -30,7 +30,7 @@ func main() {
 	defer db.Close()
 
 	// Initialize external API clients
-	weatherClient := weather.NewWeatherService()
+	weatherClient := weather.NewWeatherService(cfg.Weather.OpenWeatherMapAPIKey)
 	riverClient := rivers.NewUSGSClient()
 
 	// Initialize services with dependency injection
@@ -45,23 +45,19 @@ func main() {
 	handler.StartBackgroundRefresh(2 * time.Hour)
 
 	// Set Gin mode
-	ginMode := os.Getenv("GIN_MODE")
-	if ginMode == "" {
-		ginMode = "release"
-	}
-	gin.SetMode(ginMode)
+	gin.SetMode(cfg.Server.GinMode)
 
 	// Create Gin router
 	router := gin.Default()
 
 	// Configure CORS
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"}, // In production, replace with specific origins
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
+		AllowOrigins:     cfg.Server.CORS.AllowOrigins,
+		AllowMethods:     cfg.Server.CORS.AllowMethods,
+		AllowHeaders:     cfg.Server.CORS.AllowHeaders,
+		ExposeHeaders:    cfg.Server.CORS.ExposeHeaders,
+		AllowCredentials: cfg.Server.CORS.AllowCredentials,
+		MaxAge:           cfg.Server.CORS.MaxAge,
 	}))
 
 	// API routes
@@ -79,15 +75,9 @@ func main() {
 		apiGroup.GET("/rivers/:id", handler.GetRiverDataByID)
 	}
 
-	// Get port from environment
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
 	// Start server
-	log.Printf("Starting Woulder API server on port %s", port)
-	if err := router.Run(":" + port); err != nil {
+	log.Printf("Starting Woulder API server on port %s", cfg.Server.Port)
+	if err := router.Run(":" + cfg.Server.Port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

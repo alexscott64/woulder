@@ -64,10 +64,12 @@ type WeatherForecast struct {
 	Current         WeatherData      `json:"current"`
 	Hourly          []WeatherData    `json:"hourly"`
 	Historical      []WeatherData    `json:"historical"`
-	Sunrise         string           `json:"sunrise,omitempty"`    // Today's sunrise time (ISO 8601)
-	Sunset          string           `json:"sunset,omitempty"`     // Today's sunset time (ISO 8601)
-	DailySunTimes   []DailySunTimes  `json:"daily_sun_times,omitempty"` // Sunrise/sunset for each forecast day
+	Sunrise         string            `json:"sunrise,omitempty"`    // Today's sunrise time (ISO 8601)
+	Sunset          string            `json:"sunset,omitempty"`     // Today's sunset time (ISO 8601)
+	DailySunTimes   []DailySunTimes   `json:"daily_sun_times,omitempty"` // Sunrise/sunset for each forecast day
 	RockDryingStatus *RockDryingStatus `json:"rock_drying_status,omitempty"` // Rock drying status
+	SnowDepthInches *float64          `json:"snow_depth_inches,omitempty"` // Current snow depth on ground in inches
+	DailySnowDepth  map[string]float64 `json:"daily_snow_depth,omitempty"` // Snow depth forecast by date (YYYY-MM-DD)
 }
 
 // RiverData represents river gauge information with current conditions

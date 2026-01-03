@@ -68,7 +68,7 @@ func TestWeatherService_GetLocationWeather(t *testing.T) {
 				},
 			}
 
-			client := weather.NewWeatherService()
+			client := weather.NewWeatherService("test_api_key")
 			service := NewWeatherService(mockRepo, client)
 
 			forecast, err := service.GetLocationWeather(context.Background(), tt.locationID)
@@ -106,7 +106,7 @@ func TestWeatherService_GetWeatherByCoordinates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := &database.MockRepository{}
-			client := weather.NewWeatherService()
+			client := weather.NewWeatherService("test_api_key")
 			service := NewWeatherService(mockRepo, client)
 
 			forecast, err := service.GetWeatherByCoordinates(context.Background(), tt.lat, tt.lon)
@@ -191,7 +191,7 @@ func TestWeatherService_GetAllWeather(t *testing.T) {
 				},
 			}
 
-			client := weather.NewWeatherService()
+			client := weather.NewWeatherService("test_api_key")
 			service := NewWeatherService(mockRepo, client)
 
 			_, err := service.GetAllWeather(context.Background(), tt.areaID)
@@ -256,7 +256,7 @@ func TestWeatherService_RefreshAllWeather(t *testing.T) {
 				},
 			}
 
-			client := weather.NewWeatherService()
+			client := weather.NewWeatherService("test_api_key")
 			service := NewWeatherService(mockRepo, client)
 
 			err := service.RefreshAllWeather(context.Background())
@@ -278,7 +278,7 @@ func TestWeatherService_RefreshAllWeather_ConcurrentCalls(t *testing.T) {
 		},
 	}
 
-	client := weather.NewWeatherService()
+	client := weather.NewWeatherService("test_api_key")
 	service := NewWeatherService(mockRepo, client)
 
 	// Start first refresh

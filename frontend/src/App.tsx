@@ -148,7 +148,6 @@ function Dashboard() {
                 const isExpanded = expandedLocationId === forecast.location_id;
                 const condition = ConditionCalculator.calculateCondition(forecast.current, forecast.historical, forecast.rock_drying_status);
                 const conditionColor = getConditionColor(condition.level);
-
                 return (
                   <div key={forecast.location_id} className={isExpanded ? 'shadow-lg rounded-xl' : ''}>
                     <WeatherCard
@@ -163,11 +162,13 @@ function Dashboard() {
                         <div className={`h-1 ${conditionColor}`} />
                         <div className="bg-gray-50 dark:bg-gray-900 p-4">
                           <ForecastView
+                            locationId={forecast.location_id}
                             hourlyData={forecast.hourly || []}
                             currentWeather={forecast.current}
                             historicalData={forecast.historical || []}
                             elevationFt={forecast.location.elevation_ft || 0}
                             dailySunTimes={forecast.daily_sun_times}
+                            dailySnowDepth={forecast.daily_snow_depth}
                           />
                         </div>
                         <button
@@ -242,11 +243,13 @@ function Dashboard() {
                             </div>
                             <div className="bg-gray-50 dark:bg-gray-900 p-6">
                               <ForecastView
+                                locationId={expandedForecast.location_id}
                                 hourlyData={expandedForecast.hourly || []}
                                 currentWeather={expandedForecast.current}
                                 historicalData={expandedForecast.historical || []}
                                 elevationFt={expandedForecast.location.elevation_ft || 0}
                                 dailySunTimes={expandedForecast.daily_sun_times}
+                                dailySnowDepth={expandedForecast.daily_snow_depth}
                               />
                             </div>
                             <button

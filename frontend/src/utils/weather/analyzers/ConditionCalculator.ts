@@ -82,6 +82,10 @@ export class ConditionCalculator {
   }
 
   /**
+   * @deprecated Use forecast.snow_depth_inches from backend API instead.
+   * This client-side calculation is less accurate and doesn't account for
+   * proper snow accumulation/melt modeling over time.
+   *
    * Calculate snow probability based on temperature and precipitation
    */
   static calculateSnowProbability(weatherData: WeatherData[]): {

@@ -1,7 +1,6 @@
 import { WeatherData, DailySunTimes } from '../types/weather';
 import { ConditionCalculator, TemperatureAnalyzer } from '../utils/weather/analyzers';
 import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl, getSnowDepthColor } from './weather/weatherDisplay';
-import { calculateSnowAccumulation } from '../utils/weather/calculations/snow';
 import { PestAnalyzer } from '../utils/pests/analyzers';
 import { PestLevel } from '../utils/pests/calculations/pests';
 import { getPestLevelColor, getPestLevelText } from './pests/pestDisplay';
@@ -32,11 +31,13 @@ function getPrecipColor(precip: number): string {
 }
 
 interface ForecastViewProps {
+  locationId: number;
   hourlyData: WeatherData[];
   currentWeather?: WeatherData;
   historicalData?: WeatherData[];
   elevationFt?: number; // Elevation in feet for temperature adjustment
   dailySunTimes?: DailySunTimes[]; // Sunrise/sunset for each day
+  dailySnowDepth?: Record<string, number>; // Backend-calculated daily snow depth forecast
 }
 
 interface DayForecast {
@@ -147,7 +148,7 @@ function calculateEffectiveSunHours(
   }
 }
 
-export function ForecastView({ hourlyData, currentWeather, historicalData, elevationFt = 0, dailySunTimes }: ForecastViewProps) {
+export function ForecastView({ locationId: _locationId, hourlyData, currentWeather, historicalData, elevationFt: _elevationFt = 0, dailySunTimes, dailySnowDepth }: ForecastViewProps) {
   // State for condition details modal
   const [showConditionModal, setShowConditionModal] = useState(false);
   const [selectedDayCondition, setSelectedDayCondition] = useState<{
@@ -298,8 +299,10 @@ export function ForecastView({ hourlyData, currentWeather, historicalData, eleva
   // Include current weather in the data if provided
   const allData = currentWeather ? [currentWeather, ...hourlyData] : hourlyData;
 
-  // Calculate snow accumulation across all data with elevation adjustment
-  const snowDepthByDay = calculateSnowAccumulation(historicalData || [], allData, elevationFt);
+  // Use backend-calculated snow depth (backend now handles all snow calculations)
+  const snowDepthByDay = dailySnowDepth
+    ? new Map(Object.entries(dailySnowDepth))
+    : new Map<string, number>(); // Empty map if backend data not available
 
   // Deduplicate all data by timestamp before grouping
   const deduplicatedMap = new Map<string, WeatherData>();

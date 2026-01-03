@@ -1,4 +1,4 @@
-package weather
+package client
 
 import (
 	"encoding/json"
@@ -16,6 +16,7 @@ const (
 	openMeteoHistoricalURL = "https://api.open-meteo.com/v1/archive"
 )
 
+// OpenMeteoClient handles API calls to Open-Meteo
 type OpenMeteoClient struct {
 	httpClient *http.Client
 }
@@ -57,6 +58,21 @@ type openMeteoResponse struct {
 	} `json:"daily"`
 }
 
+// DailySunTime represents sunrise/sunset for a single day
+type DailySunTime struct {
+	Date    string
+	Sunrise string
+	Sunset  string
+}
+
+// SunTimes contains sunrise and sunset information
+type SunTimes struct {
+	Sunrise string         // Today's sunrise
+	Sunset  string         // Today's sunset
+	Daily   []DailySunTime // All days' sunrise/sunset
+}
+
+// NewOpenMeteoClient creates a new Open-Meteo API client
 func NewOpenMeteoClient() *OpenMeteoClient {
 	return &OpenMeteoClient{
 		httpClient: &http.Client{
@@ -148,20 +164,6 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 	}
 
 	return weather, nil
-}
-
-// DailySunTime represents sunrise/sunset for a single day
-type DailySunTime struct {
-	Date    string
-	Sunrise string
-	Sunset  string
-}
-
-// SunTimes contains sunrise and sunset information
-type SunTimes struct {
-	Sunrise string         // Today's sunrise
-	Sunset  string         // Today's sunset
-	Daily   []DailySunTime // All days' sunrise/sunset
 }
 
 // GetCurrentAndForecast fetches both current weather and forecast in a single API call

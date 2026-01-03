@@ -4,26 +4,27 @@ import (
 	"log"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/alexscott64/woulder/backend/internal/weather/client"
 )
 
 // WeatherService provides weather data with fallback support
 type WeatherService struct {
-	openMeteo       *OpenMeteoClient
-	openWeatherMap  *Client
+	openMeteo       *client.OpenMeteoClient
+	openWeatherMap  *client.OpenWeatherMapClient
 	preferOpenMeteo bool
 }
 
 // NewWeatherService creates a new weather service with both providers
-func NewWeatherService() *WeatherService {
+func NewWeatherService(openWeatherMapAPIKey string) *WeatherService {
 	return &WeatherService{
-		openMeteo:       NewOpenMeteoClient(),
-		openWeatherMap:  NewClient(),
+		openMeteo:       client.NewOpenMeteoClient(),
+		openWeatherMap:  client.NewOpenWeatherMapClient(openWeatherMapAPIKey),
 		preferOpenMeteo: true, // Prefer Open-Meteo by default
 	}
 }
 
 // GetCurrentAndForecast fetches both current weather and forecast in a single API call
-func (s *WeatherService) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *SunTimes, error) {
+func (s *WeatherService) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *client.SunTimes, error) {
 	if s.preferOpenMeteo {
 		current, forecast, sunTimes, err := s.openMeteo.GetCurrentAndForecast(lat, lon)
 		if err == nil {
