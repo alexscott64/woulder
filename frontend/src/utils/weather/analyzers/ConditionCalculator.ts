@@ -37,8 +37,12 @@ export class ConditionCalculator {
       }
     };
 
+    // Limit recent weather to last 48 hours for precipitation analysis
+    // (historical data can be 7+ days for rock drying, but we only want recent for precip)
+    const recentPrecipWeather = recentWeather ? this.getLastNHours(recentWeather, 48) : undefined;
+
     // 1. Assess Precipitation
-    const precipCondition = PrecipitationAnalyzer.assessCondition(weather, recentWeather);
+    const precipCondition = PrecipitationAnalyzer.assessCondition(weather, recentPrecipWeather);
     if (precipCondition.reason) {
       reasons.push(precipCondition.reason);
       downgradeCondition(precipCondition.level);
@@ -58,19 +62,11 @@ export class ConditionCalculator {
       downgradeCondition(tempCondition.level);
     }
 
-    // 4. Assess Humidity (only flag when combined with extreme temperatures)
-    // High humidity is only a climbing concern when it's very cold (< 30°F) or very hot (> 85°F)
+    // 4. Assess Humidity
+    // High humidity (>85%) affects climbing comfort and grip
     if (weather.humidity > 85) {
-      if (weather.temperature < 30) {
-        // High humidity in cold = ice risk
-        reasons.push(`High humidity (${weather.humidity}%) in freezing conditions`);
-        if (level === 'good') level = 'marginal';
-      } else if (weather.temperature > 85) {
-        // High humidity in heat = heat index concern
-        reasons.push(`High humidity (${weather.humidity}%) in hot conditions`);
-        if (level === 'good') level = 'marginal';
-      }
-      // Otherwise humidity alone isn't a concern for climbing
+      reasons.push(`High humidity (${weather.humidity}%)`);
+      if (level === 'good') level = 'marginal';
     }
 
     // If no issues found, note good conditions
@@ -143,5 +139,21 @@ export class ConditionCalculator {
    */
   static calculate48HourRain(weatherData: WeatherData[]): number {
     return PrecipitationAnalyzer.getPrecipitationInWindow(weatherData, 48);
+  }
+
+  /**
+   * Get weather data from the last N hours
+   * Filters historical data to only include recent entries
+   */
+  private static getLastNHours(weatherData: WeatherData[], hours: number): WeatherData[] {
+    if (!weatherData || weatherData.length === 0) return [];
+
+    const now = new Date();
+    const cutoffTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
+
+    return weatherData.filter(data => {
+      const dataTime = new Date(data.timestamp);
+      return dataTime >= cutoffTime;
+    });
   }
 }

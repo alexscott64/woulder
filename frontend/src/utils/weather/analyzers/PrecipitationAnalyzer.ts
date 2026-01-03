@@ -127,17 +127,25 @@ export class PrecipitationAnalyzer {
   } {
     const drying = this.assessDryingConditions(current);
 
-    // Poor (bad): > 0.04 in/hr
-    if (current.precipitation > 0.04) {
+    // Poor (bad): > 0.3 in/hr (heavy rain)
+    if (current.precipitation > 0.3) {
       return {
         level: 'bad',
         reason: `Heavy rain (${current.precipitation.toFixed(2)}in/hr)`
       };
     }
 
-    // Fair (marginal): 0.01 to 0.04 in/hr
-    // But consider drying conditions - if it can dry quickly, don't downgrade as much
-    if (current.precipitation >= 0.01 && current.precipitation <= 0.04) {
+    // Marginal: 0.1 to 0.3 in/hr (moderate rain)
+    if (current.precipitation >= 0.1 && current.precipitation <= 0.3) {
+      return {
+        level: 'marginal',
+        reason: `Moderate rain (${current.precipitation.toFixed(2)}in/hr)`
+      };
+    }
+
+    // Light rain/drizzle: 0.01 to 0.1 in/hr
+    // Consider drying conditions and persistence
+    if (current.precipitation >= 0.01 && current.precipitation < 0.1) {
       const recentTotal = recentWeather ? this.getTotalPrecipitation(recentWeather) : 0;
       const isPersistent = recentWeather ? this.hasPersistentPrecipitation(recentWeather) : false;
 
@@ -158,9 +166,9 @@ export class PrecipitationAnalyzer {
         };
       }
 
-      // Brief light rain with good drying - still marginal but note it's drying
+      // Brief light rain with good drying conditions - can climb!
       return {
-        level: 'marginal',
+        level: 'good',
         reason: `Light rain (${current.precipitation.toFixed(2)}in/hr, drying fast)`
       };
     }

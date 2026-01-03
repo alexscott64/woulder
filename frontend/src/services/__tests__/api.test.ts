@@ -111,6 +111,7 @@ describe('weatherApi', () => {
 
       expect(mockGet).toHaveBeenCalledWith('/weather/all', {
         params: { area_id: 5 },
+        timeout: 30000,
       });
     });
 
@@ -125,6 +126,7 @@ describe('weatherApi', () => {
 
       expect(mockGet).toHaveBeenCalledWith('/weather/all', {
         params: {},
+        timeout: 30000,
       });
     });
   });
