@@ -57,19 +57,28 @@ type DailySunTimes struct {
 	Sunset  string `json:"sunset"`  // Sunset time (ISO 8601)
 }
 
+// ClimbingCondition represents overall climbing conditions
+type ClimbingCondition struct {
+	Level   string   `json:"level"`   // "good", "marginal", "bad"
+	Reasons []string `json:"reasons"` // Contributing factors
+}
+
 // WeatherForecast represents forecast data
 type WeatherForecast struct {
-	LocationID      int              `json:"location_id"`
-	Location        Location         `json:"location"`
-	Current         WeatherData      `json:"current"`
-	Hourly          []WeatherData    `json:"hourly"`
-	Historical      []WeatherData    `json:"historical"`
-	Sunrise         string            `json:"sunrise,omitempty"`    // Today's sunrise time (ISO 8601)
-	Sunset          string            `json:"sunset,omitempty"`     // Today's sunset time (ISO 8601)
-	DailySunTimes   []DailySunTimes   `json:"daily_sun_times,omitempty"` // Sunrise/sunset for each forecast day
-	RockDryingStatus *RockDryingStatus `json:"rock_drying_status,omitempty"` // Rock drying status
-	SnowDepthInches *float64          `json:"snow_depth_inches,omitempty"` // Current snow depth on ground in inches
-	DailySnowDepth  map[string]float64 `json:"daily_snow_depth,omitempty"` // Snow depth forecast by date (YYYY-MM-DD)
+	LocationID       int                `json:"location_id"`
+	Location         Location           `json:"location"`
+	Current          WeatherData        `json:"current"`
+	Hourly           []WeatherData      `json:"hourly"`
+	Historical       []WeatherData      `json:"historical"`
+	Sunrise          string             `json:"sunrise,omitempty"`              // Today's sunrise time (ISO 8601)
+	Sunset           string             `json:"sunset,omitempty"`               // Today's sunset time (ISO 8601)
+	DailySunTimes    []DailySunTimes    `json:"daily_sun_times,omitempty"`      // Sunrise/sunset for each forecast day
+	RockDryingStatus *RockDryingStatus  `json:"rock_drying_status,omitempty"`   // Rock drying status
+	SnowDepthInches  *float64           `json:"snow_depth_inches,omitempty"`    // Current snow depth on ground in inches
+	DailySnowDepth   map[string]float64 `json:"daily_snow_depth,omitempty"`     // Snow depth forecast by date (YYYY-MM-DD)
+	TodayCondition   *ClimbingCondition `json:"today_condition,omitempty"`      // Today's overall climbing condition
+	RainLast48h      *float64           `json:"rain_last_48h,omitempty"`        // Total rain in last 48 hours (inches)
+	RainNext48h      *float64           `json:"rain_next_48h,omitempty"`        // Forecast rain in next 48 hours (inches)
 }
 
 // RiverData represents river gauge information with current conditions

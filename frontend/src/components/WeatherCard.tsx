@@ -1,7 +1,7 @@
 import { WeatherForecast } from '../types/weather';
 import { RiverData } from '../types/river';
 import { API_BASE_URL } from '../services/api';
-import { ConditionCalculator, WindAnalyzer } from '../utils/weather/analyzers';
+import { WindAnalyzer } from '../utils/weather/analyzers';
 import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl } from './weather/weatherDisplay';
 import { PestAnalyzer } from '../utils/pests/analyzers';
 import type { PestConditions } from '../utils/pests/analyzers/PestAnalyzer';
@@ -29,169 +29,19 @@ function formatSunTime(isoTime: string | undefined): string {
 }
 
 export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCardProps) {
-  const { location, current, hourly, historical, sunrise, sunset, rock_drying_status, snow_depth_inches } = forecast;
+  const { location, current, hourly, historical, sunrise, sunset, rock_drying_status, snow_depth_inches, today_condition, rain_last_48h, rain_next_48h } = forecast;
 
-  // Calculate "Today" condition - EXACT match to ForecastView logic
+  // Use backend-calculated condition (backend always provides this)
   const todayCondition = useMemo(() => {
-    if (!current || !hourly || hourly.length === 0) {
-      return ConditionCalculator.calculateCondition(current, historical, rock_drying_status);
+    // Backend should always provide the condition
+    if (today_condition) {
+      return today_condition;
     }
 
-    const now = new Date();
-    const todayStr = formatInTimeZone(now, 'America/Los_Angeles', 'yyyy-MM-dd');
-
-    const allData = [current, ...hourly];
-    const todayHours = allData.filter(data => {
-      const dateKey = formatInTimeZone(data.timestamp, 'America/Los_Angeles', 'yyyy-MM-dd');
-      return dateKey === todayStr;
-    });
-
-    if (todayHours.length === 0) {
-      return ConditionCalculator.calculateCondition(current, historical, rock_drying_status);
-    }
-
-    const isClimbingHour = (hour: typeof current): boolean => {
-      const pacificDate = new Date(hour.timestamp).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
-      const hourOfDay = new Date(pacificDate).getHours();
-      return hourOfDay >= 9 && hourOfDay < 20;
-    };
-
-    const hourConditions = todayHours.map((h, index) => {
-      const recentHours = index > 0 ? todayHours.slice(Math.max(0, index - 2), index) : [];
-      return {
-        condition: ConditionCalculator.calculateCondition(h, recentHours),
-        hour: h,
-        isClimbingTime: isClimbingHour(h)
-      };
-    });
-
-    const relevantConditions = hourConditions.filter(hc => {
-      if (hc.isClimbingTime) return true;
-      const hasRainIssue = hc.condition.reasons.some(r =>
-        r.toLowerCase().includes('rain') || r.toLowerCase().includes('precip')
-      );
-      const hasWindIssue = hc.condition.reasons.some(r =>
-        r.toLowerCase().includes('wind')
-      );
-      return hasRainIssue || hasWindIssue;
-    });
-
-    const badHours = relevantConditions.filter(hc => hc.condition.level === 'bad');
-    const marginalHours = relevantConditions.filter(hc => hc.condition.level === 'marginal');
-
-    // Consolidate reasons - same as ForecastView
-    // Skip "recent rain" reasons from hourly calculations since we'll add unified 48h total below
-    const consolidateReasons = (hours: typeof hourConditions) => {
-      const factorMap = new Map<string, { reason: string; value: number }>();
-      hours.forEach(hc => {
-        hc.condition.reasons.forEach(reason => {
-          // Skip "Drying slowly" or "recent rain" reasons - we'll add unified 48h calculation
-          if (reason.includes('Drying slowly') || reason.includes('recent rain') || reason.includes('Recent rain')) {
-            return;
-          }
-
-          if (reason.includes('humidity')) {
-            const match = reason.match(/(\d+)%/);
-            if (match) {
-              const value = parseInt(match[1]);
-              const existing = factorMap.get('humidity');
-              if (!existing || value > existing.value) {
-                factorMap.set('humidity', { reason, value });
-              }
-            }
-          } else if (reason.includes('cold') || reason.includes('Too cold')) {
-            const match = reason.match(/(\d+)°F/);
-            if (match) {
-              const value = parseInt(match[1]);
-              const existing = factorMap.get('cold');
-              if (!existing || value < existing.value) {
-                factorMap.set('cold', { reason, value });
-              }
-            }
-          } else if (reason.includes('hot') || reason.includes('Too hot') || reason.includes('Warm')) {
-            const match = reason.match(/(\d+)°F/);
-            if (match) {
-              const value = parseInt(match[1]);
-              const existing = factorMap.get('hot');
-              if (!existing || value > existing.value) {
-                factorMap.set('hot', { reason, value });
-              }
-            }
-          } else if (reason.includes('wind')) {
-            const match = reason.match(/(\d+)mph/);
-            if (match) {
-              const value = parseInt(match[1]);
-              const existing = factorMap.get('wind');
-              if (!existing || value > existing.value) {
-                factorMap.set('wind', { reason, value });
-              }
-            }
-          } else if (reason.includes('rain') || reason.includes('precip') || reason.includes('drizzle')) {
-            const match = reason.match(/([\d.]+)in/);
-            if (match) {
-              const value = parseFloat(match[1]);
-              const existing = factorMap.get('precipitation');
-              if (!existing || value > existing.value) {
-                factorMap.set('precipitation', { reason, value });
-              }
-            }
-          } else {
-            const key = reason.toLowerCase().replace(/[^a-z]/g, '');
-            factorMap.set(key, { reason, value: 0 });
-          }
-        });
-      });
-      return Array.from(factorMap.values()).map(f => f.reason);
-    };
-
-    let level: 'good' | 'marginal' | 'bad' = 'good';
-    const reasons: string[] = [];
-
-    if (badHours.length > 0) {
-      level = 'bad';
-      reasons.push(...consolidateReasons(badHours));
-      if (badHours.length > 1) {
-        reasons.push(`${badHours.length} hours with poor conditions`);
-      }
-    } else if (marginalHours.length > 0) {
-      level = 'marginal';
-      reasons.push(...consolidateReasons(marginalHours));
-      if (marginalHours.length > 1) {
-        reasons.push(`${marginalHours.length} hours with fair conditions`);
-      }
-    } else {
-      reasons.push('Good climbing conditions all day');
-    }
-
-    // Factor in rain from last 48 hours - use ALL data (historical + current/hourly)
-    // This matches the display calculation to avoid confusion
-    const currentTime = new Date();
-    const fortyEightHoursAgo = currentTime.getTime() - 48 * 60 * 60 * 1000;
-
-    // Combine and deduplicate all data by timestamp
-    const allDataMap = new Map<string, typeof current>();
-    const safeHistorical = historical || [];
-    const safeHourly = hourly || [];
-    [...safeHistorical, ...safeHourly].forEach(d => {
-      allDataMap.set(d.timestamp.toString(), d);
-    });
-
-    // Calculate total rain in last 48h from all available data
-    const past48hData = Array.from(allDataMap.values()).filter(d => {
-      const time = new Date(d.timestamp).getTime();
-      return time >= fortyEightHoursAgo && time <= currentTime.getTime();
-    });
-    const rainLast48h = past48hData.reduce((sum, d) => sum + d.precipitation, 0);
-
-    if (rainLast48h > 0.5) {
-      if (level === 'good') level = 'marginal';
-      reasons.push(`Recent heavy rain (${rainLast48h.toFixed(2)}in in last 48h)`);
-    } else if (rainLast48h > 0.2) {
-      reasons.push(`Recent rain (${rainLast48h.toFixed(2)}in in last 48h)`);
-    }
-
-    return { level, reasons };
-  }, [current, hourly, historical, rock_drying_status]);
+    // This should never happen - log error and return safe default
+    console.error('Backend did not provide today_condition - this is a bug');
+    return { level: 'good' as const, reasons: ['Weather data unavailable'] };
+  }, [today_condition]);
 
   const conditionColor = getConditionColor(todayCondition.level);
   const conditionBadge = getConditionBadgeStyles(todayCondition.level);
@@ -263,23 +113,50 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
     new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
 
-  // Calculate past 48-hour rain (total)
+  // Use backend-calculated rain values if available, otherwise calculate on frontend
   const now = new Date();
-  const past48h = allData.filter(d => {
-    const time = new Date(d.timestamp).getTime();
-    const fortyEightHoursAgo = now.getTime() - 48 * 60 * 60 * 1000;
-    return time >= fortyEightHoursAgo && time <= now.getTime();
-  });
-  const rainLast48h = past48h.reduce((sum, d) => sum + d.precipitation, 0);
+  let rainLast48hValue: number;
+  let rainNext48hValue: number;
+  let past48h: typeof allData;
+  let next48h: typeof safeHourly;
 
-  // Calculate next 48-hour rain forecast (average per day)
-  const next48h = safeHourly.filter(d => {
-    const time = new Date(d.timestamp).getTime();
-    const fortyEightHoursFromNow = now.getTime() + 48 * 60 * 60 * 1000;
-    return time > now.getTime() && time <= fortyEightHoursFromNow;
-  });
-  const totalRainNext48h = next48h.reduce((sum, d) => sum + d.precipitation, 0);
-  const rainNext48h = totalRainNext48h / 2; // Average per day
+  if (rain_last_48h !== undefined && rain_next_48h !== undefined) {
+    // Use backend values
+    rainLast48hValue = rain_last_48h;
+    rainNext48hValue = rain_next_48h / 2; // Backend gives total, we show average per day
+
+    // Still need to get the data points for snow/rain detection
+    past48h = allData.filter(d => {
+      const time = new Date(d.timestamp).getTime();
+      const fortyEightHoursAgo = now.getTime() - 48 * 60 * 60 * 1000;
+      return time >= fortyEightHoursAgo && time <= now.getTime();
+    });
+    next48h = safeHourly.filter(d => {
+      const time = new Date(d.timestamp).getTime();
+      const fortyEightHoursFromNow = now.getTime() + 48 * 60 * 60 * 1000;
+      return time > now.getTime() && time <= fortyEightHoursFromNow;
+    });
+  } else {
+    // Fallback: Calculate on frontend
+    console.warn('Backend did not provide rain values, falling back to frontend calculation');
+    past48h = allData.filter(d => {
+      const time = new Date(d.timestamp).getTime();
+      const fortyEightHoursAgo = now.getTime() - 48 * 60 * 60 * 1000;
+      return time >= fortyEightHoursAgo && time <= now.getTime();
+    });
+    rainLast48hValue = past48h.reduce((sum, d) => sum + d.precipitation, 0);
+
+    next48h = safeHourly.filter(d => {
+      const time = new Date(d.timestamp).getTime();
+      const fortyEightHoursFromNow = now.getTime() + 48 * 60 * 60 * 1000;
+      return time > now.getTime() && time <= fortyEightHoursFromNow;
+    });
+    const totalRainNext48h = next48h.reduce((sum, d) => sum + d.precipitation, 0);
+    rainNext48hValue = totalRainNext48h / 2; // Average per day
+  }
+
+  const rainLast48h = rainLast48hValue;
+  const rainNext48h = rainNext48hValue;
 
   // Determine precipitation type for last 48h
   const hasSnowLast48h = past48h.some(d => d.temperature <= 32 && d.precipitation > 0);

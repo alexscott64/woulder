@@ -79,7 +79,13 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 		log.Printf("Warning: failed to calculate rock drying: %v", err)
 	}
 
-	// 6. Build response with fresh API data
+	// 6. Calculate climbing conditions
+	conditionCalc := &weather.ConditionCalculator{}
+	todayCondition := conditionCalc.CalculateTodayCondition(current, hourlyForecast, historical)
+	rainLast48h := conditionCalc.CalculateRainLast48h(historical, hourlyForecast)
+	rainNext48h := s.calculateRainNext48h(hourlyForecast)
+
+	// 7. Build response with fresh API data
 	var dailySunTimes []models.DailySunTimes
 	if sunTimes != nil && len(sunTimes.Daily) > 0 {
 		for _, st := range sunTimes.Daily {
@@ -103,6 +109,9 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 		RockDryingStatus: rockStatus,
 		SnowDepthInches:  snowDepth,
 		DailySnowDepth:   dailySnowDepth,
+		TodayCondition:   &todayCondition,
+		RainLast48h:      &rainLast48h,
+		RainNext48h:      &rainNext48h,
 	}
 
 	return forecast, nil
@@ -196,6 +205,19 @@ func (s *WeatherService) calculateDailySnowDepth(
 	}
 
 	return dailySnowDepth
+}
+
+// calculateRainNext48h calculates forecast rain in next 48 hours
+func (s *WeatherService) calculateRainNext48h(hourly []models.WeatherData) float64 {
+	now := time.Now()
+	fortyEightHoursFromNow := now.Add(48 * time.Hour)
+	total := 0.0
+	for _, h := range hourly {
+		if h.Timestamp.After(now) && (h.Timestamp.Before(fortyEightHoursFromNow) || h.Timestamp.Equal(fortyEightHoursFromNow)) {
+			total += h.Precipitation
+		}
+	}
+	return total
 }
 
 // calculateRockDryingStatus computes rock drying status

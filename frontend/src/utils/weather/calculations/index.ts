@@ -1,20 +1,15 @@
 /**
  * Weather Calculations - Pure Domain Math
  *
- * This module contains pure calculation functions for weather data.
- * These functions perform domain-specific math and conversions WITHOUT
- * any business logic or climbing-specific assessments.
+ * This module previously contained pure calculation functions for weather data.
  *
- * Separation of concerns:
- * - calculations/ - Pure math (this module)
- * - analyzers/ - Climbing condition assessments (business logic)
- * - components/weather/ - UI presentation
+ * As of January 2026, all core weather calculations have been moved to the backend
+ * for consistency and to provide a single source of truth:
+ * - Precipitation calculations → backend/internal/weather/calculator/precipitation.go
+ * - Temperature calculations → backend/internal/weather/conditions.go
+ * - Wind calculations → backend/internal/weather/conditions.go
+ * - Snow calculations → backend/internal/weather/calculator/snow.go
  *
- * Note: Snow calculations have been moved to the backend as of Jan 2026.
- * Snow depth is now calculated server-side with proper historical data
- * and provided in the API response.
+ * All weather condition assessments are now calculated server-side and provided
+ * in the API response.
  */
-
-export * as precipitation from './precipitation';
-export * as temperature from './temperature';
-export * as wind from './wind';

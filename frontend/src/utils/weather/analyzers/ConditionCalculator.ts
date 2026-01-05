@@ -1,169 +1,72 @@
-import { WeatherData, WeatherCondition, ConditionLevel, RockDryingStatus } from '../../../types/weather';
-import { PrecipitationAnalyzer } from './PrecipitationAnalyzer';
-import { TemperatureAnalyzer } from './TemperatureAnalyzer';
-import { WindAnalyzer } from './WindAnalyzer';
+import { WeatherData, WeatherCondition } from '../../../types/weather';
 
 /**
- * ConditionCalculator
+ * ConditionCalculator - Minimal frontend condition calculation
  *
- * Orchestrates all weather analyzers to provide comprehensive climbing condition assessments.
- * This is the main entry point for weather condition calculations.
+ * PRIMARY SOURCE: Backend calculates today's condition (backend/internal/weather/conditions.go)
+ *
+ * This minimal implementation is ONLY used for:
+ * - Future day forecasts (days 2-6) where backend doesn't pre-calculate
+ * - The backend is authoritative for "today's" condition
  */
 export class ConditionCalculator {
   /**
-   * Calculate overall climbing conditions
-   * Combines precipitation, temperature, wind, humidity, and rock drying status
+   * Calculate condition for a single weather data point
+   * Used only for future day forecasts - backend handles today's condition
    */
   static calculateCondition(
-    weather: WeatherData,
-    recentWeather?: WeatherData[],
-    rockStatus?: RockDryingStatus
+    weather: WeatherData | null | undefined,
+    _recentWeather?: WeatherData[]
   ): WeatherCondition {
+    if (!weather) {
+      return { level: 'good', reasons: [] };
+    }
+
+    let level: 'good' | 'marginal' | 'bad' = 'good';
     const reasons: string[] = [];
-    let level: ConditionLevel = 'good';
-    let marginalFactors = 0;
 
-    // Check rock drying status FIRST - this overrides all other conditions for wet-sensitive rocks
-    if (rockStatus && rockStatus.status === 'critical' && rockStatus.is_wet_sensitive) {
-      return {
-        level: 'do_not_climb',
-        reasons: [rockStatus.message]
-      };
+    // Precipitation check
+    if (weather.precipitation >= 0.05) {
+      level = 'bad';
+      reasons.push(`Moderate rain (${weather.precipitation.toFixed(2)}in/hr)`);
+    } else if (weather.precipitation >= 0.01) {
+      level = 'marginal';
+      reasons.push(`Light rain (${weather.precipitation.toFixed(2)}in/hr)`);
     }
 
-    // Helper to downgrade condition level
-    // Multiple marginal factors compound to bad (2+ marginal = bad)
-    const downgradeCondition = (newLevel: ConditionLevel) => {
-      if (newLevel === 'bad') {
-        level = 'bad';
-        marginalFactors = 0; // Reset since we're already at bad
-      } else if (newLevel === 'marginal') {
-        marginalFactors++;
-        if (marginalFactors >= 2) {
-          level = 'bad';
-        } else if (level === 'good') {
-          level = 'marginal';
-        }
-      }
-    };
-
-    // Limit recent weather to last 48 hours for precipitation analysis
-    // (historical data can be 7+ days for rock drying, but we only want recent for precip)
-    const recentPrecipWeather = recentWeather ? this.getLastNHours(recentWeather, 48) : undefined;
-
-    // 1. Assess Precipitation
-    const precipCondition = PrecipitationAnalyzer.assessCondition(weather, recentPrecipWeather);
-    if (precipCondition.reason) {
-      reasons.push(precipCondition.reason);
-      downgradeCondition(precipCondition.level);
+    // Temperature check
+    if (weather.temperature < 40) {
+      if (level === 'good') level = 'bad';
+      reasons.push(`Too cold (${Math.round(weather.temperature)}°F)`);
+    } else if (weather.temperature < 45) {
+      if (level === 'good') level = 'marginal';
+      reasons.push(`Cold (${Math.round(weather.temperature)}°F)`);
+    } else if (weather.temperature > 90) {
+      if (level === 'good') level = 'bad';
+      reasons.push(`Too hot (${Math.round(weather.temperature)}°F)`);
+    } else if (weather.temperature > 85) {
+      if (level === 'good') level = 'marginal';
+      reasons.push(`Warm (${Math.round(weather.temperature)}°F)`);
     }
 
-    // 2. Assess Wind
-    const windCondition = WindAnalyzer.assessCondition(weather.wind_speed);
-    if (windCondition.reason) {
-      reasons.push(windCondition.reason);
-      downgradeCondition(windCondition.level);
+    // Wind check
+    if (weather.wind_speed > 30) {
+      if (level === 'good') level = 'bad';
+      reasons.push(`Dangerous winds (${Math.round(weather.wind_speed)}mph)`);
+    } else if (weather.wind_speed > 20) {
+      if (level === 'good') level = 'marginal';
+      reasons.push(`Strong winds (${Math.round(weather.wind_speed)}mph)`);
+    } else if (weather.wind_speed > 12) {
+      if (level === 'good') level = 'marginal';
+      reasons.push(`Moderate winds (${Math.round(weather.wind_speed)}mph)`);
     }
 
-    // 3. Assess Temperature
-    const tempCondition = TemperatureAnalyzer.assessCondition(weather.temperature);
-    if (tempCondition.reason) {
-      reasons.push(tempCondition.reason);
-      downgradeCondition(tempCondition.level);
-    }
-
-    // 4. Assess Humidity
-    // High humidity (>85%) affects climbing comfort and grip
-    if (weather.humidity > 85) {
+    // Humidity check
+    if (weather.humidity >= 85) {
+      if (level === 'good') level = 'marginal';
       reasons.push(`High humidity (${weather.humidity}%)`);
-      downgradeCondition('marginal');
-    }
-
-    // If no issues found, note good conditions
-    if (reasons.length === 0) {
-      reasons.push('Good climbing conditions');
     }
 
     return { level, reasons };
-  }
-
-  /**
-   * @deprecated Use forecast.snow_depth_inches from backend API instead.
-   * This client-side calculation is less accurate and doesn't account for
-   * proper snow accumulation/melt modeling over time.
-   *
-   * Calculate snow probability based on temperature and precipitation
-   */
-  static calculateSnowProbability(weatherData: WeatherData[]): {
-    hasSnow: boolean;
-    probability: 'None' | 'Low' | 'Moderate' | 'High';
-    accumulationInches: number;
-  } {
-    const recent = weatherData.slice(0, 8); // Last 24 hours (3-hour intervals)
-
-    let snowConditions = 0;
-    let freezingHours = 0;
-    let snowAccumulation = 0;
-
-    for (const data of recent) {
-      const isFreezing = TemperatureAnalyzer.isFreezing(data.temperature);
-
-      if (isFreezing) {
-        freezingHours++;
-
-        if (data.precipitation > 0) {
-          snowConditions++;
-          // Approximate snow accumulation (10:1 ratio for fresh snow)
-          snowAccumulation += data.precipitation * 10;
-        }
-      }
-    }
-
-    // Determine probability
-    let probability: 'None' | 'Low' | 'Moderate' | 'High';
-    let hasSnow: boolean;
-
-    if (snowConditions >= 3) {
-      probability = 'High';
-      hasSnow = true;
-    } else if (snowConditions >= 1 || freezingHours >= 4) {
-      probability = 'Moderate';
-      hasSnow = true;
-    } else if (freezingHours >= 2) {
-      probability = 'Low';
-      hasSnow = false;
-    } else {
-      probability = 'None';
-      hasSnow = false;
-    }
-
-    return {
-      hasSnow,
-      probability,
-      accumulationInches: Math.round(snowAccumulation * 10) / 10
-    };
-  }
-
-  /**
-   * Calculate 48-hour precipitation total
-   */
-  static calculate48HourRain(weatherData: WeatherData[]): number {
-    return PrecipitationAnalyzer.getPrecipitationInWindow(weatherData, 48);
-  }
-
-  /**
-   * Get weather data from the last N hours
-   * Filters historical data to only include recent entries
-   */
-  private static getLastNHours(weatherData: WeatherData[], hours: number): WeatherData[] {
-    if (!weatherData || weatherData.length === 0) return [];
-
-    const now = new Date();
-    const cutoffTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
-
-    return weatherData.filter(data => {
-      const dataTime = new Date(data.timestamp);
-      return dataTime >= cutoffTime;
-    });
   }
 }

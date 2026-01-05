@@ -66,6 +66,9 @@ export interface WeatherForecast {
   rock_drying_status?: RockDryingStatus; // Rock drying status
   snow_depth_inches?: number; // Current snow depth on ground in inches (calculated by backend)
   daily_snow_depth?: Record<string, number>; // Daily snow depth forecast by date (YYYY-MM-DD)
+  today_condition?: WeatherCondition; // Today's overall climbing condition (calculated by backend)
+  rain_last_48h?: number; // Total rain in last 48 hours (inches, calculated by backend)
+  rain_next_48h?: number; // Forecast rain in next 48 hours (inches, calculated by backend)
 }
 
 export interface AllWeatherResponse {

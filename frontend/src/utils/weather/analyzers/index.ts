@@ -1,11 +1,15 @@
 /**
  * Weather Analyzers
  *
- * Organized, testable classes for weather calculations and condition assessments.
- * Each analyzer focuses on a single domain (precipitation, temperature, wind, etc.)
+ * NOTE: Core condition calculation logic has been moved to the backend Go service.
+ * These are minimal utility classes kept only for:
+ * - Fallback condition calculation when backend data is unavailable
+ * - UI display utilities (colors, compass directions, etc.)
+ *
+ * The authoritative source for weather conditions is now:
+ * backend/internal/weather/conditions.go
  */
 
-export { PrecipitationAnalyzer } from './PrecipitationAnalyzer';
+export { ConditionCalculator } from './ConditionCalculator';
 export { TemperatureAnalyzer } from './TemperatureAnalyzer';
 export { WindAnalyzer } from './WindAnalyzer';
-export { ConditionCalculator } from './ConditionCalculator';

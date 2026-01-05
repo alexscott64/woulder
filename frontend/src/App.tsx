@@ -173,6 +173,7 @@ function Dashboard() {
                             elevationFt={forecast.location.elevation_ft || 0}
                             dailySunTimes={forecast.daily_sun_times}
                             dailySnowDepth={forecast.daily_snow_depth}
+                            todayCondition={forecast.today_condition}
                           />
                         </div>
                         <button

@@ -1,5 +1,5 @@
-import { WeatherData, DailySunTimes } from '../types/weather';
-import { ConditionCalculator, TemperatureAnalyzer } from '../utils/weather/analyzers';
+import { WeatherData, DailySunTimes, WeatherCondition } from '../types/weather';
+import { TemperatureAnalyzer, ConditionCalculator } from '../utils/weather/analyzers';
 import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl, getSnowDepthColor } from './weather/weatherDisplay';
 import { PestAnalyzer } from '../utils/pests/analyzers';
 import { PestLevel } from '../utils/pests/calculations/pests';
@@ -38,6 +38,7 @@ interface ForecastViewProps {
   elevationFt?: number; // Elevation in feet for temperature adjustment
   dailySunTimes?: DailySunTimes[]; // Sunrise/sunset for each day
   dailySnowDepth?: Record<string, number>; // Backend-calculated daily snow depth forecast
+  todayCondition?: WeatherCondition; // Backend-calculated today's condition
 }
 
 interface DayForecast {
@@ -51,7 +52,7 @@ interface DayForecast {
   avgCloudCover: number; // Average cloud cover for the day
   icon: string;
   description: string;
-  condition: 'good' | 'marginal' | 'bad';
+  condition: 'good' | 'marginal' | 'bad' | 'do_not_climb';
   hours: WeatherData[];
   hasSnow: boolean;
   hasRain: boolean;
@@ -148,12 +149,12 @@ function calculateEffectiveSunHours(
   }
 }
 
-export function ForecastView({ locationId: _locationId, hourlyData, currentWeather, historicalData, elevationFt: _elevationFt = 0, dailySunTimes, dailySnowDepth }: ForecastViewProps) {
+export function ForecastView({ locationId: _locationId, hourlyData, currentWeather, historicalData, elevationFt: _elevationFt = 0, dailySunTimes, dailySnowDepth, todayCondition }: ForecastViewProps) {
   // State for condition details modal
   const [showConditionModal, setShowConditionModal] = useState(false);
   const [selectedDayCondition, setSelectedDayCondition] = useState<{
     dayName: string;
-    level: 'good' | 'marginal' | 'bad';
+    level: 'good' | 'marginal' | 'bad' | 'do_not_climb';
     reasons: string[];
   } | null>(null);
 
@@ -366,32 +367,41 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
     const icon = Array.from(iconCounts.entries()).sort((a, b) => b[1] - a[1])[0][0];
     const description = hours[Math.floor(hours.length / 2)].description;
 
+    // Check if this date is today (we'll use backend condition for today)
+    const isToday = dateKey === todayStr;
+
     // Determine overall condition for the day and collect reasons
-    // Weight climbing hours (9am-8pm) more heavily for temperature issues
-    // But keep rain/precipitation for all hours since it affects conditions later
-    const isClimbingHour = (hour: WeatherData): boolean => {
-      // Convert to Pacific timezone to get the correct hour
-      const pacificDate = new Date(hour.timestamp).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
-      const hourOfDay = new Date(pacificDate).getHours();
-      return hourOfDay >= 9 && hourOfDay < 20; // 9am to 8pm Pacific
-    };
-
-    const hourConditions = hours.map((h, index) => {
-      // Pass previous hours as recent weather context for precipitation pattern analysis
-      const recentHours = index > 0 ? hours.slice(Math.max(0, index - 2), index) : [];
-      return {
-        condition: ConditionCalculator.calculateCondition(h, recentHours),
-        hour: h,
-        isClimbingTime: isClimbingHour(h)
-      };
-    });
-
-    let condition: 'good' | 'marginal' | 'bad' = 'good';
+    let condition: 'good' | 'marginal' | 'bad' | 'do_not_climb' = 'good';
     const conditionReasons: string[] = [];
 
-    // Filter conditions: only consider non-climbing hours if they have rain/wind issues
-    const relevantConditions = hourConditions.filter(hc => {
-      if (hc.isClimbingTime) return true; // Always consider climbing hours
+    // For today, use backend-calculated condition (backend is authoritative for today)
+    if (isToday && todayCondition) {
+      condition = todayCondition.level;
+      conditionReasons.push(...todayCondition.reasons);
+    } else {
+      // For future days (2-6), calculate on frontend using simplified logic
+      // Weight climbing hours (9am-8pm) more heavily for temperature issues
+      // But keep rain/precipitation for all hours since it affects conditions later
+      const isClimbingHour = (hour: WeatherData): boolean => {
+        // Convert to Pacific timezone to get the correct hour
+        const pacificDate = new Date(hour.timestamp).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+        const hourOfDay = new Date(pacificDate).getHours();
+        return hourOfDay >= 9 && hourOfDay < 20; // 9am to 8pm Pacific
+      };
+
+      const hourConditions = hours.map((h, index) => {
+        // Pass previous hours as recent weather context for precipitation pattern analysis
+        const recentHours = index > 0 ? hours.slice(Math.max(0, index - 2), index) : [];
+        return {
+          condition: ConditionCalculator.calculateCondition(h, recentHours),
+          hour: h,
+          isClimbingTime: isClimbingHour(h)
+        };
+      });
+
+      // Filter conditions: only consider non-climbing hours if they have rain/wind issues
+      const relevantConditions = hourConditions.filter(hc => {
+        if (hc.isClimbingTime) return true; // Always consider climbing hours
 
       // For non-climbing hours, only consider if there are rain/wind issues
       const hasRainIssue = hc.condition.reasons.some(r =>
@@ -493,13 +503,11 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
     } else {
       conditionReasons.push('Good climbing conditions all day');
     }
+    } // End of else block for frontend calculation
 
     // Determine if there's snow or rain
     const hasSnow = hours.some(h => h.temperature <= 32 && h.precipitation > 0);
     const hasRain = hours.some(h => h.temperature > 32 && h.precipitation > 0);
-
-    // Check if this date is today
-    const isToday = dateKey === todayStr;
 
     // Factor in historical rain from last 48 hours (affects rock conditions)
     // Heavy recent rain degrades conditions even if forecast is good
