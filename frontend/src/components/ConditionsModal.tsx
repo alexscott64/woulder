@@ -1,39 +1,44 @@
-import { X, Info, Stone, Waves, Bug, Droplet, AlertTriangle, AlertCircle, TrendingUp, Clock } from 'lucide-react';
+import { X, Info, Stone, Waves, Bug, Droplet, AlertTriangle, AlertCircle, TrendingUp, Clock, CalendarCheck } from 'lucide-react';
 import { format } from 'date-fns';
-import { RockDryingStatus } from '../types/weather';
+import { RockDryingStatus, WeatherCondition } from '../types/weather';
 import type { PestConditions } from '../utils/pests/analyzers/PestAnalyzer';
 import { RiverData } from '../types/river';
 import { useState } from 'react';
 import { PestLevel } from '../utils/pests/calculations/pests';
 import { formatDryTime } from '../utils/weather/formatters';
+import { getConditionBadgeStyles, getConditionColor } from './weather/weatherDisplay';
 
 interface ConditionsModalProps {
   locationName: string;
   rockStatus?: RockDryingStatus;
   pestConditions?: PestConditions;
   riverData?: RiverData[];
+  todayCondition: WeatherCondition;
   onClose: () => void;
 }
 
-type TabType = 'rock' | 'rivers' | 'pests';
+type TabType = 'today' | 'rock' | 'rivers' | 'pests';
 
 export function ConditionsModal({
   locationName,
   rockStatus,
   pestConditions,
   riverData,
+  todayCondition,
   onClose
 }: ConditionsModalProps) {
   // Determine which tabs are available and set initial tab
-  const availableTabs: TabType[] = [];
+  const availableTabs: TabType[] = ['today']; // Always show today
   if (rockStatus) availableTabs.push('rock');
   if (riverData && riverData.length > 0) availableTabs.push('rivers');
   if (pestConditions) availableTabs.push('pests');
 
-  const [activeTab, setActiveTab] = useState<TabType>(availableTabs[0] || 'rock');
+  const [activeTab, setActiveTab] = useState<TabType>('today');
 
   const getTabIcon = (tab: TabType) => {
     switch (tab) {
+      case 'today':
+        return <CalendarCheck className="w-4 h-4" />;
       case 'rock':
         return <Stone className="w-4 h-4" />;
       case 'rivers':
@@ -45,6 +50,8 @@ export function ConditionsModal({
 
   const getTabLabel = (tab: TabType) => {
     switch (tab) {
+      case 'today':
+        return "Today's Conditions";
       case 'rock':
         return 'Rock Conditions';
       case 'rivers':
@@ -156,7 +163,20 @@ export function ConditionsModal({
   const getTabStatusDot = (tab: TabType) => {
     let dotColor = 'bg-gray-400';
 
-    if (tab === 'rock' && rockStatus) {
+    if (tab === 'today') {
+      // Use condition level
+      switch (todayCondition.level) {
+        case 'bad':
+          dotColor = 'bg-red-500';
+          break;
+        case 'marginal':
+          dotColor = 'bg-yellow-500';
+          break;
+        case 'good':
+          dotColor = 'bg-green-500';
+          break;
+      }
+    } else if (tab === 'rock' && rockStatus) {
       switch (rockStatus.status) {
         case 'critical':
           dotColor = 'bg-red-500';
@@ -243,7 +263,7 @@ export function ConditionsModal({
                 }`} />
                 <span className="hidden sm:inline">{getTabLabel(tab)}</span>
                 <span className="sm:hidden">
-                  {tab === 'rock' ? 'Rock' : tab === 'rivers' ? 'Rivers' : 'Pests'}
+                  {tab === 'today' ? 'Today' : tab === 'rock' ? 'Rock' : tab === 'rivers' ? 'Rivers' : 'Pests'}
                 </span>
               </button>
             ))}
@@ -252,6 +272,49 @@ export function ConditionsModal({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+          {/* Today's Conditions Tab */}
+          {activeTab === 'today' && (
+            <div className="space-y-4">
+              {/* Condition Summary Card */}
+              <div className={`rounded-xl p-4 border-2 ${getConditionBadgeStyles(todayCondition.level).border} ${getConditionBadgeStyles(todayCondition.level).bg}`}>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`w-4 h-4 rounded-full ${getConditionColor(todayCondition.level)}`} />
+                  <h3 className={`text-lg font-bold ${getConditionBadgeStyles(todayCondition.level).text}`}>
+                    {todayCondition.level === 'good' ? 'Good Conditions' : todayCondition.level === 'marginal' ? 'Fair Conditions' : 'Poor Conditions'}
+                  </h3>
+                </div>
+
+                {/* Contributing Factors */}
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Contributing Factors:</h4>
+                  <ul className="space-y-1.5">
+                    {todayCondition.reasons.map((reason, index) => (
+                      <li key={index} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span className="text-gray-400 mt-0.5">•</span>
+                        <span>{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Info Note */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-blue-900 dark:text-blue-200">
+                    <p className="font-medium mb-1">About Today's Conditions</p>
+                    <p className="text-blue-800 dark:text-blue-300">
+                      This rating considers all forecasted conditions throughout the climbing day (9am-8pm Pacific),
+                      weighted by the worst conditions you'll encounter. Check the other tabs for specific details
+                      about rock conditions, river crossings, and pest activity.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Rock Conditions Tab */}
           {activeTab === 'rock' && rockStatus && (
             <div className="space-y-4">

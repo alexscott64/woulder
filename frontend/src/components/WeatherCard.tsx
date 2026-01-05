@@ -7,9 +7,8 @@ import { PestAnalyzer } from '../utils/pests/analyzers';
 import type { PestConditions } from '../utils/pests/analyzers/PestAnalyzer';
 import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
-import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, Sunrise, Sunset, Info } from 'lucide-react';
+import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, ChevronRight, Sunrise, Sunset } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { ConditionDetailsModal } from './ConditionDetailsModal';
 import { ConditionsModal } from './ConditionsModal';
 
 interface WeatherCardProps {
@@ -32,19 +31,161 @@ function formatSunTime(isoTime: string | undefined): string {
 export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCardProps) {
   const { location, current, hourly, historical, sunrise, sunset, rock_drying_status, snow_depth_inches } = forecast;
 
-  // Pass recent historical data for precipitation pattern analysis and rock drying status
-  const condition = ConditionCalculator.calculateCondition(current, historical, rock_drying_status);
-  const conditionColor = getConditionColor(condition.level);
-  const conditionBadge = getConditionBadgeStyles(condition.level);
-  const conditionLabel = getConditionLabel(condition.level);
+  // Calculate "Today" condition - EXACT match to ForecastView logic
+  const todayCondition = useMemo(() => {
+    if (!current || !hourly || hourly.length === 0) {
+      return ConditionCalculator.calculateCondition(current, historical, rock_drying_status);
+    }
+
+    const now = new Date();
+    const todayStr = formatInTimeZone(now, 'America/Los_Angeles', 'yyyy-MM-dd');
+
+    const allData = [current, ...hourly];
+    const todayHours = allData.filter(data => {
+      const dateKey = formatInTimeZone(data.timestamp, 'America/Los_Angeles', 'yyyy-MM-dd');
+      return dateKey === todayStr;
+    });
+
+    if (todayHours.length === 0) {
+      return ConditionCalculator.calculateCondition(current, historical, rock_drying_status);
+    }
+
+    const isClimbingHour = (hour: typeof current): boolean => {
+      const pacificDate = new Date(hour.timestamp).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+      const hourOfDay = new Date(pacificDate).getHours();
+      return hourOfDay >= 9 && hourOfDay < 20;
+    };
+
+    const hourConditions = todayHours.map((h, index) => {
+      const recentHours = index > 0 ? todayHours.slice(Math.max(0, index - 2), index) : [];
+      return {
+        condition: ConditionCalculator.calculateCondition(h, recentHours),
+        hour: h,
+        isClimbingTime: isClimbingHour(h)
+      };
+    });
+
+    const relevantConditions = hourConditions.filter(hc => {
+      if (hc.isClimbingTime) return true;
+      const hasRainIssue = hc.condition.reasons.some(r =>
+        r.toLowerCase().includes('rain') || r.toLowerCase().includes('precip')
+      );
+      const hasWindIssue = hc.condition.reasons.some(r =>
+        r.toLowerCase().includes('wind')
+      );
+      return hasRainIssue || hasWindIssue;
+    });
+
+    const badHours = relevantConditions.filter(hc => hc.condition.level === 'bad');
+    const marginalHours = relevantConditions.filter(hc => hc.condition.level === 'marginal');
+
+    // Consolidate reasons - same as ForecastView
+    const consolidateReasons = (hours: typeof hourConditions) => {
+      const factorMap = new Map<string, { reason: string; value: number }>();
+      hours.forEach(hc => {
+        hc.condition.reasons.forEach(reason => {
+          if (reason.includes('humidity')) {
+            const match = reason.match(/(\d+)%/);
+            if (match) {
+              const value = parseInt(match[1]);
+              const existing = factorMap.get('humidity');
+              if (!existing || value > existing.value) {
+                factorMap.set('humidity', { reason, value });
+              }
+            }
+          } else if (reason.includes('cold') || reason.includes('Too cold')) {
+            const match = reason.match(/(\d+)°F/);
+            if (match) {
+              const value = parseInt(match[1]);
+              const existing = factorMap.get('cold');
+              if (!existing || value < existing.value) {
+                factorMap.set('cold', { reason, value });
+              }
+            }
+          } else if (reason.includes('hot') || reason.includes('Too hot') || reason.includes('Warm')) {
+            const match = reason.match(/(\d+)°F/);
+            if (match) {
+              const value = parseInt(match[1]);
+              const existing = factorMap.get('hot');
+              if (!existing || value > existing.value) {
+                factorMap.set('hot', { reason, value });
+              }
+            }
+          } else if (reason.includes('wind')) {
+            const match = reason.match(/(\d+)mph/);
+            if (match) {
+              const value = parseInt(match[1]);
+              const existing = factorMap.get('wind');
+              if (!existing || value > existing.value) {
+                factorMap.set('wind', { reason, value });
+              }
+            }
+          } else if (reason.includes('rain') || reason.includes('precip') || reason.includes('drizzle')) {
+            const match = reason.match(/([\d.]+)in/);
+            if (match) {
+              const value = parseFloat(match[1]);
+              const existing = factorMap.get('precipitation');
+              if (!existing || value > existing.value) {
+                factorMap.set('precipitation', { reason, value });
+              }
+            }
+          } else {
+            const key = reason.toLowerCase().replace(/[^a-z]/g, '');
+            factorMap.set(key, { reason, value: 0 });
+          }
+        });
+      });
+      return Array.from(factorMap.values()).map(f => f.reason);
+    };
+
+    let level: 'good' | 'marginal' | 'bad' = 'good';
+    const reasons: string[] = [];
+
+    if (badHours.length > 0) {
+      level = 'bad';
+      reasons.push(...consolidateReasons(badHours));
+      if (badHours.length > 1) {
+        reasons.push(`${badHours.length} hours with poor conditions`);
+      }
+    } else if (marginalHours.length > 0) {
+      level = 'marginal';
+      reasons.push(...consolidateReasons(marginalHours));
+      if (marginalHours.length > 1) {
+        reasons.push(`${marginalHours.length} hours with fair conditions`);
+      }
+    } else {
+      reasons.push('Good climbing conditions all day');
+    }
+
+    // Factor in historical rain
+    const currentTime = new Date();
+    const fortyEightHoursAgo = currentTime.getTime() - 48 * 60 * 60 * 1000;
+    const historical48hRain = historical && historical.length > 0
+      ? historical
+          .filter(d => {
+            const time = new Date(d.timestamp).getTime();
+            return time >= fortyEightHoursAgo && time <= currentTime.getTime();
+          })
+          .reduce((sum, h) => sum + h.precipitation, 0)
+      : 0;
+
+    if (historical48hRain > 0.5) {
+      if (level === 'good') level = 'marginal';
+      reasons.push(`Recent heavy rain (${historical48hRain.toFixed(2)}in in last 48h)`);
+    } else if (historical48hRain > 0.2) {
+      reasons.push(`Recent rain (${historical48hRain.toFixed(2)}in in last 48h)`);
+    }
+
+    return { level, reasons };
+  }, [current, hourly, historical, rock_drying_status]);
+
+  const conditionColor = getConditionColor(todayCondition.level);
+  const conditionBadge = getConditionBadgeStyles(todayCondition.level);
+  const conditionLabel = getConditionLabel(todayCondition.level);
 
   // River crossing state
   const [riverData, setRiverData] = useState<RiverData[]>([]);
   const [hasRivers, setHasRivers] = useState(false);
-
-
-  // Condition details state
-  const [showConditionModal, setShowConditionModal] = useState(false);
 
   // Comprehensive conditions modal state
   const [showConditionsModal, setShowConditionsModal] = useState(false);
@@ -91,6 +232,10 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
     setShowConditionsModal(true);
   };
 
+  // Count total conditions
+  const conditionsCount = [rock_drying_status, hasRivers, pestConditions].filter(Boolean).length;
+  const hasConditions = conditionsCount > 0;
+
   // Safely handle potentially null/undefined arrays
   const safeHistorical = historical || [];
   const safeHourly = hourly || [];
@@ -98,7 +243,6 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   // Combine and deduplicate by timestamp (historical and hourly can overlap)
   const allDataMap = new Map<string, typeof safeHistorical[0]>();
   [...safeHistorical, ...safeHourly].forEach(d => {
-    // Use timestamp as key - later entries (hourly/forecast) will overwrite earlier ones
     allDataMap.set(d.timestamp.toString(), d);
   });
   const allData = Array.from(allDataMap.values()).sort((a, b) =>
@@ -123,8 +267,6 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   const totalRainNext48h = next48h.reduce((sum, d) => sum + d.precipitation, 0);
   const rainNext48h = totalRainNext48h / 2; // Average per day
 
-  // Note: Snow depth now comes from backend (snow_depth_inches field)
-
   // Determine precipitation type for last 48h
   const hasSnowLast48h = past48h.some(d => d.temperature <= 32 && d.precipitation > 0);
   const hasRainLast48h = past48h.some(d => d.temperature > 32 && d.precipitation > 0);
@@ -147,41 +289,39 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
       <div className="p-4 sm:p-6">
         {/* Header */}
         <div className="mb-4">
-          {/* Title row with condition badge */}
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{location.name}</h2>
-            </div>
-            <button
-              onClick={() => setShowConditionModal(true)}
-              className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${conditionBadge.bg} ${conditionBadge.text} ${conditionBadge.border} flex items-center gap-1.5 flex-shrink-0 hover:opacity-80 active:opacity-100 transition-opacity cursor-pointer`}
-              title="Click for condition details"
-            >
-              <div className={`w-2 h-2 rounded-full ${conditionColor}`} />
-              <span>{conditionLabel}</span>
-            </button>
-          </div>
-          {/* Date and conditions button row */}
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {formatInTimeZone(current.timestamp, 'America/Los_Angeles', 'MMM d, h:mm a')} {new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'short' }).formatToParts(new Date()).find(part => part.type === 'timeZoneName')?.value}
+          {/* Title and Date row */}
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{location.name}</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {formatInTimeZone(current.timestamp, 'America/Los_Angeles', 'MMM d, h:mm a')}
             </p>
-            {/* Conditions Button */}
-            {(pestConditions || hasRivers || rock_drying_status) && (
-              <button
-                onClick={handleConditionsClick}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
-                title="View all conditions"
-              >
-                <Info className="w-3.5 h-3.5" />
-                <span>Conditions</span>
-                {/* Badge count */}
-                <span className="bg-blue-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold">
-                  {[rock_drying_status, hasRivers, pestConditions].filter(Boolean).length}
-                </span>
-              </button>
-            )}
           </div>
+
+          {/* Today's Condition - Clean inline button */}
+          <button
+            onClick={handleConditionsClick}
+            className="group flex items-center gap-2 hover:opacity-80 transition-opacity"
+            title={hasConditions ? "View today's conditions & details" : "View today's climbing conditions"}
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Today:</span>
+              <div className="flex items-center gap-1.5">
+                <div className={`w-2 h-2 rounded-full ${conditionColor}`} />
+                <span className={`text-sm font-semibold ${conditionBadge.text}`}>
+                  {conditionLabel}
+                </span>
+              </div>
+            </div>
+            {hasConditions && (
+              <>
+                <span className="text-gray-400 dark:text-gray-600">•</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {conditionsCount} detail{conditionsCount > 1 ? 's' : ''}
+                </span>
+              </>
+            )}
+            <ChevronRight className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover:translate-x-0.5 transition-transform" />
+          </button>
         </div>
 
         {/* Current Weather */}
@@ -302,13 +442,6 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
             </div>
           </div>
         </div>
-
-        {/* Condition Reasons */}
-        <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-          <div className="text-xs text-gray-600 dark:text-gray-400">
-            {condition.reasons.join(' • ')}
-          </div>
-        </div>
       </div>
 
       {/* Expandable Forecast Section */}
@@ -333,16 +466,6 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
         )}
       </button>
 
-      {showConditionModal && (
-        <ConditionDetailsModal
-          locationName={location.name}
-          conditionLevel={condition.level}
-          conditionLabel={conditionLabel}
-          reasons={condition.reasons}
-          onClose={() => setShowConditionModal(false)}
-        />
-      )}
-
       {/* Comprehensive Conditions Modal */}
       {showConditionsModal && (
         <ConditionsModal
@@ -350,6 +473,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           rockStatus={rock_drying_status}
           pestConditions={pestConditions || undefined}
           riverData={riverData.length > 0 ? riverData : undefined}
+          todayCondition={todayCondition}
           onClose={() => setShowConditionsModal(false)}
         />
       )}
