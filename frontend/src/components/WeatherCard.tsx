@@ -3,8 +3,6 @@ import { RiverData } from '../types/river';
 import { API_BASE_URL } from '../services/api';
 import { WindAnalyzer } from '../utils/weather/analyzers';
 import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl } from './weather/weatherDisplay';
-import { PestAnalyzer } from '../utils/pests/analyzers';
-import type { PestConditions } from '../utils/pests/analyzers/PestAnalyzer';
 import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, ChevronRight, Sunrise, Sunset } from 'lucide-react';
@@ -29,7 +27,7 @@ function formatSunTime(isoTime: string | undefined): string {
 }
 
 export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCardProps) {
-  const { location, current, hourly, historical, sunrise, sunset, rock_drying_status, snow_depth_inches, today_condition, rain_last_48h, rain_next_48h } = forecast;
+  const { location, current, hourly, historical, sunrise, sunset, rock_drying_status, snow_depth_inches, today_condition, rain_last_48h, rain_next_48h, pest_conditions } = forecast;
 
   // Use backend-calculated condition (backend always provides this)
   const todayCondition = useMemo(() => {
@@ -53,12 +51,6 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
   // Comprehensive conditions modal state
   const [showConditionsModal, setShowConditionsModal] = useState(false);
-
-  // Calculate pest conditions
-  const pestConditions: PestConditions | null = useMemo(() => {
-    if (!current || !historical || historical.length === 0) return null;
-    return PestAnalyzer.assessConditions(current, historical);
-  }, [current, historical]);
 
   // Fetch river data when component mounts
   useEffect(() => {
@@ -97,7 +89,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   };
 
   // Count total conditions
-  const conditionsCount = [rock_drying_status, hasRivers, pestConditions].filter(Boolean).length;
+  const conditionsCount = [rock_drying_status, hasRivers, pest_conditions].filter(Boolean).length;
   const hasConditions = conditionsCount > 0;
 
   // Safely handle potentially null/undefined arrays
@@ -361,7 +353,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
         <ConditionsModal
           locationName={location.name}
           rockStatus={rock_drying_status}
-          pestConditions={pestConditions || undefined}
+          pestConditions={pest_conditions}
           riverData={riverData.length > 0 ? riverData : undefined}
           todayCondition={todayCondition}
           onClose={() => setShowConditionsModal(false)}

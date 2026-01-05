@@ -69,6 +69,7 @@ export interface WeatherForecast {
   today_condition?: WeatherCondition; // Today's overall climbing condition (calculated by backend)
   rain_last_48h?: number; // Total rain in last 48 hours (inches, calculated by backend)
   rain_next_48h?: number; // Forecast rain in next 48 hours (inches, calculated by backend)
+  pest_conditions?: PestConditions; // Pest activity levels (calculated by backend)
 }
 
 export interface AllWeatherResponse {
@@ -82,4 +83,14 @@ export type ConditionLevel = 'good' | 'marginal' | 'bad' | 'do_not_climb';
 export interface WeatherCondition {
   level: ConditionLevel;
   reasons: string[];
+}
+
+export type PestLevel = 'low' | 'moderate' | 'high' | 'very_high' | 'extreme';
+
+export interface PestConditions {
+  mosquito_level: PestLevel;
+  mosquito_score: number; // 0-100
+  outdoor_pest_level: PestLevel;
+  outdoor_pest_score: number; // 0-100
+  factors: string[];
 }

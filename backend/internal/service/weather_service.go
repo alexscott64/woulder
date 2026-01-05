@@ -9,6 +9,7 @@ import (
 
 	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/alexscott64/woulder/backend/internal/pests"
 	"github.com/alexscott64/woulder/backend/internal/weather"
 	"github.com/alexscott64/woulder/backend/internal/weather/calculator"
 )
@@ -17,6 +18,7 @@ type WeatherService struct {
 	repo           database.Repository
 	weatherClient  *weather.WeatherService
 	rockCalculator *weather.RockDryingCalculator
+	pestAnalyzer   *pests.PestAnalyzer
 
 	// Background refresh management
 	refreshMutex sync.Mutex
@@ -29,6 +31,7 @@ func NewWeatherService(repo database.Repository, client *weather.WeatherService)
 		repo:           repo,
 		weatherClient:  client,
 		rockCalculator: &weather.RockDryingCalculator{},
+		pestAnalyzer:   &pests.PestAnalyzer{},
 	}
 }
 
@@ -85,7 +88,10 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 	rainLast48h := conditionCalc.CalculateRainLast48h(historical, hourlyForecast)
 	rainNext48h := s.calculateRainNext48h(hourlyForecast)
 
-	// 7. Build response with fresh API data
+	// 7. Calculate pest conditions
+	pestConditions := s.calculatePestConditions(current, historical)
+
+	// 8. Build response with fresh API data
 	var dailySunTimes []models.DailySunTimes
 	if sunTimes != nil && len(sunTimes.Daily) > 0 {
 		for _, st := range sunTimes.Daily {
@@ -112,6 +118,7 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 		TodayCondition:   &todayCondition,
 		RainLast48h:      &rainLast48h,
 		RainNext48h:      &rainNext48h,
+		PestConditions:   pestConditions,
 	}
 
 	return forecast, nil
@@ -377,4 +384,22 @@ func (s *WeatherService) GetAllWeather(ctx context.Context, areaID *int) ([]mode
 	}
 
 	return forecasts, nil
+}
+
+// calculatePestConditions calculates pest activity levels based on current and historical weather
+func (s *WeatherService) calculatePestConditions(
+	current *models.WeatherData,
+	historical []models.WeatherData,
+) *models.PestConditions {
+	// Assess pest conditions using the pest analyzer
+	result := s.pestAnalyzer.AssessConditions(current, historical)
+
+	// Convert to models.PestConditions
+	return &models.PestConditions{
+		MosquitoLevel:    string(result.MosquitoLevel),
+		MosquitoScore:    result.MosquitoScore,
+		OutdoorPestLevel: string(result.OutdoorPestLevel),
+		OutdoorPestScore: result.OutdoorPestScore,
+		Factors:          result.Factors,
+	}
 }

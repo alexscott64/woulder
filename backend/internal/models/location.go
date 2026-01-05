@@ -63,6 +63,15 @@ type ClimbingCondition struct {
 	Reasons []string `json:"reasons"` // Contributing factors
 }
 
+// PestConditions represents pest activity levels
+type PestConditions struct {
+	MosquitoLevel    string   `json:"mosquito_level"`     // "low", "moderate", "high", "very_high", "extreme"
+	MosquitoScore    int      `json:"mosquito_score"`     // 0-100
+	OutdoorPestLevel string   `json:"outdoor_pest_level"` // "low", "moderate", "high", "very_high", "extreme"
+	OutdoorPestScore int      `json:"outdoor_pest_score"` // 0-100
+	Factors          []string `json:"factors"`            // Contributing factors
+}
+
 // WeatherForecast represents forecast data
 type WeatherForecast struct {
 	LocationID       int                `json:"location_id"`
@@ -79,6 +88,7 @@ type WeatherForecast struct {
 	TodayCondition   *ClimbingCondition `json:"today_condition,omitempty"`      // Today's overall climbing condition
 	RainLast48h      *float64           `json:"rain_last_48h,omitempty"`        // Total rain in last 48 hours (inches)
 	RainNext48h      *float64           `json:"rain_next_48h,omitempty"`        // Forecast rain in next 48 hours (inches)
+	PestConditions   *PestConditions    `json:"pest_conditions,omitempty"`      // Pest activity levels (mosquitoes, outdoor pests)
 }
 
 // RiverData represents river gauge information with current conditions

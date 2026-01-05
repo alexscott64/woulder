@@ -1,10 +1,8 @@
 import { X, Info, Stone, Waves, Bug, Droplet, AlertTriangle, AlertCircle, TrendingUp, Clock, CalendarCheck } from 'lucide-react';
 import { format } from 'date-fns';
-import { RockDryingStatus, WeatherCondition } from '../types/weather';
-import type { PestConditions } from '../utils/pests/analyzers/PestAnalyzer';
+import { RockDryingStatus, WeatherCondition, PestConditions, PestLevel } from '../types/weather';
 import { RiverData } from '../types/river';
 import { useState } from 'react';
-import { PestLevel } from '../utils/pests/calculations/pests';
 import { formatDryTime } from '../utils/weather/formatters';
 import { getConditionBadgeStyles, getConditionColor } from './weather/weatherDisplay';
 
@@ -190,9 +188,9 @@ export function ConditionsModal({
       }
     } else if (tab === 'pests' && pestConditions) {
       // Use the worse of mosquito or outdoor pest levels
-      const worstLevel = pestConditions.mosquitoScore > pestConditions.outdoorPestScore
-        ? pestConditions.mosquitoLevel
-        : pestConditions.outdoorPestLevel;
+      const worstLevel = pestConditions.mosquito_score > pestConditions.outdoor_pest_score
+        ? pestConditions.mosquito_level
+        : pestConditions.outdoor_pest_level;
 
       switch (worstLevel) {
         case 'extreme':
@@ -519,28 +517,28 @@ export function ConditionsModal({
               </div>
 
               {/* Mosquito Activity */}
-              <div className={`rounded-lg p-4 ${getPestLevelBadgeStyles(pestConditions.mosquitoLevel).bg} border-2 ${getPestLevelBadgeStyles(pestConditions.mosquitoLevel).border}`}>
+              <div className={`rounded-lg p-4 ${getPestLevelBadgeStyles(pestConditions.mosquito_level).bg} border-2 ${getPestLevelBadgeStyles(pestConditions.mosquito_level).border}`}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold text-gray-900 dark:text-white">Mosquito Activity</span>
-                  <span className={`font-bold ${getPestLevelBadgeStyles(pestConditions.mosquitoLevel).text}`}>
-                    {pestConditions.mosquitoLevel.toUpperCase()}
+                  <span className={`font-bold ${getPestLevelBadgeStyles(pestConditions.mosquito_level).text}`}>
+                    {pestConditions.mosquito_level.toUpperCase()}
                   </span>
                 </div>
                 <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">
-                  Score: {pestConditions.mosquitoScore}/100
+                  Score: {pestConditions.mosquito_score}/100
                 </p>
               </div>
 
               {/* Outdoor Pest Activity */}
-              <div className={`rounded-lg p-4 ${getPestLevelBadgeStyles(pestConditions.outdoorPestLevel).bg} border-2 ${getPestLevelBadgeStyles(pestConditions.outdoorPestLevel).border}`}>
+              <div className={`rounded-lg p-4 ${getPestLevelBadgeStyles(pestConditions.outdoor_pest_level).bg} border-2 ${getPestLevelBadgeStyles(pestConditions.outdoor_pest_level).border}`}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold text-gray-900 dark:text-white">General Outdoor Pests</span>
-                  <span className={`font-bold ${getPestLevelBadgeStyles(pestConditions.outdoorPestLevel).text}`}>
-                    {pestConditions.outdoorPestLevel.toUpperCase()}
+                  <span className={`font-bold ${getPestLevelBadgeStyles(pestConditions.outdoor_pest_level).text}`}>
+                    {pestConditions.outdoor_pest_level.toUpperCase()}
                   </span>
                 </div>
                 <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">
-                  Score: {pestConditions.outdoorPestScore}/100
+                  Score: {pestConditions.outdoor_pest_score}/100
                 </p>
               </div>
 
