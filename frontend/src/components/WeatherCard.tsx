@@ -14,7 +14,7 @@ import { ConditionsModal } from './ConditionsModal';
 interface WeatherCardProps {
   forecast: WeatherForecast;
   isExpanded: boolean;
-  onToggleExpand: (expanded: boolean) => void;
+  onToggleExpand: (expanded: boolean, todayConditionLevel?: 'good' | 'marginal' | 'bad' | 'do_not_climb') => void;
 }
 
 // Format sun time from ISO string (e.g., "2025-12-27T07:54") to "7:54 AM"
@@ -289,39 +289,38 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
       <div className="p-4 sm:p-6">
         {/* Header */}
         <div className="mb-4">
-          {/* Title and Date row */}
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{location.name}</h2>
+          {/* Title */}
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-2">{location.name}</h2>
+
+          {/* Date and Condition row */}
+          <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {formatInTimeZone(current.timestamp, 'America/Los_Angeles', 'MMM d, h:mm a')}
             </p>
-          </div>
 
-          {/* Today's Condition - Clean inline button */}
-          <button
-            onClick={handleConditionsClick}
-            className="group flex items-center gap-2 hover:opacity-80 transition-opacity"
-            title={hasConditions ? "View today's conditions & details" : "View today's climbing conditions"}
-          >
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm text-gray-600 dark:text-gray-400">Today:</span>
-              <div className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${conditionColor}`} />
-                <span className={`text-sm font-semibold ${conditionBadge.text}`}>
+            {/* Today's Condition - Compact button */}
+            <button
+              onClick={handleConditionsClick}
+              className="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-750 hover:border-gray-300 dark:hover:border-gray-600 transition-all"
+              title="View detailed conditions"
+            >
+              {/* Status with dot */}
+              <div className="flex items-center gap-1">
+                <div className={`w-1.5 h-1.5 rounded-full ${conditionColor}`} />
+                <span className={`text-xs font-semibold ${conditionBadge.text}`}>
                   {conditionLabel}
                 </span>
               </div>
-            </div>
-            {hasConditions && (
-              <>
-                <span className="text-gray-400 dark:text-gray-600">•</span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {conditionsCount} detail{conditionsCount > 1 ? 's' : ''}
+
+              {/* Count + chevron */}
+              {hasConditions && (
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {conditionsCount}
                 </span>
-              </>
-            )}
-            <ChevronRight className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover:translate-x-0.5 transition-transform" />
-          </button>
+              )}
+              <ChevronRight className="w-3 h-3 text-gray-400 dark:text-gray-500 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          </div>
         </div>
 
         {/* Current Weather */}
@@ -446,7 +445,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
       {/* Expandable Forecast Section */}
       <button
-        onClick={() => onToggleExpand(!isExpanded)}
+        onClick={() => onToggleExpand(!isExpanded, todayCondition.level)}
         className={`w-full px-6 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
           isExpanded
             ? `${conditionColor.replace('bg-', 'bg-opacity-20 bg-')} text-gray-900 dark:text-white border-b-0`

@@ -6,7 +6,6 @@ import { ForecastView } from './components/ForecastView';
 import { SettingsModal } from './components/SettingsModal';
 import AreaSelector from './components/AreaSidebar';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
-import { ConditionCalculator } from './utils/weather/analyzers';
 import { getConditionColor } from './components/weather/weatherDisplay';
 import { RefreshCw, WifiOff, ChevronUp, Settings, Github, Heart, Mail } from 'lucide-react';
 import { format } from 'date-fns';
@@ -26,6 +25,7 @@ function Dashboard() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [expandedLocationId, setExpandedLocationId] = useState<number | null>(null);
+  const [expandedTodayCondition, setExpandedTodayCondition] = useState<'good' | 'marginal' | 'bad' | 'do_not_climb' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
 
   // Monitor online/offline status
@@ -146,14 +146,18 @@ function Dashboard() {
               </div>
               {sortedWeather.map((forecast) => {
                 const isExpanded = expandedLocationId === forecast.location_id;
-                const condition = ConditionCalculator.calculateCondition(forecast.current, forecast.historical, forecast.rock_drying_status);
-                const conditionColor = getConditionColor(condition.level);
+                const conditionColor = isExpanded && expandedTodayCondition
+                  ? getConditionColor(expandedTodayCondition)
+                  : getConditionColor('good'); // Fallback
                 return (
                   <div key={forecast.location_id} className={isExpanded ? 'shadow-lg rounded-xl' : ''}>
                     <WeatherCard
                       forecast={forecast}
                       isExpanded={isExpanded}
-                      onToggleExpand={(expanded) => setExpandedLocationId(expanded ? forecast.location_id : null)}
+                      onToggleExpand={(expanded, todayLevel) => {
+                        setExpandedLocationId(expanded ? forecast.location_id : null);
+                        setExpandedTodayCondition(expanded && todayLevel ? todayLevel : null);
+                      }}
                     />
                     {/* Expanded forecast - seamlessly connected to card */}
                     {isExpanded && (
@@ -197,8 +201,7 @@ function Dashboard() {
                   const rowNumber = i / 3;
                   const expandedInThisRow = expandedIndex >= i && expandedIndex < i + 3;
                   const expandedForecast = expandedInThisRow ? sortedWeather.find(f => f.location_id === expandedLocationId) : null;
-                  const expandedCondition = expandedForecast ? ConditionCalculator.calculateCondition(expandedForecast.current, expandedForecast.historical, expandedForecast.rock_drying_status) : null;
-                  const expandedConditionColor = expandedCondition ? getConditionColor(expandedCondition.level) : '';
+                  const expandedConditionColor = expandedTodayCondition ? getConditionColor(expandedTodayCondition) : '';
                   // Calculate position of expanded card within row (0, 1, or 2)
                   const expandedPositionInRow = expandedIndex >= 0 ? expandedIndex - i : -1;
 
@@ -211,7 +214,10 @@ function Dashboard() {
                             key={forecast.location_id}
                             forecast={forecast}
                             isExpanded={expandedLocationId === forecast.location_id}
-                            onToggleExpand={(expanded) => setExpandedLocationId(expanded ? forecast.location_id : null)}
+                            onToggleExpand={(expanded, todayLevel) => {
+                              setExpandedLocationId(expanded ? forecast.location_id : null);
+                              setExpandedTodayCondition(expanded && todayLevel ? todayLevel : null);
+                            }}
                           />
                         ))}
                       </div>

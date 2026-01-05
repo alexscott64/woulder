@@ -38,26 +38,13 @@ export function ConditionsModal({
   const getTabIcon = (tab: TabType) => {
     switch (tab) {
       case 'today':
-        return <CalendarCheck className="w-4 h-4" />;
+        return <CalendarCheck className="w-3.5 h-3.5" />;
       case 'rock':
-        return <Stone className="w-4 h-4" />;
+        return <Stone className="w-3.5 h-3.5" />;
       case 'rivers':
-        return <Waves className="w-4 h-4" />;
+        return <Waves className="w-3.5 h-3.5" />;
       case 'pests':
-        return <Bug className="w-4 h-4" />;
-    }
-  };
-
-  const getTabLabel = (tab: TabType) => {
-    switch (tab) {
-      case 'today':
-        return "Today's Conditions";
-      case 'rock':
-        return 'Rock Conditions';
-      case 'rivers':
-        return 'River Crossings';
-      case 'pests':
-        return 'Pest Activity';
+        return <Bug className="w-3.5 h-3.5" />;
     }
   };
 
@@ -182,7 +169,7 @@ export function ConditionsModal({
           dotColor = 'bg-red-500';
           break;
         case 'poor':
-          dotColor = 'bg-orange-500';
+          dotColor = 'bg-red-500';
           break;
         case 'fair':
           dotColor = 'bg-yellow-500';
@@ -244,27 +231,24 @@ export function ConditionsModal({
           </button>
         </div>
 
-        {/* Mobile-Friendly Tab Navigation */}
-        <div className="px-3 sm:px-4 pt-3 pb-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+        {/* Clean Tab Navigation - Compact & Scrollable */}
+        <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <div className="flex gap-1 overflow-x-auto px-4 py-2" style={{ scrollbarWidth: 'thin' }}>
             {availableTabs.map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full font-medium text-xs sm:text-sm transition-all whitespace-nowrap flex-shrink-0 ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 ${
                   activeTab === tab
-                    ? 'bg-blue-500 text-white shadow-md scale-105'
-                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shadow-sm'
+                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
                 }`}
               >
-                {getTabIcon(tab)}
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  activeTab === tab ? 'bg-white' : getTabStatusDot(tab)
-                }`} />
-                <span className="hidden sm:inline">{getTabLabel(tab)}</span>
-                <span className="sm:hidden">
-                  {tab === 'today' ? 'Today' : tab === 'rock' ? 'Rock' : tab === 'rivers' ? 'Rivers' : 'Pests'}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {getTabIcon(tab)}
+                  <span>{tab === 'today' ? 'Today' : tab === 'rock' ? 'Rock' : tab === 'rivers' ? 'Rivers' : 'Pests'}</span>
+                </div>
+                <div className={`w-1.5 h-1.5 rounded-full ${getTabStatusDot(tab)}`} />
               </button>
             ))}
           </div>
