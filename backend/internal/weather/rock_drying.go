@@ -42,22 +42,33 @@ func (c *RockDryingCalculator) CalculateDryingStatus(
 		}
 	}
 
-	// Check for snow on ground - this is CRITICAL for climbing conditions
+	// Check for snow on ground - this is CRITICAL only for wet-sensitive rocks
 	if snowDepthInches != nil && *snowDepthInches > 0.5 {
-		status := "critical"
-		message := "DO NOT CLIMB - Snow on ground"
+		// Only mark as "critical" for wet-sensitive rocks (sandstone, arkose, graywacke)
+		status := "poor"
+		message := "Snow on ground - rock may be wet"
 
 		if hasWetSensitive {
+			status = "critical"
 			message = "DO NOT CLIMB - " + primaryRock.GroupName + " is wet-sensitive and there is snow on ground"
 		} else if *snowDepthInches > 2.0 {
-			message = "DO NOT CLIMB - Significant snow accumulation on ground"
+			message = "Significant snow accumulation on ground"
 		}
+
+		// Estimate snow melt time based on conditions
+		estimatedDryTime := c.estimateSnowMeltTime(
+			*snowDepthInches,
+			currentWeather,
+			historicalWeather,
+			primaryRock,
+			sunExposure,
+		)
 
 		return models.RockDryingStatus{
 			IsWet:             true,
 			IsSafe:            false,
 			IsWetSensitive:    hasWetSensitive,
-			HoursUntilDry:     999, // Unknown when snow will melt
+			HoursUntilDry:     estimatedDryTime,
 			LastRainTimestamp: time.Now().Format(time.RFC3339),
 			Status:            status,
 			Message:           message,
@@ -81,18 +92,29 @@ func (c *RockDryingCalculator) CalculateDryingStatus(
 		}
 
 		if recentPrecip > 0.1 {
-			status := "critical"
-			message := "DO NOT CLIMB - Freezing temps with recent precipitation (ice on rock)"
+			// Only mark as "critical" for wet-sensitive rocks (sandstone, arkose, graywacke)
+			status := "poor"
+			message := "Freezing temps with recent precipitation - ice on rock"
 
 			if hasWetSensitive {
+				status = "critical"
 				message = "DO NOT CLIMB - " + primaryRock.GroupName + " is wet-sensitive and may have ice"
 			}
+
+			// Estimate ice melt time based on conditions
+			estimatedDryTime := c.estimateIceMeltTime(
+				recentPrecip,
+				currentWeather,
+				historicalWeather,
+				primaryRock,
+				sunExposure,
+			)
 
 			return models.RockDryingStatus{
 				IsWet:             true,
 				IsSafe:            false,
 				IsWetSensitive:    hasWetSensitive,
-				HoursUntilDry:     999, // Unknown when ice will melt
+				HoursUntilDry:     estimatedDryTime,
 				LastRainTimestamp: time.Now().Format(time.RFC3339),
 				Status:            status,
 				Message:           message,
@@ -598,4 +620,204 @@ func (c *RockDryingCalculator) calculateTemperatureVariance(weather []models.Wea
 	variance := varianceSum / float64(len(weather))
 
 	return math.Sqrt(variance) // Return standard deviation
+}
+
+// estimateSnowMeltTime estimates hours until snow melts off rock
+// Based on temperature, sun exposure, and rock thermal properties
+func (c *RockDryingCalculator) estimateSnowMeltTime(
+	snowDepthInches float64,
+	currentWeather *models.WeatherData,
+	historicalWeather []models.WeatherData,
+	rockType models.RockType,
+	sunExposure *models.LocationSunExposure,
+) float64 {
+	// Base melt rate: inches per hour at different temps (empirical values)
+	// Snow melts at ~0.1-0.2 inches per hour at 40°F
+	// Faster at higher temps, slower at lower temps
+
+	temp := currentWeather.Temperature
+
+	// If below freezing, snow won't melt - return very high estimate
+	if temp <= 32 {
+		return 999.0
+	}
+
+	// Calculate base melt rate (inches per hour)
+	// Formula: exponential increase with temperature above freezing
+	// At 35°F: ~0.05 in/hr, at 40°F: ~0.15 in/hr, at 50°F: ~0.4 in/hr, at 60°F: ~0.8 in/hr
+	tempAboveFreezing := temp - 32.0
+	baseMeltRate := 0.02 * math.Pow(1.12, tempAboveFreezing)
+
+	// Sun exposure multiplier (dark rocks absorb more heat, accelerating melt)
+	// South-facing and sun-exposed rocks melt snow faster
+	sunMultiplier := 1.0
+	if sunExposure != nil {
+		// South-facing rocks get most sun in winter (Northern Hemisphere)
+		southFactor := 1.0 + (sunExposure.SouthFacingPercent / 100.0) * 0.5 // Up to +50%
+		// West-facing gets afternoon sun
+		westFactor := 1.0 + (sunExposure.WestFacingPercent / 100.0) * 0.3 // Up to +30%
+		// Tree coverage blocks sun
+		treeFactor := 1.0 - (sunExposure.TreeCoveragePercent / 100.0) * 0.4 // Up to -40%
+
+		sunMultiplier = (southFactor + westFactor) / 2.0 * treeFactor
+	}
+
+	// Rock thermal properties (darker/denser rocks absorb more heat)
+	// Granite (dark, dense) melts snow faster than limestone (light, porous)
+	// Use porosity as proxy: higher porosity = lighter color = slower melt
+	rockMultiplier := 1.0
+	if rockType.PorosityPercent > 0 {
+		// Lower porosity (denser, darker rock) = faster melt
+		// Granite (1% porosity): 1.2x, Sandstone (15% porosity): 0.85x
+		rockMultiplier = 1.3 - (rockType.PorosityPercent / 100.0)
+		if rockMultiplier < 0.7 {
+			rockMultiplier = 0.7 // Cap minimum at 0.7
+		}
+	}
+
+	// Wind factor (wind accelerates sublimation and melt)
+	windMultiplier := 1.0
+	if currentWeather.WindSpeed > 5 {
+		// Moderate wind (5-15 mph) helps: +20%
+		// Strong wind (15+ mph) helps more: +40%
+		if currentWeather.WindSpeed < 15 {
+			windMultiplier = 1.2
+		} else {
+			windMultiplier = 1.4
+		}
+	}
+
+	// Calculate effective melt rate
+	effectiveMeltRate := baseMeltRate * sunMultiplier * rockMultiplier * windMultiplier
+
+	// Ensure minimum melt rate to avoid division by zero or unrealistic estimates
+	if effectiveMeltRate < 0.01 {
+		effectiveMeltRate = 0.01
+	}
+
+	// Calculate hours to melt
+	hoursToMelt := snowDepthInches / effectiveMeltRate
+
+	// Account for forecast: look at upcoming temps to refine estimate
+	// If temps are expected to warm, reduce estimate; if cooling, increase
+	avgForecastTemp := currentWeather.Temperature
+	if len(historicalWeather) > 0 {
+		// Use last few hours as proxy for near-term forecast trend
+		recentCount := int(math.Min(6, float64(len(historicalWeather))))
+		tempSum := 0.0
+		for i := 0; i < recentCount; i++ {
+			tempSum += historicalWeather[i].Temperature
+		}
+		avgForecastTemp = tempSum / float64(recentCount)
+	}
+
+	// Adjust based on temperature trend
+	if avgForecastTemp > temp {
+		// Warming trend: faster melt
+		hoursToMelt *= 0.85
+	} else if avgForecastTemp < temp-5 {
+		// Cooling trend: slower melt
+		hoursToMelt *= 1.3
+	}
+
+	// Cap at reasonable maximum (2 weeks = 336 hours)
+	if hoursToMelt > 336 {
+		hoursToMelt = 336
+	}
+
+	// Add base time for rock to dry after snow melts
+	// Use rock's base drying time as proxy (rock needs to dry after snow melts)
+	rockDryTime := rockType.BaseDryingHours * 0.5 // Snow melt water dries faster than rain
+
+	return hoursToMelt + rockDryTime
+}
+
+// estimateIceMeltTime estimates hours until ice melts from rock
+// Ice from frozen precipitation is thinner than snow, melts faster
+func (c *RockDryingCalculator) estimateIceMeltTime(
+	recentPrecipInches float64,
+	currentWeather *models.WeatherData,
+	historicalWeather []models.WeatherData,
+	rockType models.RockType,
+	sunExposure *models.LocationSunExposure,
+) float64 {
+	temp := currentWeather.Temperature
+
+	// If at or below freezing, ice won't melt soon
+	if temp <= 32 {
+		return 999.0
+	}
+
+	// Ice thickness estimate (conservative): recent precip forms thin ice layer
+	// Assume 10:1 ratio (0.1" rain = ~1" of ice coating)
+	iceThicknessInches := recentPrecipInches * 10.0
+
+	// Ice melts faster than snow at same temp (denser, better heat conduction)
+	// Base melt rate is ~50% faster than snow
+	tempAboveFreezing := temp - 32.0
+	baseMeltRate := 0.03 * math.Pow(1.15, tempAboveFreezing) // Faster than snow
+
+	// Apply similar modifiers as snow melt
+	sunMultiplier := 1.0
+	if sunExposure != nil {
+		southFactor := 1.0 + (sunExposure.SouthFacingPercent / 100.0) * 0.6 // Ice benefits more from sun
+		westFactor := 1.0 + (sunExposure.WestFacingPercent / 100.0) * 0.4
+		treeFactor := 1.0 - (sunExposure.TreeCoveragePercent / 100.0) * 0.5
+
+		sunMultiplier = (southFactor + westFactor) / 2.0 * treeFactor
+	}
+
+	// Rock thermal properties (same logic as snow)
+	rockMultiplier := 1.0
+	if rockType.PorosityPercent > 0 {
+		rockMultiplier = 1.3 - (rockType.PorosityPercent / 100.0)
+		if rockMultiplier < 0.7 {
+			rockMultiplier = 0.7
+		}
+	}
+
+	// Wind helps sublimate ice
+	windMultiplier := 1.0
+	if currentWeather.WindSpeed > 5 {
+		if currentWeather.WindSpeed < 15 {
+			windMultiplier = 1.3 // Wind more effective on ice
+		} else {
+			windMultiplier = 1.6
+		}
+	}
+
+	effectiveMeltRate := baseMeltRate * sunMultiplier * rockMultiplier * windMultiplier
+
+	if effectiveMeltRate < 0.01 {
+		effectiveMeltRate = 0.01
+	}
+
+	hoursToMelt := iceThicknessInches / effectiveMeltRate
+
+	// Adjust for temperature trend
+	avgForecastTemp := currentWeather.Temperature
+	if len(historicalWeather) > 0 {
+		recentCount := int(math.Min(6, float64(len(historicalWeather))))
+		tempSum := 0.0
+		for i := 0; i < recentCount; i++ {
+			tempSum += historicalWeather[i].Temperature
+		}
+		avgForecastTemp = tempSum / float64(recentCount)
+	}
+
+	if avgForecastTemp > temp {
+		hoursToMelt *= 0.8 // Warming = faster melt
+	} else if avgForecastTemp < temp-5 {
+		hoursToMelt *= 1.4 // Cooling = slower melt
+	}
+
+	// Cap at reasonable maximum
+	if hoursToMelt > 168 { // 1 week max for ice
+		hoursToMelt = 168
+	}
+
+	// Add rock drying time after ice melts
+	rockDryTime := rockType.BaseDryingHours * 0.4 // Ice melt water dries quickly
+
+	return hoursToMelt + rockDryTime
 }

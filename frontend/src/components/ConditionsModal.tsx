@@ -5,6 +5,7 @@ import type { PestConditions } from '../utils/pests/analyzers/PestAnalyzer';
 import { RiverData } from '../types/river';
 import { useState } from 'react';
 import { PestLevel } from '../utils/pests/calculations/pests';
+import { formatDryTime } from '../utils/weather/formatters';
 
 interface ConditionsModalProps {
   locationName: string;
@@ -58,7 +59,7 @@ export function ConditionsModal({
       case 'critical':
         return 'text-red-600 dark:text-red-400';
       case 'poor':
-        return 'text-orange-600 dark:text-orange-400';
+        return 'text-red-500 dark:text-red-300'; // Changed from orange to red
       case 'fair':
         return 'text-yellow-600 dark:text-yellow-400';
       case 'good':
@@ -73,7 +74,7 @@ export function ConditionsModal({
       case 'critical':
         return 'bg-red-100 dark:bg-red-900/30';
       case 'poor':
-        return 'bg-orange-100 dark:bg-orange-900/30';
+        return 'bg-red-50 dark:bg-red-900/20'; // Changed from orange to red (lighter shade)
       case 'fair':
         return 'bg-yellow-100 dark:bg-yellow-900/30';
       case 'good':
@@ -286,7 +287,7 @@ export function ConditionsModal({
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Estimated Dry Time</span>
                     <span className="text-lg font-bold text-gray-900 dark:text-white">
-                      {Math.ceil(rockStatus.hours_until_dry)}h
+                      {formatDryTime(rockStatus.hours_until_dry)}
                     </span>
                   </div>
                   {rockStatus.last_rain_timestamp && (
