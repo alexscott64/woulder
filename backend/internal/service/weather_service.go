@@ -199,17 +199,8 @@ func (s *WeatherService) calculateRockDryingStatus(
 ) (*models.RockDryingStatus, error) {
 	// Get rock types
 	rockTypes, err := s.repo.GetRockTypesByLocation(ctx, location.ID)
-
-	// If no rock types configured, use generic defaults based on conditions
 	if err != nil || len(rockTypes) == 0 {
-		// Return a reasonable estimate based on weather conditions alone
-		status := s.rockCalculator.CalculateDryingStatusWithoutRockType(
-			current,
-			historical,
-			location.HasSeepageRisk,
-			snowDepth,
-		)
-		return &status, nil
+		return nil, fmt.Errorf("no rock types for location")
 	}
 
 	// Get sun exposure

@@ -637,9 +637,43 @@ func (c *RockDryingCalculator) estimateSnowMeltTime(
 
 	temp := currentWeather.Temperature
 
-	// If below freezing, snow won't melt - return very high estimate
+	// Check if it will warm up above freezing soon by looking at historical/forecast trends
+	// Look at recent temps to see if there's a warming trend
+	avgRecentTemp := temp
+	if len(historicalWeather) > 0 {
+		recentCount := int(math.Min(12, float64(len(historicalWeather)))) // Look at last 12 hours
+		tempSum := 0.0
+		for i := 0; i < recentCount; i++ {
+			tempSum += historicalWeather[i].Temperature
+		}
+		avgRecentTemp = tempSum / float64(recentCount)
+	}
+
+	// If current temp is at/below freezing AND no warming trend, return high estimate
+	// But not 999 - give a reasonable estimate based on seasonal expectations
 	if temp <= 32 {
-		return 999.0
+		// If warming trend exists (avg recent temps are warmer), use avg temp for estimate
+		if avgRecentTemp > 34 {
+			// Use average temp which is above freezing
+			temp = avgRecentTemp
+		} else {
+			// No warming trend - estimate based on typical spring/winter patterns
+			// In winter (Dec-Feb), snow can persist for weeks
+			// In spring/fall (Mar-May, Sep-Nov), typically melts within a few days
+			// In summer (Jun-Aug), unlikely to have snow, but if we do, melts fast
+			currentMonth := time.Now().Month()
+
+			if currentMonth >= 6 && currentMonth <= 8 {
+				// Summer - assume will melt within 2-3 days even if cold now
+				return 48.0 + (snowDepthInches * 12.0) // 48h base + 12h per inch
+			} else if currentMonth == 3 || currentMonth == 4 || currentMonth == 5 || currentMonth == 9 || currentMonth == 10 {
+				// Spring/Fall - typically melts within a week
+				return 96.0 + (snowDepthInches * 24.0) // 4 days base + 24h per inch
+			} else {
+				// Winter - can persist for 1-2 weeks
+				return 168.0 + (snowDepthInches * 36.0) // 1 week base + 36h per inch
+			}
+		}
 	}
 
 	// Calculate base melt rate (inches per hour)
@@ -743,9 +777,40 @@ func (c *RockDryingCalculator) estimateIceMeltTime(
 ) float64 {
 	temp := currentWeather.Temperature
 
-	// If at or below freezing, ice won't melt soon
+	// Check for warming trend (same logic as snow melt)
+	avgRecentTemp := temp
+	if len(historicalWeather) > 0 {
+		recentCount := int(math.Min(12, float64(len(historicalWeather))))
+		tempSum := 0.0
+		for i := 0; i < recentCount; i++ {
+			tempSum += historicalWeather[i].Temperature
+		}
+		avgRecentTemp = tempSum / float64(recentCount)
+	}
+
+	// If at or below freezing AND no warming trend, return reasonable estimate
 	if temp <= 32 {
-		return 999.0
+		// If warming trend exists, use avg temp
+		if avgRecentTemp > 34 {
+			temp = avgRecentTemp
+		} else {
+			// Ice melts faster than snow, so use shorter estimates
+			currentMonth := time.Now().Month()
+
+			// Estimate based on ice thickness (precip amount)
+			iceThicknessInches := recentPrecipInches * 10.0
+
+			if currentMonth >= 6 && currentMonth <= 8 {
+				// Summer - ice melts within 1-2 days
+				return 24.0 + (iceThicknessInches * 8.0)
+			} else if currentMonth == 3 || currentMonth == 4 || currentMonth == 5 || currentMonth == 9 || currentMonth == 10 {
+				// Spring/Fall - ice melts within 2-4 days
+				return 48.0 + (iceThicknessInches * 12.0)
+			} else {
+				// Winter - ice can persist for a week
+				return 84.0 + (iceThicknessInches * 18.0)
+			}
+		}
 	}
 
 	// Ice thickness estimate (conservative): recent precip forms thin ice layer

@@ -4,16 +4,19 @@
 
 /**
  * Format dry time for display
- * Handles the special case of 999h (unknown dry time for snow/ice)
+ * Converts hours to days for long estimates
  */
 export function formatDryTime(hoursUntilDry: number): string {
-  if (hoursUntilDry >= 999) {
-    return 'Unknown (snow/ice)';
-  }
-
   if (hoursUntilDry < 1) {
     return '<1h';
   }
 
-  return `${Math.ceil(hoursUntilDry)}h`;
+  // Show in hours for estimates under 3 days
+  if (hoursUntilDry < 72) {
+    return `${Math.ceil(hoursUntilDry)}h`;
+  }
+
+  // Show in days for longer estimates
+  const days = Math.ceil(hoursUntilDry / 24);
+  return `${days}d`;
 }
