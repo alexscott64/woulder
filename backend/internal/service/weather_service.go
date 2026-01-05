@@ -80,6 +80,17 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 	}
 
 	// 6. Build response with fresh API data
+	var dailySunTimes []models.DailySunTimes
+	if sunTimes != nil && len(sunTimes.Daily) > 0 {
+		for _, st := range sunTimes.Daily {
+			dailySunTimes = append(dailySunTimes, models.DailySunTimes{
+				Date:    st.Date,
+				Sunrise: st.Sunrise,
+				Sunset:  st.Sunset,
+			})
+		}
+	}
+
 	forecast := &models.WeatherForecast{
 		LocationID:       locationID,
 		Location:         *location,
@@ -88,6 +99,7 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 		Historical:       historical,
 		Sunrise:          sunrise,
 		Sunset:           sunset,
+		DailySunTimes:    dailySunTimes,
 		RockDryingStatus: rockStatus,
 		SnowDepthInches:  snowDepth,
 		DailySnowDepth:   dailySnowDepth,

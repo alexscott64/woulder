@@ -291,10 +291,9 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
     dailySunTimes.forEach(st => sunTimesByDate.set(st.date, st));
   }
 
-  // Use local timezone to get today's date
+  // Use Pacific timezone to get today's date (must match WeatherCard logic)
   const now = new Date();
-  const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const todayStr = format(localToday, 'yyyy-MM-dd');
+  const todayStr = formatInTimeZone(now, 'America/Los_Angeles', 'yyyy-MM-dd');
 
   // Include current weather in the data if provided
   const allData = currentWeather ? [currentWeather, ...hourlyData] : hourlyData;
