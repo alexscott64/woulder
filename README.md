@@ -315,15 +315,19 @@ woulder/
 │   │   │   ├── river.ts          # River crossing types
 │   │   │   └── area.ts           # Area types
 │   │   ├── utils/                # Utility functions
-│   │   │   ├── weather/          # Weather utilities
-│   │   │   │   ├── calculations/ # Pure math (Layer 1)
-│   │   │   │   ├── analyzers/    # Business logic (Layer 2)
-│   │   │   │   ├── formatters.ts # Display formatters
-│   │   │   │   └── __tests__/    # Weather tests
-│   │   │   └── pests/            # Pest utilities
-│   │   │       ├── calculations/ # Pure math (Layer 1)
-│   │   │       ├── analyzers/    # Business logic (Layer 2)
-│   │   │       └── __tests__/    # Pest tests
+│   │   │   ├── geolocation.ts    # Location utilities
+│   │   │   └── weather/          # Weather display utilities
+│   │   │       ├── analyzers/    # Display helpers
+│   │   │       │   ├── ConditionCalculator.ts  # Condition colors/labels
+│   │   │       │   ├── TemperatureAnalyzer.ts  # Temperature display
+│   │   │       │   ├── WindAnalyzer.ts         # Wind display
+│   │   │       │   └── index.ts
+│   │   │       ├── calculations/ # (Moved to backend)
+│   │   │       │   └── index.ts  # Re-exports for compatibility
+│   │   │       ├── formatters.ts # Display formatters (dry time, snow)
+│   │   │       ├── index.ts
+│   │   │       └── __tests__/
+│   │   │           └── dryTimeDisplay.test.ts
 │   │   └── App.tsx               # Root component
 │   ├── .env                      # Frontend configuration
 │   ├── package.json              # npm dependencies
@@ -348,25 +352,32 @@ woulder/
 
 ## Architecture
 
-woulder uses a **three-layer architecture** to separate concerns:
+woulder uses a **backend-centric architecture** that separates domain calculations from presentation:
 
-### Layer 1: Calculations (Pure Math)
-- **Location**: `frontend/src/utils/*/calculations/`
-- **Purpose**: Pure domain calculations with no business logic
-- **Examples**: Temperature conversions, snow physics, pest scoring formulas
-- **Testing**: Unit tests for mathematical correctness
+### Backend (Go) - Domain Logic & Calculations
+- **Location**: `backend/internal/`
+- **Purpose**: All weather intelligence, pest analysis, and condition calculations
+- **Modules**:
+  - `weather/rock_drying/` - Multi-factor rock drying calculations with snow/ice melt estimation
+  - `weather/calculator/` - Snow accumulation physics (SWE-based model)
+  - `weather/conditions.go` - Climbing condition analysis (temperature, wind, precipitation)
+  - `pests/analyzer.go` - Pest activity forecasting (mosquitoes, outdoor pests)
+  - `rivers/usgs_client.go` - River crossing safety assessment
+- **Benefits**: Consistent calculations, easier testing, single source of truth
+- **Testing**: Comprehensive Go unit tests for all domain logic
 
-### Layer 2: Analyzers (Business Logic)
-- **Location**: `frontend/src/utils/*/analyzers/`
-- **Purpose**: Climbing-specific condition assessments
-- **Examples**: "Is it too cold to climb?", "Are surfaces dry?", "Is river safe?"
-- **Testing**: Unit tests for decision logic
-
-### Layer 3: Components (UI Presentation)
-- **Location**: `frontend/src/components/*/`
-- **Purpose**: Visual presentation and user interaction
-- **Examples**: Color coding, labels, icons, charts
-- **Testing**: Component tests for rendering
+### Frontend (React/TypeScript) - Presentation & Display
+- **Location**: `frontend/src/`
+- **Purpose**: UI presentation, formatting, and user interaction
+- **Layers**:
+  - **Display Helpers** (`utils/weather/analyzers/`) - Minimal UI logic (condition colors, labels)
+    - `ConditionCalculator.ts` - Condition level to color/label mapping
+    - `TemperatureAnalyzer.ts` - Temperature display formatting
+    - `WindAnalyzer.ts` - Wind display formatting
+  - **Formatters** (`utils/weather/formatters.ts`) - Display string formatting (dry time, snow depth)
+  - **Components** (`components/`) - Visual components and user interaction
+- **Data Flow**: Backend API → React Query cache → Component display
+- **Testing**: Vitest unit tests for formatters and display logic
 
 ---
 
