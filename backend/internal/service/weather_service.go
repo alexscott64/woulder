@@ -134,25 +134,8 @@ func (s *WeatherService) calculateSnowDepth(
 	// Combine current and hourly into future data
 	futureData := append([]models.WeatherData{*current}, hourly...)
 
-	// DEBUG: Log data being used (only for Money Creek - location ID 1)
-	if location.ID == 1 {
-		log.Printf("[SNOW DEBUG] calculateSnowDepth for location %d (%s)", location.ID, location.Name)
-		log.Printf("  Historical count: %d", len(historical))
-		if len(historical) > 0 {
-			log.Printf("  Historical range: %s to %s", historical[0].Timestamp, historical[len(historical)-1].Timestamp)
-		}
-		log.Printf("  FutureData count: %d", len(futureData))
-		if len(futureData) > 0 {
-			log.Printf("  FutureData range: %s to %s", futureData[0].Timestamp, futureData[len(futureData)-1].Timestamp)
-		}
-	}
-
 	// Calculate snow depth
 	snowDepth := calculator.GetCurrentSnowDepth(historical, futureData, float64(location.ElevationFt))
-
-	if location.ID == 1 {
-		log.Printf("  Result: %.2f\"", snowDepth)
-	}
 
 	// Return snow depth (even if zero, for visibility)
 	return &snowDepth
@@ -167,19 +150,6 @@ func (s *WeatherService) calculateDailySnowDepth(
 ) map[string]float64 {
 	// Combine current and hourly into future data
 	futureData := append([]models.WeatherData{*current}, hourly...)
-
-	// DEBUG: Log data being used (only for Money Creek - location ID 1)
-	if location.ID == 1 {
-		log.Printf("[SNOW DEBUG] calculateDailySnowDepth for location %d (%s)", location.ID, location.Name)
-		log.Printf("  Historical count: %d", len(historical))
-		if len(historical) > 0 {
-			log.Printf("  Historical range: %s to %s", historical[0].Timestamp, historical[len(historical)-1].Timestamp)
-		}
-		log.Printf("  FutureData count: %d", len(futureData))
-		if len(futureData) > 0 {
-			log.Printf("  FutureData range: %s to %s", futureData[0].Timestamp, futureData[len(futureData)-1].Timestamp)
-		}
-	}
 
 	// Calculate daily snow depth forecast
 	dailySnowDepth := calculator.CalculateSnowAccumulation(historical, futureData, float64(location.ElevationFt))
@@ -200,14 +170,6 @@ func (s *WeatherService) calculateDailySnowDepth(
 			if location.ID == 1 {
 				log.Printf("  Added missing today (%s) with current snow depth: %.2f\"", todayKey, currentSnowDepth)
 			}
-		}
-	}
-
-	// DEBUG: Log results (only for Money Creek - location ID 1)
-	if location.ID == 1 {
-		log.Printf("  Daily snow depth map:")
-		for date, depth := range dailySnowDepth {
-			log.Printf("    %s: %.2f\"", date, depth)
 		}
 	}
 
@@ -237,14 +199,23 @@ func (s *WeatherService) calculateRockDryingStatus(
 ) (*models.RockDryingStatus, error) {
 	// Get rock types
 	rockTypes, err := s.repo.GetRockTypesByLocation(ctx, location.ID)
+
+	// If no rock types configured, use generic defaults based on conditions
 	if err != nil || len(rockTypes) == 0 {
-		return nil, fmt.Errorf("no rock types for location")
+		// Return a reasonable estimate based on weather conditions alone
+		status := s.rockCalculator.CalculateDryingStatusWithoutRockType(
+			current,
+			historical,
+			location.HasSeepageRisk,
+			snowDepth,
+		)
+		return &status, nil
 	}
 
 	// Get sun exposure
 	sunExposure, _ := s.repo.GetSunExposureByLocation(ctx, location.ID)
 
-	// Calculate
+	// Calculate with full rock type data
 	status := s.rockCalculator.CalculateDryingStatus(
 		rockTypes,
 		current,
