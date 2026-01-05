@@ -270,17 +270,25 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
   }, [filteredHourlyData]);
 
   // Calculate total rain from last 48 hours (affects climbing conditions)
-  // Filter historical data to only include last 48 hours, then sum precipitation
+  // Use ALL data (historical + current/hourly) to match WeatherCard display calculation
   const currentTime = new Date();
   const fortyEightHoursAgo = currentTime.getTime() - 48 * 60 * 60 * 1000;
-  const historical48hRain = historicalData && historicalData.length > 0
-    ? historicalData
-        .filter(d => {
-          const time = new Date(d.timestamp).getTime();
-          return time >= fortyEightHoursAgo && time <= currentTime.getTime();
-        })
-        .reduce((sum, h) => sum + h.precipitation, 0)
-    : 0;
+
+  // Combine and deduplicate all data by timestamp
+  const allDataForRainCalc = new Map<string, WeatherData>();
+  const safeHistorical = historicalData || [];
+  const safeHourly = hourlyData || [];
+  [...safeHistorical, ...safeHourly].forEach(d => {
+    allDataForRainCalc.set(d.timestamp.toString(), d);
+  });
+
+  // Calculate rain in last 48h
+  const historical48hRain = Array.from(allDataForRainCalc.values())
+    .filter(d => {
+      const time = new Date(d.timestamp).getTime();
+      return time >= fortyEightHoursAgo && time <= currentTime.getTime();
+    })
+    .reduce((sum, d) => sum + d.precipitation, 0);
 
   // Group hourly data by day
   const dailyForecasts: DayForecast[] = [];
@@ -406,6 +414,11 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
 
       hours.forEach(hc => {
         hc.condition.reasons.forEach(reason => {
+          // Skip "Drying slowly" or "recent rain" reasons - we'll add unified 48h calculation
+          if (reason.includes('Drying slowly') || reason.includes('recent rain') || reason.includes('Recent rain')) {
+            return;
+          }
+
           // Extract factor type and value from reason string
           // Examples: "High humidity (90%)", "Cold (38°F)", "Heavy rain (0.15in/3h)"
 

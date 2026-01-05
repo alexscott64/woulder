@@ -80,10 +80,16 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
     const marginalHours = relevantConditions.filter(hc => hc.condition.level === 'marginal');
 
     // Consolidate reasons - same as ForecastView
+    // Skip "recent rain" reasons from hourly calculations since we'll add unified 48h total below
     const consolidateReasons = (hours: typeof hourConditions) => {
       const factorMap = new Map<string, { reason: string; value: number }>();
       hours.forEach(hc => {
         hc.condition.reasons.forEach(reason => {
+          // Skip "Drying slowly" or "recent rain" reasons - we'll add unified 48h calculation
+          if (reason.includes('Drying slowly') || reason.includes('recent rain') || reason.includes('Recent rain')) {
+            return;
+          }
+
           if (reason.includes('humidity')) {
             const match = reason.match(/(\d+)%/);
             if (match) {
@@ -157,23 +163,31 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
       reasons.push('Good climbing conditions all day');
     }
 
-    // Factor in historical rain
+    // Factor in rain from last 48 hours - use ALL data (historical + current/hourly)
+    // This matches the display calculation to avoid confusion
     const currentTime = new Date();
     const fortyEightHoursAgo = currentTime.getTime() - 48 * 60 * 60 * 1000;
-    const historical48hRain = historical && historical.length > 0
-      ? historical
-          .filter(d => {
-            const time = new Date(d.timestamp).getTime();
-            return time >= fortyEightHoursAgo && time <= currentTime.getTime();
-          })
-          .reduce((sum, h) => sum + h.precipitation, 0)
-      : 0;
 
-    if (historical48hRain > 0.5) {
+    // Combine and deduplicate all data by timestamp
+    const allDataMap = new Map<string, typeof current>();
+    const safeHistorical = historical || [];
+    const safeHourly = hourly || [];
+    [...safeHistorical, ...safeHourly].forEach(d => {
+      allDataMap.set(d.timestamp.toString(), d);
+    });
+
+    // Calculate total rain in last 48h from all available data
+    const past48hData = Array.from(allDataMap.values()).filter(d => {
+      const time = new Date(d.timestamp).getTime();
+      return time >= fortyEightHoursAgo && time <= currentTime.getTime();
+    });
+    const rainLast48h = past48hData.reduce((sum, d) => sum + d.precipitation, 0);
+
+    if (rainLast48h > 0.5) {
       if (level === 'good') level = 'marginal';
-      reasons.push(`Recent heavy rain (${historical48hRain.toFixed(2)}in in last 48h)`);
-    } else if (historical48hRain > 0.2) {
-      reasons.push(`Recent rain (${historical48hRain.toFixed(2)}in in last 48h)`);
+      reasons.push(`Recent heavy rain (${rainLast48h.toFixed(2)}in in last 48h)`);
+    } else if (rainLast48h > 0.2) {
+      reasons.push(`Recent rain (${rainLast48h.toFixed(2)}in in last 48h)`);
     }
 
     return { level, reasons };
