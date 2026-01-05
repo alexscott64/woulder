@@ -26,6 +26,14 @@ Track comprehensive climbing conditions including weather, river crossings, pest
 
 ### Advanced Condition Monitoring
 
+#### Rock Drying Intelligence
+- **Multi-Factor Analysis** - Temperature, humidity, wind, sun exposure, rock type
+- **Snow/Ice Melt Estimation** - Season-aware calculations (no more "unknown")
+- **Wet-Sensitive Detection** - Critical warnings for sandstone, arkose, graywacke
+- **Time-Weighted Drying** - Realistic estimates based on actual conditions
+- **Confidence Scoring** - 0-100% confidence in predictions
+- **Critical Override** - Wet-sensitive rock status automatically sets "DO NOT CLIMB"
+
 #### River Crossing Safety
 - **Real-time Flow Data** - Live USGS stream gauge readings
 - **Safety Assessments** - Safe/Caution/Unsafe indicators
@@ -119,6 +127,7 @@ Track comprehensive climbing conditions including weather, river crossings, pest
 - **[docs/river-crossing-calculation.md](docs/river-crossing-calculation.md)** - River safety assessment methodology
 - **[docs/snow-accumulation-calculation.md](docs/snow-accumulation-calculation.md)** - Snow physics and modeling
 - **[docs/precipitation-rating.md](docs/precipitation-rating.md)** - Precipitation condition assessment
+- **[backend/internal/weather/rock_drying/README.md](backend/internal/weather/rock_drying/README.md)** - Rock drying module documentation
 
 
 ---
@@ -137,17 +146,19 @@ npm run test:coverage   # Generate coverage report
 ```
 
 **Test Coverage:**
-- 189 tests across 7 test suites
+- 40+ frontend tests across 3 test suites
 - Weather analyzers (temperature, wind, precipitation, conditions)
-- Pest activity calculations
+- Weather display formatters (dry time, snow depth)
 - UI display components
-- Regression tests for critical bugs
+- Backend tests for rock drying, pest activity, and conditions
 
 **Test Files:**
-- `src/utils/weather/analyzers/__tests__/` - Weather calculation tests
-- `src/utils/pests/analyzers/__tests__/` - Pest calculation tests
-- `src/components/weather/__tests__/` - Weather UI tests
-- `src/components/pests/__tests__/` - Pest UI tests
+- `frontend/src/utils/weather/__tests__/` - Weather formatters and utilities
+- `frontend/src/components/weather/__tests__/` - Weather display components
+- `frontend/src/services/__tests__/` - API client tests
+- `backend/internal/weather/rock_drying/*_test.go` - Rock drying tests
+- `backend/internal/pests/analyzer_test.go` - Pest analyzer tests
+- `backend/internal/weather/conditions_test.go` - Condition tests
 
 ### Backend Tests
 
@@ -252,11 +263,28 @@ woulder/
 │   │   │   ├── db.go             # Query methods
 │   │   │   └── migrations/       # SQL migrations
 │   │   ├── models/               # Data structures
-│   │   │   ├── location.go       # Location & River models
+│   │   │   ├── location.go       # Location, River, Weather models
+│   │   │   ├── rock_type.go      # Rock type & sun exposure models
 │   │   │   └── area.go           # Area model
-│   │   ├── weather/              # Weather service
-│   │   │   ├── service.go        # Weather service orchestration
-│   │   │   └── openmeteo_client.go  # Open-Meteo API client
+│   │   ├── service/              # Business logic layer
+│   │   │   └── weather_service.go # Weather service orchestration
+│   │   ├── weather/              # Weather domain
+│   │   │   ├── client/
+│   │   │   │   └── openmeteo.go  # Open-Meteo API client
+│   │   │   ├── calculator/       # Snow accumulation calculations
+│   │   │   │   └── snow_accumulation.go
+│   │   │   ├── rock_drying/      # Rock drying module (modular)
+│   │   │   │   ├── calculator.go # Main calculator & status logic
+│   │   │   │   ├── drying_time.go # Drying time estimation
+│   │   │   │   ├── snow_melt.go  # Snow melt calculations
+│   │   │   │   ├── ice_melt.go   # Ice melt calculations
+│   │   │   │   ├── confidence.go # Confidence scoring
+│   │   │   │   ├── snow_melt_test.go # Comprehensive tests
+│   │   │   │   └── README.md     # Module documentation
+│   │   │   └── conditions.go     # Climbing condition analysis
+│   │   ├── pests/                # Pest activity domain
+│   │   │   ├── analyzer.go       # Pest condition analyzer
+│   │   │   └── analyzer_test.go  # Pest analyzer tests
 │   │   └── rivers/               # River data service
 │   │       └── usgs_client.go    # USGS API client
 │   ├── .env                      # Configuration (not in git)
@@ -266,8 +294,9 @@ woulder/
 │   ├── src/
 │   │   ├── components/           # React components
 │   │   │   ├── WeatherCard.tsx   # Main weather display
-│   │   │   ├── ForecastView.tsx  # Detailed forecast modal
-│   │   │   ├── AreaSidebar.tsx   # Area filtering sidebar
+│   │   │   ├── ForecastView.tsx  # 6-day forecast view
+│   │   │   ├── ConditionsModal.tsx # Comprehensive conditions modal
+│   │   │   ├── AreaSelector.tsx  # Area filtering component
 │   │   │   ├── SettingsModal.tsx # User settings
 │   │   │   ├── RiverInfoModal.tsx    # River crossing details
 │   │   │   └── PestInfoModal.tsx     # Pest activity details
@@ -282,15 +311,19 @@ woulder/
 │   │   ├── services/             # API client layer
 │   │   │   └── api.ts            # HTTP requests
 │   │   ├── types/                # TypeScript definitions
-│   │   │   ├── weather.ts        # Weather types
+│   │   │   ├── weather.ts        # Weather, rock, pest types
+│   │   │   ├── river.ts          # River crossing types
 │   │   │   └── area.ts           # Area types
 │   │   ├── utils/                # Utility functions
 │   │   │   ├── weather/          # Weather utilities
 │   │   │   │   ├── calculations/ # Pure math (Layer 1)
-│   │   │   │   └── analyzers/    # Business logic (Layer 2)
+│   │   │   │   ├── analyzers/    # Business logic (Layer 2)
+│   │   │   │   ├── formatters.ts # Display formatters
+│   │   │   │   └── __tests__/    # Weather tests
 │   │   │   └── pests/            # Pest utilities
 │   │   │       ├── calculations/ # Pure math (Layer 1)
-│   │   │       └── analyzers/    # Business logic (Layer 2)
+│   │   │       ├── analyzers/    # Business logic (Layer 2)
+│   │   │       └── __tests__/    # Pest tests
 │   │   └── App.tsx               # Root component
 │   ├── .env                      # Frontend configuration
 │   ├── package.json              # npm dependencies
@@ -299,11 +332,12 @@ woulder/
 ├── scripts/                      # Utility scripts
 │   └── init-db.js                # Database initialization
 │
-├── docs/                         # Documentation
+├── docs/                         # Scientific Documentation
 │   ├── pest-activity-calculation.md      # Pest science
 │   ├── river-crossing-calculation.md     # River science
 │   ├── snow-accumulation-calculation.md  # Snow science
 │   └── precipitation-rating.md           # Precipitation science
+│   # Note: Rock drying docs at backend/internal/weather/rock_drying/README.md
 │
 ├── README.md                     # This file
 ├── ADDING_LOCATIONS.md           # Add a location guide
@@ -347,6 +381,7 @@ woulder analyzes multiple factors to determine climbing suitability:
 | **Good** | Green | Ideal climbing conditions across all factors |
 | **Marginal** | Yellow | One or more factors are suboptimal but manageable |
 | **Bad** | Red | One or more factors make climbing unsafe or unpleasant |
+| **Do Not Climb** | Dark Red | Critical safety concerns (wet-sensitive rock when wet) |
 
 ### Factors Analyzed
 
@@ -354,6 +389,18 @@ woulder analyzes multiple factors to determine climbing suitability:
 2. **Temperature** - Ideal (41-65°F), Cold (30-40°F), Warm (66-79°F), Extreme (<30°F, >79°F)
 3. **Wind** - Calm (<12 mph), Moderate (12-20 mph), High (20-30 mph), Dangerous (>30 mph)
 4. **Humidity** - Normal (<85%), High (85-95%), Very High (>95%)
+5. **Rock Status** - Wet-sensitive rocks (sandstone, arkose, graywacke) override overall condition when wet
+
+### Rock Drying Intelligence
+
+woulder provides detailed rock drying estimates with:
+- **Smart Snow/Ice Handling** - Season-aware estimates (no more "unknown")
+  - Summer: 2-3 days for snow to melt
+  - Spring/Fall: 4-7 days
+  - Winter: 1-2 weeks
+- **Warming Trend Detection** - Analyzes last 12 hours of temperature data
+- **Dry Time Display** - Shows hours (<72h) or days (≥72h) for clarity
+- **Critical Safety Override** - Wet sandstone automatically sets condition to "DO NOT CLIMB"
 
 ### Snow Probability
 
@@ -462,12 +509,16 @@ VITE_API_URL=http://localhost:8080
 - [x] Snow accumulation tracking (SWE model)
 - [x] Historical weather data (14 days)
 - [x] Dark mode with persistence
-- [x] Comprehensive test suite (189 tests)
+- [x] Comprehensive test suite (40+ frontend, comprehensive backend)
 - [x] Scientific documentation (58+ pages)
+- [x] Rock drying intelligence with snow/ice melt estimation
+- [x] Modular backend architecture (rock_drying module)
+- [x] Critical safety overrides for wet-sensitive rocks
 
 ### Phase 3: Enhanced Experience 🚧
 - [x] Geographic area filtering
-- [x] Collapsible sidebar
+- [x] Comprehensive conditions modal (Today, Rock, Rivers, Pests)
+- [x] Mobile-optimized UI (no horizontal scrolling)
 - [ ] Service workers for offline support
 - [ ] PWA with install prompt
 - [ ] Push notifications for alerts
