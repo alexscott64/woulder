@@ -12,12 +12,13 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/pests"
 	"github.com/alexscott64/woulder/backend/internal/weather"
 	"github.com/alexscott64/woulder/backend/internal/weather/calculator"
+	"github.com/alexscott64/woulder/backend/internal/weather/rock_drying"
 )
 
 type WeatherService struct {
 	repo           database.Repository
 	weatherClient  *weather.WeatherService
-	rockCalculator *weather.RockDryingCalculator
+	rockCalculator *rock_drying.Calculator
 	pestAnalyzer   *pests.PestAnalyzer
 
 	// Background refresh management
@@ -30,7 +31,7 @@ func NewWeatherService(repo database.Repository, client *weather.WeatherService)
 	return &WeatherService{
 		repo:           repo,
 		weatherClient:  client,
-		rockCalculator: &weather.RockDryingCalculator{},
+		rockCalculator: &rock_drying.Calculator{},
 		pestAnalyzer:   &pests.PestAnalyzer{},
 	}
 }
