@@ -85,18 +85,3 @@ status := calc.CalculateDryingStatus(
 // - Message (human-readable)
 // - ConfidenceScore (0-100)
 ```
-
-## Migration from Old Code
-
-The old monolithic `rock_drying.go` (823 lines) has been refactored into:
-- `calculator.go` (372 lines) - Core logic
-- `drying_time.go` (296 lines) - Drying calculations
-- `snow_melt.go` (156 lines) - Snow melt logic
-- `ice_melt.go` (133 lines) - Ice melt logic
-- `confidence.go` (94 lines) - Confidence scoring
-
-This makes the code:
-- ✅ More maintainable
-- ✅ Easier to test
-- ✅ Better organized by concern
-- ✅ Follows Go best practices
