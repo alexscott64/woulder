@@ -1,4 +1,4 @@
-import { WeatherData, DailySunTimes, WeatherCondition } from '../types/weather';
+import { WeatherData, DailySunTimes, WeatherCondition, RockDryingStatus } from '../types/weather';
 import { TemperatureAnalyzer, ConditionCalculator } from '../utils/weather/analyzers';
 import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl, getSnowDepthColor } from './weather/weatherDisplay';
 import { format } from 'date-fns';
@@ -36,6 +36,7 @@ interface ForecastViewProps {
   dailySunTimes?: DailySunTimes[]; // Sunrise/sunset for each day
   dailySnowDepth?: Record<string, number>; // Backend-calculated daily snow depth forecast
   todayCondition?: WeatherCondition; // Backend-calculated today's condition
+  rockDryingStatus?: RockDryingStatus; // Rock drying status for critical override
 }
 
 interface DayForecast {
@@ -143,7 +144,7 @@ function calculateEffectiveSunHours(
   }
 }
 
-export function ForecastView({ locationId: _locationId, hourlyData, currentWeather, historicalData, elevationFt: _elevationFt = 0, dailySunTimes, dailySnowDepth, todayCondition }: ForecastViewProps) {
+export function ForecastView({ locationId: _locationId, hourlyData, currentWeather, historicalData, elevationFt: _elevationFt = 0, dailySunTimes, dailySnowDepth, todayCondition, rockDryingStatus }: ForecastViewProps) {
   // State for condition details modal
   const [showConditionModal, setShowConditionModal] = useState(false);
   const [selectedDayCondition, setSelectedDayCondition] = useState<{
@@ -370,8 +371,15 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
 
     // For today, use backend-calculated condition (backend is authoritative for today)
     if (isToday && todayCondition) {
-      condition = todayCondition.level;
-      conditionReasons.push(...todayCondition.reasons);
+      // Override to 'do_not_climb' if rock is critical (wet-sensitive like sandstone)
+      if (rockDryingStatus?.status === 'critical') {
+        condition = 'do_not_climb';
+        conditionReasons.push(rockDryingStatus.message);
+        conditionReasons.push(...todayCondition.reasons);
+      } else {
+        condition = todayCondition.level;
+        conditionReasons.push(...todayCondition.reasons);
+      }
     } else {
       // For future days (2-6), calculate on frontend using simplified logic
       // Weight climbing hours (9am-8pm) more heavily for temperature issues

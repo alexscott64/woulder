@@ -32,14 +32,25 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
   // Use backend-calculated condition (backend always provides this)
   const todayCondition = useMemo(() => {
     // Backend should always provide the condition
-    if (today_condition) {
-      return today_condition;
+    if (!today_condition) {
+      // This should never happen - log error and return safe default
+      console.error('Backend did not provide today_condition - this is a bug');
+      return { level: 'good' as const, reasons: ['Weather data unavailable'] };
     }
 
-    // This should never happen - log error and return safe default
-    console.error('Backend did not provide today_condition - this is a bug');
-    return { level: 'good' as const, reasons: ['Weather data unavailable'] };
-  }, [today_condition]);
+    // Override to 'do_not_climb' if rock is critical (wet-sensitive like sandstone)
+    if (rock_drying_status?.status === 'critical') {
+      return {
+        level: 'do_not_climb' as const,
+        reasons: [
+          rock_drying_status.message,
+          ...today_condition.reasons
+        ]
+      };
+    }
+
+    return today_condition;
+  }, [today_condition, rock_drying_status]);
 
   const conditionColor = getConditionColor(todayCondition.level);
   const conditionBadge = getConditionBadgeStyles(todayCondition.level);

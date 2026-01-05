@@ -174,6 +174,7 @@ function Dashboard() {
                             dailySunTimes={forecast.daily_sun_times}
                             dailySnowDepth={forecast.daily_snow_depth}
                             todayCondition={forecast.today_condition}
+                            rockDryingStatus={forecast.rock_drying_status}
                           />
                         </div>
                         <button
@@ -257,6 +258,8 @@ function Dashboard() {
                                 elevationFt={expandedForecast.location.elevation_ft || 0}
                                 dailySunTimes={expandedForecast.daily_sun_times}
                                 dailySnowDepth={expandedForecast.daily_snow_depth}
+                                todayCondition={expandedForecast.today_condition}
+                                rockDryingStatus={expandedForecast.rock_drying_status}
                               />
                             </div>
                             <button
