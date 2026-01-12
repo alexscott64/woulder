@@ -47,6 +47,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 .claude*
+claude.*
 notes*
 scripts*
 
