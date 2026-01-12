@@ -50,6 +50,22 @@ type openMeteoResponse struct {
 		WeatherCode         []int     `json:"weather_code"`
 		ApparentTemperature []float64 `json:"apparent_temperature"`
 		Pressure            []float64 `json:"surface_pressure"`
+		// Multi-model fields for precipitation data
+		PrecipitationNAM []*float64 `json:"precipitation_ncep_nam_conus"`
+		RainNAM          []*float64 `json:"rain_ncep_nam_conus"`
+		SnowfallNAM      []*float64 `json:"snowfall_ncep_nam_conus"`
+		PrecipitationBM  []float64  `json:"precipitation_best_match"`
+		RainBM           []float64  `json:"rain_best_match"`
+		SnowfallBM       []float64  `json:"snowfall_best_match"`
+		// Multi-model fields for other weather data (used when multi-model request)
+		Temperature2mBM       []float64 `json:"temperature_2m_best_match"`
+		RelativeHumidity2mBM  []int     `json:"relative_humidity_2m_best_match"`
+		CloudCoverBM          []int     `json:"cloud_cover_best_match"`
+		WindSpeed10mBM        []float64 `json:"wind_speed_10m_best_match"`
+		WindDirection10mBM    []int     `json:"wind_direction_10m_best_match"`
+		WeatherCodeBM         []int     `json:"weather_code_best_match"`
+		ApparentTemperatureBM []float64 `json:"apparent_temperature_best_match"`
+		PressureBM            []float64 `json:"surface_pressure_best_match"`
 	} `json:"hourly"`
 	Daily *struct {
 		Time    []string `json:"time"`
@@ -79,6 +95,42 @@ func NewOpenMeteoClient() *OpenMeteoClient {
 			Timeout: 10 * time.Second,
 		},
 	}
+}
+
+// mergePrecipitationData merges precipitation data from NCEP NAM CONUS (0-60h) and best_match (fallback)
+// NAM CONUS provides more accurate precipitation forecasts but only for 60 hours
+func mergePrecipitationData(namData []*float64, bmData []float64) []float64 {
+	if len(bmData) == 0 {
+		return []float64{}
+	}
+
+	result := make([]float64, len(bmData))
+	for i := range bmData {
+		// Use NAM data if available (not nil), otherwise fallback to best_match
+		if i < len(namData) && namData[i] != nil {
+			result[i] = *namData[i]
+		} else {
+			result[i] = bmData[i]
+		}
+	}
+	return result
+}
+
+// getHourlyData returns the appropriate data arrays, preferring multi-model best_match fields
+// when available, falling back to single-model fields
+func (r *openMeteoResponse) getHourlyData() (temp, feelsLike []float64, humidity, cloudCover, windDir, weatherCode []int, windSpeed, pressure []float64) {
+	// Prefer multi-model best_match fields if available
+	if len(r.Hourly.Temperature2mBM) > 0 {
+		return r.Hourly.Temperature2mBM, r.Hourly.ApparentTemperatureBM,
+			r.Hourly.RelativeHumidity2mBM, r.Hourly.CloudCoverBM,
+			r.Hourly.WindDirection10mBM, r.Hourly.WeatherCodeBM,
+			r.Hourly.WindSpeed10mBM, r.Hourly.PressureBM
+	}
+	// Fallback to single-model fields
+	return r.Hourly.Temperature2m, r.Hourly.ApparentTemperature,
+		r.Hourly.RelativeHumidity2m, r.Hourly.CloudCover,
+		r.Hourly.WindDirection10m, r.Hourly.WeatherCode,
+		r.Hourly.WindSpeed10m, r.Hourly.Pressure
 }
 
 // parseTimestampUTC parses a timestamp and ensures it's in UTC
@@ -113,9 +165,10 @@ func parseTimestampUTC(timeStr string) (time.Time, error) {
 }
 
 // GetCurrentWeather fetches current weather with both current conditions and hourly forecast
+// Uses NCEP NAM CONUS model for precipitation data with best_match fallback
 func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherData, error) {
 	// Fetch both current and hourly data to get accurate precipitation
-	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=precipitation,rain,snowfall&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=1",
+	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=precipitation,rain,snowfall&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=1&models=ncep_nam_conus,best_match",
 		openMeteoForecastURL, lat, lon)
 
 	resp, err := c.httpClient.Get(url)
@@ -142,18 +195,31 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 		return nil, fmt.Errorf("no hourly data returned from Open-Meteo")
 	}
 
+	// Merge precipitation data: use NAM CONUS if available, fallback to best_match
+	mergedPrecipitation := mergePrecipitationData(data.Hourly.PrecipitationNAM, data.Hourly.PrecipitationBM)
+
+	// Fallback to single-model fields if multi-model not available
+	if len(mergedPrecipitation) == 0 {
+		mergedPrecipitation = data.Hourly.Precipitation
+	}
+
+	// Verify we have precipitation data
+	if len(mergedPrecipitation) == 0 {
+		return nil, fmt.Errorf("no precipitation data returned from Open-Meteo")
+	}
+
 	// Parse current weather timestamp - ensure it's in UTC
 	timestamp, err := parseTimestampUTC(data.Current.Time)
 	if err != nil {
 		return nil, err
 	}
 
-	// Use current conditions but get precipitation from the matching hourly forecast
+	// Use current conditions but get precipitation from the matching hourly forecast (merged data)
 	weather := &models.WeatherData{
 		Timestamp:     timestamp,
 		Temperature:   data.Current.Temperature2m,
 		FeelsLike:     data.Current.ApparentTemperature,
-		Precipitation: data.Hourly.Precipitation[0],
+		Precipitation: mergedPrecipitation[0],
 		Humidity:      data.Current.RelativeHumidity2m,
 		WindSpeed:     data.Current.WindSpeed10m,
 		WindDirection: data.Current.WindDirection10m,
@@ -167,8 +233,9 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 }
 
 // GetCurrentAndForecast fetches both current weather and forecast in a single API call
+// Uses NCEP NAM CONUS model for precipitation data (0-60h) with best_match fallback
 func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *SunTimes, error) {
-	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&daily=sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=America/Los_Angeles&forecast_days=16",
+	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&daily=sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=America/Los_Angeles&forecast_days=16&models=ncep_nam_conus,best_match",
 		openMeteoForecastURL, lat, lon)
 
 	resp, err := c.httpClient.Get(url)
@@ -194,6 +261,22 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 	if len(data.Hourly.Time) == 0 {
 		return nil, nil, nil, fmt.Errorf("no hourly data returned from Open-Meteo")
 	}
+
+	// Merge precipitation data: use NAM CONUS for 0-60h, fallback to best_match
+	mergedPrecipitation := mergePrecipitationData(data.Hourly.PrecipitationNAM, data.Hourly.PrecipitationBM)
+
+	// Fallback to single-model fields if multi-model not available
+	if len(mergedPrecipitation) == 0 {
+		mergedPrecipitation = data.Hourly.Precipitation
+	}
+
+	// Verify we have precipitation data
+	if len(mergedPrecipitation) == 0 {
+		return nil, nil, nil, fmt.Errorf("no precipitation data returned from Open-Meteo")
+	}
+
+	// Get hourly data arrays (handles both multi-model and single-model responses)
+	temp, feelsLike, humidity, cloudCover, windDir, weatherCode, windSpeed, pressure := data.getHourlyData()
 
 	// Extract sunrise/sunset for all days
 	var sunTimes *SunTimes
@@ -224,12 +307,12 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 		isNight = isNightTime(data.Current.Time, sunTimes.Sunrise, sunTimes.Sunset)
 	}
 
-	// Create current weather data
+	// Create current weather data using merged precipitation
 	current := &models.WeatherData{
 		Timestamp:     timestamp,
 		Temperature:   data.Current.Temperature2m,
 		FeelsLike:     data.Current.ApparentTemperature,
-		Precipitation: data.Hourly.Precipitation[0],
+		Precipitation: mergedPrecipitation[0],
 		Humidity:      data.Current.RelativeHumidity2m,
 		WindSpeed:     data.Current.WindSpeed10m,
 		WindDirection: data.Current.WindDirection10m,
@@ -239,9 +322,19 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 		Icon:          getWeatherIconWithTime(data.Current.WeatherCode, isNight),
 	}
 
-	// Parse forecast data (all hourly data)
+	// Parse forecast data (all hourly data) using merged precipitation
 	var forecast []models.WeatherData
 	for i := 0; i < len(data.Hourly.Time); i++ {
+		// Bounds check: ensure all arrays have data for this index
+		if i >= len(temp) || i >= len(feelsLike) ||
+			i >= len(mergedPrecipitation) || i >= len(humidity) ||
+			i >= len(windSpeed) || i >= len(windDir) ||
+			i >= len(cloudCover) || i >= len(pressure) ||
+			i >= len(weatherCode) {
+			log.Printf("Skipping hour %d due to incomplete data arrays", i)
+			continue
+		}
+
 		timestamp, err := parseTimestampUTC(data.Hourly.Time[i])
 		if err != nil {
 			log.Printf("Failed to parse hourly timestamp '%s': %v", data.Hourly.Time[i], err)
@@ -257,16 +350,16 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 
 		weather := models.WeatherData{
 			Timestamp:     timestamp,
-			Temperature:   data.Hourly.Temperature2m[i],
-			FeelsLike:     data.Hourly.ApparentTemperature[i],
-			Precipitation: data.Hourly.Precipitation[i],
-			Humidity:      data.Hourly.RelativeHumidity2m[i],
-			WindSpeed:     data.Hourly.WindSpeed10m[i],
-			WindDirection: data.Hourly.WindDirection10m[i],
-			CloudCover:    data.Hourly.CloudCover[i],
-			Pressure:      int(data.Hourly.Pressure[i]),
-			Description:   getWeatherDescription(data.Hourly.WeatherCode[i]),
-			Icon:          getWeatherIconWithTime(data.Hourly.WeatherCode[i], hourIsNight),
+			Temperature:   temp[i],
+			FeelsLike:     feelsLike[i],
+			Precipitation: mergedPrecipitation[i],
+			Humidity:      humidity[i],
+			WindSpeed:     windSpeed[i],
+			WindDirection: windDir[i],
+			CloudCover:    cloudCover[i],
+			Pressure:      int(pressure[i]),
+			Description:   getWeatherDescription(weatherCode[i]),
+			Icon:          getWeatherIconWithTime(weatherCode[i], hourIsNight),
 		}
 
 		forecast = append(forecast, weather)
@@ -276,8 +369,9 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 }
 
 // GetForecast fetches hourly forecast data
+// Uses NCEP NAM CONUS model for precipitation data (0-60h) with best_match fallback
 func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, error) {
-	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=16",
+	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=16&models=ncep_nam_conus,best_match",
 		openMeteoForecastURL, lat, lon)
 
 	resp, err := c.httpClient.Get(url)
@@ -296,9 +390,35 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 		return nil, fmt.Errorf("failed to decode Open-Meteo response: %w", err)
 	}
 
+	// Merge precipitation data: use NAM CONUS for 0-60h, fallback to best_match
+	mergedPrecipitation := mergePrecipitationData(data.Hourly.PrecipitationNAM, data.Hourly.PrecipitationBM)
+
+	// Fallback to single-model fields if multi-model not available
+	if len(mergedPrecipitation) == 0 {
+		mergedPrecipitation = data.Hourly.Precipitation
+	}
+
+	// Verify we have precipitation data
+	if len(mergedPrecipitation) == 0 {
+		return nil, fmt.Errorf("no precipitation data returned from Open-Meteo")
+	}
+
+	// Get hourly data arrays (handles both multi-model and single-model responses)
+	temp, feelsLike, humidity, cloudCover, windDir, weatherCode, windSpeed, pressure := data.getHourlyData()
+
 	var forecast []models.WeatherData
-	// Return all hourly data
+	// Return all hourly data using merged precipitation
 	for i := 0; i < len(data.Hourly.Time); i++ {
+		// Bounds check: ensure all arrays have data for this index
+		if i >= len(temp) || i >= len(feelsLike) ||
+			i >= len(mergedPrecipitation) || i >= len(humidity) ||
+			i >= len(windSpeed) || i >= len(windDir) ||
+			i >= len(cloudCover) || i >= len(pressure) ||
+			i >= len(weatherCode) {
+			log.Printf("Skipping hour %d due to incomplete data arrays", i)
+			continue
+		}
+
 		timestamp, err := parseTimestampUTC(data.Hourly.Time[i])
 		if err != nil {
 			log.Printf("Failed to parse hourly timestamp '%s': %v", data.Hourly.Time[i], err)
@@ -307,16 +427,16 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 
 		weather := models.WeatherData{
 			Timestamp:     timestamp,
-			Temperature:   data.Hourly.Temperature2m[i],
-			FeelsLike:     data.Hourly.ApparentTemperature[i],
-			Precipitation: data.Hourly.Precipitation[i],
-			Humidity:      data.Hourly.RelativeHumidity2m[i],
-			WindSpeed:     data.Hourly.WindSpeed10m[i],
-			WindDirection: data.Hourly.WindDirection10m[i],
-			CloudCover:    data.Hourly.CloudCover[i],
-			Pressure:      int(data.Hourly.Pressure[i]),
-			Description:   getWeatherDescription(data.Hourly.WeatherCode[i]),
-			Icon:          getWeatherIcon(data.Hourly.WeatherCode[i]),
+			Temperature:   temp[i],
+			FeelsLike:     feelsLike[i],
+			Precipitation: mergedPrecipitation[i],
+			Humidity:      humidity[i],
+			WindSpeed:     windSpeed[i],
+			WindDirection: windDir[i],
+			CloudCover:    cloudCover[i],
+			Pressure:      int(pressure[i]),
+			Description:   getWeatherDescription(weatherCode[i]),
+			Icon:          getWeatherIcon(weatherCode[i]),
 		}
 
 		forecast = append(forecast, weather)
