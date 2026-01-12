@@ -123,11 +123,15 @@ export function RecentActivityModal({
 
                   {/* Metadata */}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
-                    <div className="flex items-center gap-1">
-                      <User className="h-3 w-3" />
-                      <span>{climb.climbed_by}</span>
-                    </div>
-                    <span className="text-gray-400">•</span>
+                    {climb.climbed_by && climb.climbed_by.trim() !== '' && (
+                      <>
+                        <div className="flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          <span>{climb.climbed_by}</span>
+                        </div>
+                        <span className="text-gray-400">•</span>
+                      </>
+                    )}
                     <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
                       <span>{dateStr}</span>
