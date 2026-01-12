@@ -54,6 +54,29 @@ export interface RockDryingStatus {
   primary_group_name: string;
 }
 
+export interface ClimbHistoryEntry {
+  mp_route_id: string;       // Mountain Project route ID for linking
+  route_name: string;
+  route_rating: string;
+  mp_area_id: string;        // Mountain Project area ID for linking
+  area_name: string;         // e.g., "Xyz Boulders"
+  climbed_at: string;        // ISO 8601 timestamp
+  climbed_by: string;
+  style: string;
+  comment?: string;
+  days_since_climb: number;
+}
+
+export interface LastClimbedInfo {
+  route_name: string;
+  route_rating: string;
+  climbed_at: string; // ISO 8601 timestamp
+  climbed_by: string;
+  style: string;
+  comment?: string;
+  days_since_climb: number;
+}
+
 export interface WeatherForecast {
   location_id: number;
   location: Location;
@@ -70,6 +93,8 @@ export interface WeatherForecast {
   rain_last_48h?: number; // Total rain in last 48 hours (inches, calculated by backend)
   rain_next_48h?: number; // Forecast rain in next 48 hours (inches, calculated by backend)
   pest_conditions?: PestConditions; // Pest activity levels (calculated by backend)
+  last_climbed_info?: LastClimbedInfo; // DEPRECATED: Most recent climb (use climb_history instead)
+  climb_history?: ClimbHistoryEntry[]; // Recent climb history at this location (from Mountain Project)
 }
 
 export interface AllWeatherResponse {

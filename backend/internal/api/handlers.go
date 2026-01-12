@@ -11,20 +11,23 @@ import (
 )
 
 type Handler struct {
-	locationService *service.LocationService
-	weatherService  *service.WeatherService
-	riverService    *service.RiverService
+	locationService      *service.LocationService
+	weatherService       *service.WeatherService
+	riverService         *service.RiverService
+	climbTrackingService *service.ClimbTrackingService
 }
 
 func NewHandler(
 	locationService *service.LocationService,
 	weatherService *service.WeatherService,
 	riverService *service.RiverService,
+	climbTrackingService *service.ClimbTrackingService,
 ) *Handler {
 	return &Handler{
-		locationService: locationService,
-		weatherService:  weatherService,
-		riverService:    riverService,
+		locationService:      locationService,
+		weatherService:       weatherService,
+		riverService:         riverService,
+		climbTrackingService: climbTrackingService,
 	}
 }
 

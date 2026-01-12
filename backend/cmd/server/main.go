@@ -10,6 +10,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/api"
 	"github.com/alexscott64/woulder/backend/internal/config"
 	"github.com/alexscott64/woulder/backend/internal/database"
+	"github.com/alexscott64/woulder/backend/internal/mountainproject"
 	"github.com/alexscott64/woulder/backend/internal/rivers"
 	"github.com/alexscott64/woulder/backend/internal/service"
 	"github.com/alexscott64/woulder/backend/internal/weather"
@@ -32,14 +33,16 @@ func main() {
 	// Initialize external API clients
 	weatherClient := weather.NewWeatherService(cfg.Weather.OpenWeatherMapAPIKey)
 	riverClient := rivers.NewUSGSClient()
+	mpClient := mountainproject.NewClient()
 
 	// Initialize services with dependency injection
 	locationService := service.NewLocationService(db)
-	weatherServiceLayer := service.NewWeatherService(db, weatherClient)
+	climbTrackingService := service.NewClimbTrackingService(db, mpClient)
+	weatherServiceLayer := service.NewWeatherService(db, weatherClient, climbTrackingService)
 	riverServiceLayer := service.NewRiverService(db, riverClient)
 
 	// Initialize API handler with services
-	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer)
+	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService)
 
 	// Start background weather refresh (every 2 hours)
 	handler.StartBackgroundRefresh(2 * time.Hour)
@@ -73,6 +76,8 @@ func main() {
 		apiGroup.POST("/weather/refresh", handler.RefreshWeather)
 		apiGroup.GET("/rivers/location/:id", handler.GetRiverDataForLocation)
 		apiGroup.GET("/rivers/:id", handler.GetRiverDataByID)
+		apiGroup.POST("/climbs/refresh", handler.RefreshClimbData)
+		apiGroup.GET("/climbs/location/:id", handler.GetLastClimbedForLocation)
 	}
 
 	// Start server

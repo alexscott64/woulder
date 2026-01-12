@@ -595,3 +595,204 @@ func (db *Database) GetSunExposureByLocation(ctx context.Context, locationID int
 
 	return &se, nil
 }
+
+// -------------------- Mountain Project --------------------
+
+func (db *Database) SaveMPArea(ctx context.Context, area *models.MPArea) error {
+	query := `
+		INSERT INTO woulder.mp_areas (
+			mp_area_id, name, parent_mp_area_id, area_type, location_id, last_synced_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (mp_area_id) DO UPDATE SET
+			name = EXCLUDED.name,
+			parent_mp_area_id = EXCLUDED.parent_mp_area_id,
+			area_type = EXCLUDED.area_type,
+			location_id = EXCLUDED.location_id,
+			last_synced_at = EXCLUDED.last_synced_at
+	`
+
+	_, err := db.conn.ExecContext(ctx, query,
+		area.MPAreaID,
+		area.Name,
+		area.ParentMPAreaID,
+		area.AreaType,
+		area.LocationID,
+		time.Now(),
+	)
+
+	return err
+}
+
+func (db *Database) SaveMPRoute(ctx context.Context, route *models.MPRoute) error {
+	query := `
+		INSERT INTO woulder.mp_routes (
+			mp_route_id, mp_area_id, name, route_type, rating, location_id
+		)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (mp_route_id) DO UPDATE SET
+			mp_area_id = EXCLUDED.mp_area_id,
+			name = EXCLUDED.name,
+			route_type = EXCLUDED.route_type,
+			rating = EXCLUDED.rating,
+			location_id = EXCLUDED.location_id
+	`
+
+	_, err := db.conn.ExecContext(ctx, query,
+		route.MPRouteID,
+		route.MPAreaID,
+		route.Name,
+		route.RouteType,
+		route.Rating,
+		route.LocationID,
+	)
+
+	return err
+}
+
+func (db *Database) SaveMPTick(ctx context.Context, tick *models.MPTick) error {
+	query := `
+		INSERT INTO woulder.mp_ticks (
+			mp_route_id, user_name, climbed_at, style, comment
+		)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (mp_route_id, user_name, climbed_at) DO NOTHING
+	`
+
+	_, err := db.conn.ExecContext(ctx, query,
+		tick.MPRouteID,
+		tick.UserName,
+		tick.ClimbedAt,
+		tick.Style,
+		tick.Comment,
+	)
+
+	return err
+}
+
+func (db *Database) GetLastClimbedForLocation(ctx context.Context, locationID int) (*models.LastClimbedInfo, error) {
+	query := `
+		SELECT
+			r.name AS route_name,
+			r.rating AS route_rating,
+			t.climbed_at,
+			t.user_name AS climbed_by,
+			t.style,
+			t.comment,
+			EXTRACT(DAY FROM (NOW() - t.climbed_at))::int AS days_since_climb
+		FROM woulder.mp_ticks t
+		JOIN woulder.mp_routes r ON t.mp_route_id = r.mp_route_id
+		WHERE r.location_id = $1
+		ORDER BY t.climbed_at DESC
+		LIMIT 1
+	`
+
+	var info models.LastClimbedInfo
+	err := db.conn.QueryRowContext(ctx, query, locationID).Scan(
+		&info.RouteName,
+		&info.RouteRating,
+		&info.ClimbedAt,
+		&info.ClimbedBy,
+		&info.Style,
+		&info.Comment,
+		&info.DaysSinceClimb,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // No climb data for this location
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &info, nil
+}
+
+// GetClimbHistoryForLocation retrieves recent climb history for a location with area information
+func (db *Database) GetClimbHistoryForLocation(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error) {
+	query := `
+		SELECT
+			r.mp_route_id,
+			r.name AS route_name,
+			r.rating AS route_rating,
+			r.mp_area_id,
+			a.name AS area_name,
+			t.climbed_at,
+			t.user_name AS climbed_by,
+			t.style,
+			t.comment,
+			EXTRACT(DAY FROM (NOW() - t.climbed_at))::int AS days_since_climb
+		FROM woulder.mp_ticks t
+		JOIN woulder.mp_routes r ON t.mp_route_id = r.mp_route_id
+		JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
+		WHERE r.location_id = $1
+		ORDER BY t.climbed_at DESC
+		LIMIT $2
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query, locationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []models.ClimbHistoryEntry
+	for rows.Next() {
+		var entry models.ClimbHistoryEntry
+		err := rows.Scan(
+			&entry.MPRouteID,
+			&entry.RouteName,
+			&entry.RouteRating,
+			&entry.MPAreaID,
+			&entry.AreaName,
+			&entry.ClimbedAt,
+			&entry.ClimbedBy,
+			&entry.Style,
+			&entry.Comment,
+			&entry.DaysSinceClimb,
+		)
+		if err != nil {
+			return nil, err
+		}
+		history = append(history, entry)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return history, nil
+}
+
+func (db *Database) GetMPAreaByID(ctx context.Context, mpAreaID string) (*models.MPArea, error) {
+	query := `
+		SELECT id, mp_area_id, name, parent_mp_area_id, area_type,
+		       location_id, last_synced_at, created_at, updated_at
+		FROM woulder.mp_areas
+		WHERE mp_area_id = $1
+	`
+
+	var area models.MPArea
+	err := db.conn.QueryRowContext(ctx, query, mpAreaID).Scan(
+		&area.ID,
+		&area.MPAreaID,
+		&area.Name,
+		&area.ParentMPAreaID,
+		&area.AreaType,
+		&area.LocationID,
+		&area.LastSyncedAt,
+		&area.CreatedAt,
+		&area.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &area, nil
+}
