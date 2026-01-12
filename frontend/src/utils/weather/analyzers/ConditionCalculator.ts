@@ -39,16 +39,17 @@ export class ConditionCalculator {
     }
 
     // Temperature check
-    if (weather.temperature < 40) {
+    // Good climbing range: 41-65°F
+    if (weather.temperature < 35) {
       if (level === 'good') level = 'bad';
       reasons.push(`Too cold (${Math.round(weather.temperature)}°F)`);
-    } else if (weather.temperature < 45) {
+    } else if (weather.temperature < 41) {
       if (level === 'good') level = 'marginal';
       reasons.push(`Cold (${Math.round(weather.temperature)}°F)`);
-    } else if (weather.temperature > 90) {
+    } else if (weather.temperature > 75) {
       if (level === 'good') level = 'bad';
       reasons.push(`Too hot (${Math.round(weather.temperature)}°F)`);
-    } else if (weather.temperature > 85) {
+    } else if (weather.temperature > 65) {
       if (level === 'good') level = 'marginal';
       reasons.push(`Warm (${Math.round(weather.temperature)}°F)`);
     }

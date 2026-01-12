@@ -56,7 +56,7 @@ func TestCalculateInstantCondition(t *testing.T) {
 		{
 			name: "Too cold - bad",
 			weather: &models.WeatherData{
-				Temperature:   35,
+				Temperature:   32,
 				Precipitation: 0,
 				WindSpeed:     5,
 				Humidity:      60,
@@ -68,7 +68,7 @@ func TestCalculateInstantCondition(t *testing.T) {
 		{
 			name: "Cold - marginal",
 			weather: &models.WeatherData{
-				Temperature:   43,
+				Temperature:   38,
 				Precipitation: 0,
 				WindSpeed:     5,
 				Humidity:      60,
@@ -80,7 +80,7 @@ func TestCalculateInstantCondition(t *testing.T) {
 		{
 			name: "Too hot - bad",
 			weather: &models.WeatherData{
-				Temperature:   95,
+				Temperature:   78,
 				Precipitation: 0,
 				WindSpeed:     5,
 				Humidity:      40,
@@ -138,7 +138,7 @@ func TestCalculateInstantCondition(t *testing.T) {
 			reasons:  0,
 		},
 		{
-			name: "High humidity at 70°F - marginal (above 65°F threshold)",
+			name: "High humidity at 70°F - marginal (warm + humidity)",
 			weather: &models.WeatherData{
 				Temperature:   70,
 				Precipitation: 0,
@@ -147,7 +147,7 @@ func TestCalculateInstantCondition(t *testing.T) {
 				Timestamp:     time.Now().In(pacificLoc),
 			},
 			expected: "marginal",
-			reasons:  1,
+			reasons:  2, // Warm temp (> 65) + humidity (> 65)
 		},
 		{
 			name: "High humidity at 30°F - bad (cold temp + humidity warning)",
@@ -307,15 +307,15 @@ func TestCalculateTodayCondition(t *testing.T) {
 		{
 			name: "Good day - no issues",
 			current: &models.WeatherData{
-				Temperature:   65,
+				Temperature:   60,
 				Precipitation: 0,
 				WindSpeed:     8,
 				Humidity:      60,
 				Timestamp:     today,
 			},
 			hourlyForecast: []models.WeatherData{
-				{Timestamp: today.Add(1 * time.Hour), Temperature: 65, Precipitation: 0, WindSpeed: 8, Humidity: 60},
-				{Timestamp: today.Add(2 * time.Hour), Temperature: 67, Precipitation: 0, WindSpeed: 7, Humidity: 58},
+				{Timestamp: today.Add(1 * time.Hour), Temperature: 62, Precipitation: 0, WindSpeed: 8, Humidity: 60},
+				{Timestamp: today.Add(2 * time.Hour), Temperature: 64, Precipitation: 0, WindSpeed: 7, Humidity: 58},
 			},
 			historical:    []models.WeatherData{},
 			expectedLevel: "good",
@@ -391,11 +391,18 @@ func TestHumidityTemperatureThresholds(t *testing.T) {
 		},
 		// Comfortable range - humidity should NOT matter
 		{
-			name:        "High humidity at 44°F - marginal (just cold, not humidity)",
-			temperature: 44,
+			name:        "High humidity at 39°F - marginal (just cold, not humidity)",
+			temperature: 39,
 			humidity:    90,
 			expected:    "marginal",
-			reasons:     1, // Just cold temp (< 45)
+			reasons:     1, // Just cold temp (< 41)
+		},
+		{
+			name:        "High humidity at 41°F - good (at lower threshold)",
+			temperature: 41,
+			humidity:    90,
+			expected:    "good",
+			reasons:     0, // At threshold, no cold warning
 		},
 		{
 			name:        "High humidity at 50°F - good (comfortable range)",
@@ -405,33 +412,33 @@ func TestHumidityTemperatureThresholds(t *testing.T) {
 			reasons:     0, // No issues
 		},
 		{
-			name:        "High humidity at 65°F - good (at threshold)",
+			name:        "High humidity at 65°F - good (at upper threshold)",
 			temperature: 65,
 			humidity:    90,
 			expected:    "good",
-			reasons:     0, // Not above 65, so humidity doesn't matter
+			reasons:     0, // At threshold, humidity doesn't matter yet
 		},
 		// Above comfortable range - humidity should matter
 		{
-			name:        "High humidity at 66°F - marginal (above 65°F)",
+			name:        "High humidity at 66°F - marginal (warm + humidity)",
 			temperature: 66,
 			humidity:    90,
 			expected:    "marginal",
-			reasons:     1, // Humidity above 65°F
+			reasons:     2, // Warm temp (> 65) + humidity (> 65)
 		},
 		{
-			name:        "High humidity at 86°F - marginal (warm + humidity)",
-			temperature: 86,
+			name:        "High humidity at 70°F - marginal (warm + humidity)",
+			temperature: 70,
 			humidity:    90,
 			expected:    "marginal",
-			reasons:     2, // Warm temp (> 85) + humidity (> 65)
+			reasons:     2, // Warm temp (> 65) + humidity (> 65)
 		},
 		{
-			name:        "High humidity at 95°F - bad (too hot + humidity)",
-			temperature: 95,
+			name:        "High humidity at 78°F - bad (too hot + humidity)",
+			temperature: 78,
 			humidity:    90,
 			expected:    "bad",
-			reasons:     2, // Too hot + humidity
+			reasons:     2, // Too hot (> 75) + humidity
 		},
 	}
 

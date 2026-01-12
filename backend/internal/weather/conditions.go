@@ -185,22 +185,23 @@ func (c *ConditionCalculator) calculateInstantCondition(
 	}
 
 	// Check temperature
-	if weather.Temperature < 40 {
+	// Good climbing range: 41-65°F
+	if weather.Temperature < 35 {
 		if level == "good" {
 			level = "bad"
 		}
 		reasons = append(reasons, fmt.Sprintf("Too cold (%.0f°F)", weather.Temperature))
-	} else if weather.Temperature < 45 {
+	} else if weather.Temperature < 41 {
 		if level == "good" {
 			level = "marginal"
 		}
 		reasons = append(reasons, fmt.Sprintf("Cold (%.0f°F)", weather.Temperature))
-	} else if weather.Temperature > 90 {
+	} else if weather.Temperature > 75 {
 		if level == "good" {
 			level = "bad"
 		}
 		reasons = append(reasons, fmt.Sprintf("Too hot (%.0f°F)", weather.Temperature))
-	} else if weather.Temperature > 85 {
+	} else if weather.Temperature > 65 {
 		if level == "good" {
 			level = "marginal"
 		}
