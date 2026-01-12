@@ -225,12 +225,20 @@ func (c *ConditionCalculator) calculateInstantCondition(
 		reasons = append(reasons, fmt.Sprintf("Moderate winds (%.0fmph)", weather.WindSpeed))
 	}
 
-	// Check humidity
+	// Check humidity - only relevant when it's cold (affects ice/frost) or hot (affects comfort)
+	// In the comfortable temperature range (45-65°F), humidity doesn't significantly impact climbing
 	if weather.Humidity >= 85 {
-		if level == "good" {
-			level = "marginal"
+		// Only factor in humidity if it's below freezing (ice/frost risk) or above 65°F (discomfort)
+		if weather.Temperature < 32 || weather.Temperature > 65 {
+			if level == "good" {
+				level = "marginal"
+			}
+			if weather.Temperature < 32 {
+				reasons = append(reasons, fmt.Sprintf("High humidity with freezing temps (%d%%, %.0f°F)", weather.Humidity, weather.Temperature))
+			} else {
+				reasons = append(reasons, fmt.Sprintf("High humidity (%d%%)", weather.Humidity))
+			}
 		}
-		reasons = append(reasons, fmt.Sprintf("High humidity (%d%%)", weather.Humidity))
 	}
 
 	return models.ClimbingCondition{Level: level, Reasons: reasons}

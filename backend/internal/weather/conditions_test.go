@@ -114,7 +114,7 @@ func TestCalculateInstantCondition(t *testing.T) {
 			reasons:  1,
 		},
 		{
-			name: "High humidity - marginal",
+			name: "High humidity at 60°F - should be GOOD (not marginal)",
 			weather: &models.WeatherData{
 				Temperature:   60,
 				Precipitation: 0,
@@ -122,8 +122,44 @@ func TestCalculateInstantCondition(t *testing.T) {
 				Humidity:      87,
 				Timestamp:     time.Now().In(pacificLoc),
 			},
+			expected: "good",
+			reasons:  0,
+		},
+		{
+			name: "High humidity at 57°F - should be GOOD (user's example)",
+			weather: &models.WeatherData{
+				Temperature:   57,
+				Precipitation: 0,
+				WindSpeed:     5,
+				Humidity:      90,
+				Timestamp:     time.Now().In(pacificLoc),
+			},
+			expected: "good",
+			reasons:  0,
+		},
+		{
+			name: "High humidity at 70°F - marginal (above 65°F threshold)",
+			weather: &models.WeatherData{
+				Temperature:   70,
+				Precipitation: 0,
+				WindSpeed:     5,
+				Humidity:      90,
+				Timestamp:     time.Now().In(pacificLoc),
+			},
 			expected: "marginal",
 			reasons:  1,
+		},
+		{
+			name: "High humidity at 30°F - bad (cold temp + humidity warning)",
+			weather: &models.WeatherData{
+				Temperature:   30,
+				Precipitation: 0,
+				WindSpeed:     5,
+				Humidity:      90,
+				Timestamp:     time.Now().In(pacificLoc),
+			},
+			expected: "bad",
+			reasons:  2, // Cold temp + humidity with freezing
 		},
 		{
 			name: "Multiple issues - rain and cold",
@@ -322,6 +358,153 @@ func TestCalculateTodayCondition(t *testing.T) {
 
 			if result.Level != tt.expectedLevel {
 				t.Errorf("Expected level %s, got %s. Reasons: %v", tt.expectedLevel, result.Level, result.Reasons)
+			}
+		})
+	}
+}
+
+func TestHumidityTemperatureThresholds(t *testing.T) {
+	calc := &ConditionCalculator{}
+	pacificLoc, _ := time.LoadLocation("America/Los_Angeles")
+
+	tests := []struct {
+		name        string
+		temperature float64
+		humidity    int
+		expected    string // expected level
+		reasons     int    // expected number of reasons
+	}{
+		// Below freezing - humidity should matter
+		{
+			name:        "High humidity at 31°F - bad (below freezing)",
+			temperature: 31,
+			humidity:    90,
+			expected:    "bad",
+			reasons:     2, // Cold temp + humidity with freezing
+		},
+		{
+			name:        "High humidity at 32°F - bad (exactly freezing)",
+			temperature: 32,
+			humidity:    90,
+			expected:    "bad",
+			reasons:     1, // Just cold temp, humidity not triggered at exactly 32
+		},
+		// Comfortable range - humidity should NOT matter
+		{
+			name:        "High humidity at 44°F - marginal (just cold, not humidity)",
+			temperature: 44,
+			humidity:    90,
+			expected:    "marginal",
+			reasons:     1, // Just cold temp (< 45)
+		},
+		{
+			name:        "High humidity at 50°F - good (comfortable range)",
+			temperature: 50,
+			humidity:    90,
+			expected:    "good",
+			reasons:     0, // No issues
+		},
+		{
+			name:        "High humidity at 65°F - good (at threshold)",
+			temperature: 65,
+			humidity:    90,
+			expected:    "good",
+			reasons:     0, // Not above 65, so humidity doesn't matter
+		},
+		// Above comfortable range - humidity should matter
+		{
+			name:        "High humidity at 66°F - marginal (above 65°F)",
+			temperature: 66,
+			humidity:    90,
+			expected:    "marginal",
+			reasons:     1, // Humidity above 65°F
+		},
+		{
+			name:        "High humidity at 86°F - marginal (warm + humidity)",
+			temperature: 86,
+			humidity:    90,
+			expected:    "marginal",
+			reasons:     2, // Warm temp (> 85) + humidity (> 65)
+		},
+		{
+			name:        "High humidity at 95°F - bad (too hot + humidity)",
+			temperature: 95,
+			humidity:    90,
+			expected:    "bad",
+			reasons:     2, // Too hot + humidity
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			weather := &models.WeatherData{
+				Temperature:   tt.temperature,
+				Precipitation: 0,
+				WindSpeed:     5,
+				Humidity:      tt.humidity,
+				Timestamp:     time.Now().In(pacificLoc),
+			}
+
+			result := calc.calculateInstantCondition(weather, []models.WeatherData{})
+
+			if result.Level != tt.expected {
+				t.Errorf("Expected level %s, got %s. Reasons: %v", tt.expected, result.Level, result.Reasons)
+			}
+
+			if len(result.Reasons) != tt.reasons {
+				t.Errorf("Expected %d reasons, got %d: %v", tt.reasons, len(result.Reasons), result.Reasons)
+			}
+		})
+	}
+}
+
+func TestHumidityMessages(t *testing.T) {
+	calc := &ConditionCalculator{}
+	pacificLoc, _ := time.LoadLocation("America/Los_Angeles")
+
+	tests := []struct {
+		name            string
+		temperature     float64
+		humidity        int
+		expectedMessage string
+	}{
+		{
+			name:            "Freezing with high humidity - detailed message",
+			temperature:     30,
+			humidity:        90,
+			expectedMessage: "High humidity with freezing temps (90%, 30°F)",
+		},
+		{
+			name:            "Hot with high humidity - simple message",
+			temperature:     70,
+			humidity:        88,
+			expectedMessage: "High humidity (88%)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			weather := &models.WeatherData{
+				Temperature:   tt.temperature,
+				Precipitation: 0,
+				WindSpeed:     5,
+				Humidity:      tt.humidity,
+				Timestamp:     time.Now().In(pacificLoc),
+			}
+
+			result := calc.calculateInstantCondition(weather, []models.WeatherData{})
+
+			// Check if expected message appears in reasons
+			found := false
+			for _, reason := range result.Reasons {
+				if reason == tt.expectedMessage {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				t.Errorf("Expected message '%s' not found in reasons: %v", tt.expectedMessage, result.Reasons)
 			}
 		})
 	}
