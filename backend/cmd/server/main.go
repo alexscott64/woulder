@@ -47,6 +47,9 @@ func main() {
 	// Start background weather refresh (every 2 hours)
 	handler.StartBackgroundRefresh(2 * time.Hour)
 
+	// Start background tick sync (every 24 hours)
+	handler.StartBackgroundTickSync(24 * time.Hour)
+
 	// Set Gin mode
 	gin.SetMode(cfg.Server.GinMode)
 

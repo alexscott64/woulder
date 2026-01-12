@@ -14,10 +14,19 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/mountainproject"
 )
 
+// MPClientInterface defines the interface for Mountain Project API operations
+type MPClientInterface interface {
+	GetRouteTicks(routeID string) ([]mountainproject.Tick, error)
+	GetArea(areaID string) (*mountainproject.AreaResponse, error)
+}
+
+// Ensure real Client implements the interface
+var _ MPClientInterface = (*mountainproject.Client)(nil)
+
 // ClimbTrackingService handles Mountain Project data synchronization and retrieval
 type ClimbTrackingService struct {
 	repo         database.Repository
-	mpClient     *mountainproject.Client
+	mpClient     MPClientInterface
 	syncMutex    sync.Mutex
 	lastSyncTime time.Time
 	isSyncing    bool
@@ -26,7 +35,7 @@ type ClimbTrackingService struct {
 // NewClimbTrackingService creates a new climb tracking service
 func NewClimbTrackingService(
 	repo database.Repository,
-	mpClient *mountainproject.Client,
+	mpClient MPClientInterface,
 ) *ClimbTrackingService {
 	return &ClimbTrackingService{
 		repo:     repo,
@@ -255,4 +264,145 @@ func (s *ClimbTrackingService) GetSyncStatus() (isSyncing bool, lastSync time.Ti
 	s.syncMutex.Lock()
 	defer s.syncMutex.Unlock()
 	return s.isSyncing, s.lastSyncTime
+}
+
+// SyncNewTicksForLocation performs incremental sync of only new ticks for a location
+// This is much more efficient than full sync as it only fetches ticks newer than the last known tick
+func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, locationID int) error {
+	s.syncMutex.Lock()
+	if s.isSyncing {
+		s.syncMutex.Unlock()
+		return fmt.Errorf("sync already in progress")
+	}
+	s.isSyncing = true
+	s.syncMutex.Unlock()
+
+	defer func() {
+		s.syncMutex.Lock()
+		s.isSyncing = false
+		s.lastSyncTime = time.Now()
+		s.syncMutex.Unlock()
+	}()
+
+	// Get all route IDs for this location
+	routeIDs, err := s.repo.GetAllRouteIDsForLocation(ctx, locationID)
+	if err != nil {
+		return fmt.Errorf("failed to get route IDs: %w", err)
+	}
+
+	if len(routeIDs) == 0 {
+		log.Printf("No routes found for location %d, skipping tick sync", locationID)
+		return nil
+	}
+
+	log.Printf("Starting incremental tick sync for location %d (%d routes)", locationID, len(routeIDs))
+
+	totalNewTicks := 0
+	routesProcessed := 0
+
+	// For each route, sync only new ticks
+	for _, routeID := range routeIDs {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Get the timestamp of the last tick we have for this route
+		lastTickTime, err := s.repo.GetLastTickTimestampForRoute(ctx, routeID)
+		if err != nil {
+			log.Printf("Error getting last tick for route %s: %v", routeID, err)
+			continue
+		}
+
+		// Fetch ticks from Mountain Project
+		ticks, err := s.mpClient.GetRouteTicks(routeID)
+		if err != nil {
+			log.Printf("Error fetching ticks for route %s: %v", routeID, err)
+			continue
+		}
+
+		newTickCount := 0
+		for _, tick := range ticks {
+			// Parse the date
+			var climbedAt time.Time
+			climbedAt, err = time.Parse("Jan 2, 2006, 3:04 pm", tick.Date)
+			if err != nil {
+				climbedAt, err = time.Parse("2006-01-02 15:04:05", tick.Date)
+				if err != nil {
+					climbedAt, err = time.Parse("2006-01-02", tick.Date)
+					if err != nil {
+						log.Printf("Warning: invalid date format for tick on route %s: %s", routeID, tick.Date)
+						continue
+					}
+				}
+			}
+
+			// Skip if we already have this tick (incremental check)
+			if lastTickTime != nil && !climbedAt.After(*lastTickTime) {
+				continue // Already have this tick or older
+			}
+
+			tickModel := &models.MPTick{
+				MPRouteID: routeID,
+				UserName:  tick.GetUserName(),
+				ClimbedAt: climbedAt,
+				Style:     tick.Style,
+			}
+
+			textStr := tick.GetTextString()
+			if textStr != "" {
+				tickModel.Comment = &textStr
+			}
+
+			if err := s.repo.SaveMPTick(ctx, tickModel); err != nil {
+				log.Printf("Error saving tick for route %s: %v", routeID, err)
+				continue
+			}
+
+			newTickCount++
+		}
+
+		if newTickCount > 0 {
+			totalNewTicks += newTickCount
+			log.Printf("Route %s: %d new ticks", routeID, newTickCount)
+		}
+
+		routesProcessed++
+	}
+
+	log.Printf("Incremental sync complete for location %d: %d new ticks across %d routes",
+		locationID, totalNewTicks, routesProcessed)
+
+	return nil
+}
+
+// SyncNewTicksForAllLocations performs incremental sync for all locations with MP data
+func (s *ClimbTrackingService) SyncNewTicksForAllLocations(ctx context.Context) error {
+	// Hardcoded location IDs that have Mountain Project data
+	// These match the locations in cmd/sync_climbs/main.go
+	locationIDs := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+
+	log.Printf("Starting incremental tick sync for all locations (%d total)", len(locationIDs))
+
+	successCount := 0
+	failCount := 0
+
+	for _, locationID := range locationIDs {
+		log.Printf("Syncing location %d...", locationID)
+		if err := s.SyncNewTicksForLocation(ctx, locationID); err != nil {
+			log.Printf("Error syncing location %d: %v", locationID, err)
+			failCount++
+		} else {
+			successCount++
+		}
+	}
+
+	log.Printf("All locations sync complete: %d succeeded, %d failed", successCount, failCount)
+
+	if failCount > 0 {
+		return fmt.Errorf("sync completed with %d failures", failCount)
+	}
+
+	return nil
 }

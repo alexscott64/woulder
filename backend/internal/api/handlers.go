@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"strconv"
@@ -36,6 +37,34 @@ func (h *Handler) StartBackgroundRefresh(interval time.Duration) {
 	// Start periodic refresh using weather service
 	h.weatherService.StartBackgroundRefresh(interval)
 	log.Printf("Background weather refresh scheduled every %v", interval)
+}
+
+// StartBackgroundTickSync starts a goroutine that syncs new Mountain Project ticks periodically
+func (h *Handler) StartBackgroundTickSync(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		log.Printf("Starting background tick sync scheduler (every %v)", interval)
+
+		// Run immediately on startup
+		log.Println("Running initial tick sync...")
+		ctx := context.Background()
+		if err := h.climbTrackingService.SyncNewTicksForAllLocations(ctx); err != nil {
+			log.Printf("Error in initial tick sync: %v", err)
+		}
+
+		// Then run on schedule
+		for range ticker.C {
+			log.Println("Starting scheduled tick sync...")
+			ctx := context.Background()
+			if err := h.climbTrackingService.SyncNewTicksForAllLocations(ctx); err != nil {
+				log.Printf("Error in scheduled tick sync: %v", err)
+			} else {
+				log.Println("Scheduled tick sync completed successfully")
+			}
+		}
+	}()
 }
 
 // HealthCheck returns service health status

@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
@@ -43,6 +44,8 @@ type Repository interface {
 	GetLastClimbedForLocation(ctx context.Context, locationID int) (*models.LastClimbedInfo, error) // DEPRECATED: Use GetClimbHistoryForLocation
 	GetClimbHistoryForLocation(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
 	GetMPAreaByID(ctx context.Context, mpAreaID string) (*models.MPArea, error)
+	GetLastTickTimestampForRoute(ctx context.Context, routeID string) (*time.Time, error)
+	GetAllRouteIDsForLocation(ctx context.Context, locationID int) ([]string, error)
 
 	// Health check
 	Ping(ctx context.Context) error

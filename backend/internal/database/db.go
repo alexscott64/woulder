@@ -821,3 +821,55 @@ func (db *Database) GetMPAreaByID(ctx context.Context, mpAreaID string) (*models
 
 	return &area, nil
 }
+
+// GetLastTickTimestampForRoute returns the timestamp of the most recent tick for a route
+func (db *Database) GetLastTickTimestampForRoute(ctx context.Context, routeID string) (*time.Time, error) {
+	query := `
+		SELECT MAX(climbed_at) AS last_tick
+		FROM woulder.mp_ticks
+		WHERE mp_route_id = $1
+	`
+
+	var lastTick *time.Time
+	err := db.conn.QueryRowContext(ctx, query, routeID).Scan(&lastTick)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // No ticks for this route yet
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return lastTick, nil
+}
+
+// GetAllRouteIDsForLocation returns all route IDs associated with a location
+func (db *Database) GetAllRouteIDsForLocation(ctx context.Context, locationID int) ([]string, error) {
+	query := `
+		SELECT mp_route_id
+		FROM woulder.mp_routes
+		WHERE location_id = $1
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query, locationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var routeIDs []string
+	for rows.Next() {
+		var routeID string
+		if err := rows.Scan(&routeID); err != nil {
+			return nil, err
+		}
+		routeIDs = append(routeIDs, routeID)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return routeIDs, nil
+}

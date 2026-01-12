@@ -69,7 +69,8 @@ func TestWeatherService_GetLocationWeather(t *testing.T) {
 			}
 
 			client := weather.NewWeatherService("test_api_key")
-			service := NewWeatherService(mockRepo, client)
+			mockClimbService := NewClimbTrackingService(mockRepo, &MockMPClient{})
+			service := NewWeatherService(mockRepo, client, mockClimbService)
 
 			forecast, err := service.GetLocationWeather(context.Background(), tt.locationID)
 
@@ -107,7 +108,8 @@ func TestWeatherService_GetWeatherByCoordinates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := &database.MockRepository{}
 			client := weather.NewWeatherService("test_api_key")
-			service := NewWeatherService(mockRepo, client)
+			mockClimbService := NewClimbTrackingService(mockRepo, &MockMPClient{})
+			service := NewWeatherService(mockRepo, client, mockClimbService)
 
 			forecast, err := service.GetWeatherByCoordinates(context.Background(), tt.lat, tt.lon)
 
@@ -192,7 +194,8 @@ func TestWeatherService_GetAllWeather(t *testing.T) {
 			}
 
 			client := weather.NewWeatherService("test_api_key")
-			service := NewWeatherService(mockRepo, client)
+			mockClimbService := NewClimbTrackingService(mockRepo, &MockMPClient{})
+			service := NewWeatherService(mockRepo, client, mockClimbService)
 
 			_, err := service.GetAllWeather(context.Background(), tt.areaID)
 
@@ -257,7 +260,8 @@ func TestWeatherService_RefreshAllWeather(t *testing.T) {
 			}
 
 			client := weather.NewWeatherService("test_api_key")
-			service := NewWeatherService(mockRepo, client)
+			mockClimbService := NewClimbTrackingService(mockRepo, &MockMPClient{})
+			service := NewWeatherService(mockRepo, client, mockClimbService)
 
 			err := service.RefreshAllWeather(context.Background())
 
@@ -279,7 +283,8 @@ func TestWeatherService_RefreshAllWeather_ConcurrentCalls(t *testing.T) {
 	}
 
 	client := weather.NewWeatherService("test_api_key")
-	service := NewWeatherService(mockRepo, client)
+	mockClimbService := NewClimbTrackingService(mockRepo, &MockMPClient{})
+	service := NewWeatherService(mockRepo, client, mockClimbService)
 
 	// Start first refresh
 	go service.RefreshAllWeather(context.Background())
