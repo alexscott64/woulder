@@ -8,6 +8,10 @@ import { WeatherData, WeatherCondition } from '../../../types/weather';
  * This minimal implementation is ONLY used for:
  * - Future day forecasts (days 2-6) where backend doesn't pre-calculate
  * - The backend is authoritative for "today's" condition
+ *
+ * IMPORTANT: This must stay in sync with backend logic for consistent UX
+ * - Humidity only matters below freezing (< 32°F) or when hot (> 65°F)
+ * - In comfortable range (32-65°F), humidity doesn't significantly impact climbing
  */
 export class ConditionCalculator {
   /**
@@ -61,10 +65,18 @@ export class ConditionCalculator {
       reasons.push(`Moderate winds (${Math.round(weather.wind_speed)}mph)`);
     }
 
-    // Humidity check
+    // Humidity check - only relevant when it's cold (affects ice/frost) or hot (affects comfort)
+    // In the comfortable temperature range (32-65°F), humidity doesn't significantly impact climbing
     if (weather.humidity >= 85) {
-      if (level === 'good') level = 'marginal';
-      reasons.push(`High humidity (${weather.humidity}%)`);
+      // Only factor in humidity if it's below freezing (ice/frost risk) or above 65°F (discomfort)
+      if (weather.temperature < 32 || weather.temperature > 65) {
+        if (level === 'good') level = 'marginal';
+        if (weather.temperature < 32) {
+          reasons.push(`High humidity with freezing temps (${weather.humidity}%, ${Math.round(weather.temperature)}°F)`);
+        } else {
+          reasons.push(`High humidity (${weather.humidity}%)`);
+        }
+      }
     }
 
     return { level, reasons };
