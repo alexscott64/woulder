@@ -16,10 +16,11 @@ import (
 )
 
 type WeatherService struct {
-	repo           database.Repository
-	weatherClient  *weather.WeatherService
-	rockCalculator *rock_drying.Calculator
-	pestAnalyzer   *pests.PestAnalyzer
+	repo                 database.Repository
+	weatherClient        *weather.WeatherService
+	rockCalculator       *rock_drying.Calculator
+	pestAnalyzer         *pests.PestAnalyzer
+	climbTrackingService *ClimbTrackingService
 
 	// Background refresh management
 	refreshMutex sync.Mutex
@@ -27,12 +28,13 @@ type WeatherService struct {
 	isRefreshing bool
 }
 
-func NewWeatherService(repo database.Repository, client *weather.WeatherService) *WeatherService {
+func NewWeatherService(repo database.Repository, client *weather.WeatherService, climbService *ClimbTrackingService) *WeatherService {
 	return &WeatherService{
-		repo:           repo,
-		weatherClient:  client,
-		rockCalculator: &rock_drying.Calculator{},
-		pestAnalyzer:   &pests.PestAnalyzer{},
+		repo:                 repo,
+		weatherClient:        client,
+		rockCalculator:       &rock_drying.Calculator{},
+		pestAnalyzer:         &pests.PestAnalyzer{},
+		climbTrackingService: climbService,
 	}
 }
 
@@ -92,7 +94,33 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 	// 7. Calculate pest conditions
 	pestConditions := s.calculatePestConditions(current, historical)
 
-	// 8. Build response with fresh API data
+	// 8. Fetch climb history from Mountain Project data
+	var lastClimbedInfo *models.LastClimbedInfo
+	var climbHistory []models.ClimbHistoryEntry
+	if s.climbTrackingService != nil {
+		// Fetch last 5 climbs for timeline display
+		history, err := s.climbTrackingService.GetClimbHistoryForLocation(ctx, locationID, 5)
+		if err != nil {
+			log.Printf("Warning: failed to get climb history for location %d: %v", locationID, err)
+		} else {
+			climbHistory = history
+			// Also populate the deprecated lastClimbedInfo field for backwards compatibility
+			if len(history) > 0 {
+				first := history[0]
+				lastClimbedInfo = &models.LastClimbedInfo{
+					RouteName:      first.RouteName,
+					RouteRating:    first.RouteRating,
+					ClimbedAt:      first.ClimbedAt,
+					ClimbedBy:      first.ClimbedBy,
+					Style:          first.Style,
+					Comment:        first.Comment,
+					DaysSinceClimb: first.DaysSinceClimb,
+				}
+			}
+		}
+	}
+
+	// 9. Build response with fresh API data
 	var dailySunTimes []models.DailySunTimes
 	if sunTimes != nil && len(sunTimes.Daily) > 0 {
 		for _, st := range sunTimes.Daily {
@@ -120,6 +148,8 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 		RainLast48h:      &rainLast48h,
 		RainNext48h:      &rainNext48h,
 		PestConditions:   pestConditions,
+		LastClimbedInfo:  lastClimbedInfo,
+		ClimbHistory:     climbHistory,
 	}
 
 	return forecast, nil

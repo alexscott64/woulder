@@ -88,7 +88,9 @@ type WeatherForecast struct {
 	TodayCondition   *ClimbingCondition `json:"today_condition,omitempty"`      // Today's overall climbing condition
 	RainLast48h      *float64           `json:"rain_last_48h,omitempty"`        // Total rain in last 48 hours (inches)
 	RainNext48h      *float64           `json:"rain_next_48h,omitempty"`        // Forecast rain in next 48 hours (inches)
-	PestConditions   *PestConditions    `json:"pest_conditions,omitempty"`      // Pest activity levels (mosquitoes, outdoor pests)
+	PestConditions   *PestConditions      `json:"pest_conditions,omitempty"`      // Pest activity levels (mosquitoes, outdoor pests)
+	LastClimbedInfo  *LastClimbedInfo     `json:"last_climbed_info,omitempty"`    // DEPRECATED: Most recent climb (use climb_history instead)
+	ClimbHistory     []ClimbHistoryEntry  `json:"climb_history,omitempty"`        // Recent climb history at this location (from Mountain Project)
 }
 
 // RiverData represents river gauge information with current conditions

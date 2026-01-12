@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
@@ -33,6 +34,16 @@ type MockRepository struct {
 	GetRockTypesByLocationFn   func(ctx context.Context, locationID int) ([]models.RockType, error)
 	GetPrimaryRockTypeFn       func(ctx context.Context, locationID int) (*models.RockType, error)
 	GetSunExposureByLocationFn func(ctx context.Context, locationID int) (*models.LocationSunExposure, error)
+
+	// Mountain Project mocks
+	SaveMPAreaFn                    func(ctx context.Context, area *models.MPArea) error
+	SaveMPRouteFn                   func(ctx context.Context, route *models.MPRoute) error
+	SaveMPTickFn                    func(ctx context.Context, tick *models.MPTick) error
+	GetLastClimbedForLocationFn     func(ctx context.Context, locationID int) (*models.LastClimbedInfo, error)
+	GetClimbHistoryForLocationFn    func(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
+	GetMPAreaByIDFn                 func(ctx context.Context, mpAreaID string) (*models.MPArea, error)
+	GetLastTickTimestampForRouteFn  func(ctx context.Context, routeID string) (*time.Time, error)
+	GetAllRouteIDsForLocationFn     func(ctx context.Context, locationID int) ([]string, error)
 
 	// Health
 	PingFn  func(ctx context.Context) error
@@ -180,4 +191,68 @@ func (m *MockRepository) Close() error {
 		return m.CloseFn()
 	}
 	return nil
+}
+
+// SaveMPArea mock
+func (m *MockRepository) SaveMPArea(ctx context.Context, area *models.MPArea) error {
+	if m.SaveMPAreaFn != nil {
+		return m.SaveMPAreaFn(ctx, area)
+	}
+	return nil
+}
+
+// SaveMPRoute mock
+func (m *MockRepository) SaveMPRoute(ctx context.Context, route *models.MPRoute) error {
+	if m.SaveMPRouteFn != nil {
+		return m.SaveMPRouteFn(ctx, route)
+	}
+	return nil
+}
+
+// SaveMPTick mock
+func (m *MockRepository) SaveMPTick(ctx context.Context, tick *models.MPTick) error {
+	if m.SaveMPTickFn != nil {
+		return m.SaveMPTickFn(ctx, tick)
+	}
+	return nil
+}
+
+// GetLastClimbedForLocation mock
+func (m *MockRepository) GetLastClimbedForLocation(ctx context.Context, locationID int) (*models.LastClimbedInfo, error) {
+	if m.GetLastClimbedForLocationFn != nil {
+		return m.GetLastClimbedForLocationFn(ctx, locationID)
+	}
+	return nil, nil
+}
+
+// GetClimbHistoryForLocation mock
+func (m *MockRepository) GetClimbHistoryForLocation(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error) {
+	if m.GetClimbHistoryForLocationFn != nil {
+		return m.GetClimbHistoryForLocationFn(ctx, locationID, limit)
+	}
+	return nil, nil
+}
+
+// GetMPAreaByID mock
+func (m *MockRepository) GetMPAreaByID(ctx context.Context, mpAreaID string) (*models.MPArea, error) {
+	if m.GetMPAreaByIDFn != nil {
+		return m.GetMPAreaByIDFn(ctx, mpAreaID)
+	}
+	return nil, nil
+}
+
+// GetLastTickTimestampForRoute mock
+func (m *MockRepository) GetLastTickTimestampForRoute(ctx context.Context, routeID string) (*time.Time, error) {
+	if m.GetLastTickTimestampForRouteFn != nil {
+		return m.GetLastTickTimestampForRouteFn(ctx, routeID)
+	}
+	return nil, nil
+}
+
+// GetAllRouteIDsForLocation mock
+func (m *MockRepository) GetAllRouteIDsForLocation(ctx context.Context, locationID int) ([]string, error) {
+	if m.GetAllRouteIDsForLocationFn != nil {
+		return m.GetAllRouteIDsForLocationFn(ctx, locationID)
+	}
+	return nil, nil
 }

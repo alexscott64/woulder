@@ -5,9 +5,10 @@ import { WindAnalyzer } from '../utils/weather/analyzers';
 import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl } from './weather/weatherDisplay';
 import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
-import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, ChevronRight, Sunrise, Sunset } from 'lucide-react';
+import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, ChevronRight, Sunrise, Sunset, Footprints } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { ConditionsModal } from './ConditionsModal';
+import { RecentActivityModal } from './RecentActivityModal';
 
 interface WeatherCardProps {
   forecast: WeatherForecast;
@@ -27,7 +28,7 @@ function formatSunTime(isoTime: string | undefined): string {
 }
 
 export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCardProps) {
-  const { location, current, hourly, historical, sunrise, sunset, rock_drying_status, snow_depth_inches, today_condition, rain_last_48h, rain_next_48h, pest_conditions } = forecast;
+  const { location, current, hourly, historical, sunrise, sunset, rock_drying_status, snow_depth_inches, today_condition, rain_last_48h, rain_next_48h, pest_conditions, climb_history } = forecast;
 
   // Use backend-calculated condition (backend always provides this)
   const todayCondition = useMemo(() => {
@@ -62,6 +63,9 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
   // Comprehensive conditions modal state
   const [showConditionsModal, setShowConditionsModal] = useState(false);
+
+  // Recent activity modal state
+  const [showRecentActivityModal, setShowRecentActivityModal] = useState(false);
 
   // Fetch river data when component mounts
   useEffect(() => {
@@ -187,33 +191,46 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-2">{location.name}</h2>
 
           {/* Date and Condition row */}
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {formatInTimeZone(current.timestamp, 'America/Los_Angeles', 'MMM d, h:mm a')}
             </p>
 
-            {/* Today's Condition - Compact button */}
-            <button
-              onClick={handleConditionsClick}
-              className="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-750 hover:border-gray-300 dark:hover:border-gray-600 transition-all"
-              title="View detailed conditions"
-            >
-              {/* Status with dot */}
-              <div className="flex items-center gap-1">
-                <div className={`w-1.5 h-1.5 rounded-full ${conditionColor}`} />
-                <span className={`text-xs font-semibold ${conditionBadge.text}`}>
-                  {conditionLabel}
-                </span>
-              </div>
-
-              {/* Count + chevron */}
-              {hasConditions && (
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {conditionsCount}
-                </span>
+            <div className="flex items-center gap-2">
+              {/* Recent Activity Button */}
+              {climb_history && climb_history.length > 0 && (
+                <button
+                  onClick={() => setShowRecentActivityModal(true)}
+                  className="group relative inline-flex items-center justify-center p-1.5 rounded-md border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all"
+                  title={`View ${climb_history.length} recent ${climb_history.length === 1 ? 'climb' : 'climbs'}`}
+                >
+                  <Footprints className="w-4 h-4 text-gray-600 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
+                </button>
               )}
-              <ChevronRight className="w-3 h-3 text-gray-400 dark:text-gray-500 group-hover:translate-x-0.5 transition-transform" />
-            </button>
+
+              {/* Today's Condition - Compact button */}
+              <button
+                onClick={handleConditionsClick}
+                className="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-750 hover:border-gray-300 dark:hover:border-gray-600 transition-all"
+                title="View detailed conditions"
+              >
+                {/* Status with dot */}
+                <div className="flex items-center gap-1">
+                  <div className={`w-1.5 h-1.5 rounded-full ${conditionColor}`} />
+                  <span className={`text-xs font-semibold ${conditionBadge.text}`}>
+                    {conditionLabel}
+                  </span>
+                </div>
+
+                {/* Count + chevron */}
+                {hasConditions && (
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    {conditionsCount}
+                  </span>
+                )}
+                <ChevronRight className="w-3 h-3 text-gray-400 dark:text-gray-500 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -368,6 +385,15 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           riverData={riverData.length > 0 ? riverData : undefined}
           todayCondition={todayCondition}
           onClose={() => setShowConditionsModal(false)}
+        />
+      )}
+
+      {/* Recent Activity Modal */}
+      {showRecentActivityModal && climb_history && climb_history.length > 0 && (
+        <RecentActivityModal
+          locationName={location.name}
+          climbHistory={climb_history}
+          onClose={() => setShowRecentActivityModal(false)}
         />
       )}
     </div>

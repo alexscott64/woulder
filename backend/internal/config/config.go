@@ -46,8 +46,9 @@ type DatabaseConfig struct {
 
 // WeatherConfig holds weather API configuration
 type WeatherConfig struct {
-	OpenWeatherMapAPIKey string
-	PreferOpenMeteo      bool
+	OpenWeatherMapAPIKey  string
+	MountainProjectAPIKey string
+	PreferOpenMeteo       bool
 }
 
 // CacheConfig holds cache-related configuration
@@ -82,8 +83,9 @@ func Load() (*Config, error) {
 			SSLMode:  getEnv("DB_SSLMODE", "require"),
 		},
 		Weather: WeatherConfig{
-			OpenWeatherMapAPIKey: getEnv("OPENWEATHERMAP_API_KEY", ""),
-			PreferOpenMeteo:      true, // Open-Meteo is primary, OpenWeatherMap is fallback
+			OpenWeatherMapAPIKey:  getEnv("OPENWEATHERMAP_API_KEY", ""),
+			MountainProjectAPIKey: getEnv("MOUNTAIN_PROJECT_API_KEY", ""),
+			PreferOpenMeteo:       true, // Open-Meteo is primary, OpenWeatherMap is fallback
 		},
 		Cache: CacheConfig{
 			DurationMinutes: getEnvAsInt("CACHE_DURATION", 10),
