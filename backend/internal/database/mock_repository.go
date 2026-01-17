@@ -113,6 +113,11 @@ func (m *MockRepository) CleanOldWeatherData(ctx context.Context, daysToKeep int
 	return nil
 }
 
+// DeleteOldWeatherData mock
+func (m *MockRepository) DeleteOldWeatherData(ctx context.Context, locationID int, daysToKeep int) error {
+	return nil
+}
+
 // GetRiversByLocation mock
 func (m *MockRepository) GetRiversByLocation(ctx context.Context, locationID int) ([]models.River, error) {
 	if m.GetRiversByLocationFn != nil {

@@ -22,6 +22,7 @@ type Repository interface {
 	GetForecastWeather(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error)
 	GetCurrentWeather(ctx context.Context, locationID int) (*models.WeatherData, error)
 	CleanOldWeatherData(ctx context.Context, daysToKeep int) error
+	DeleteOldWeatherData(ctx context.Context, locationID int, daysToKeep int) error
 
 	// River operations
 	GetRiversByLocation(ctx context.Context, locationID int) ([]models.River, error)

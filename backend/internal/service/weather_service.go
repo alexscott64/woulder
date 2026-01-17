@@ -275,6 +275,32 @@ func (s *WeatherService) RefreshAllWeather(ctx context.Context) error {
 	log.Printf("Refreshing weather for %d locations...", len(locations))
 
 	for _, loc := range locations {
+		// Fetch and save historical weather data (last 7 days) to database
+		// This ensures rain_last_48h calculations use fresh data
+		historical, err := s.weatherClient.GetHistoricalWeather(loc.Latitude, loc.Longitude, 7)
+		if err != nil {
+			log.Printf("Failed to fetch historical weather for location %d: %v", loc.ID, err)
+		} else {
+			// Delete old historical data (older than 7 days) to prevent stale precipitation data
+			// This ensures only fresh API data is used for rain calculations
+			log.Printf("Deleting old weather data for location %d (keeping last 7 days)", loc.ID)
+			if err := s.repo.DeleteOldWeatherData(ctx, loc.ID, 7); err != nil {
+				log.Printf("ERROR: failed to delete old weather data for location %d: %v", loc.ID, err)
+			} else {
+				log.Printf("Successfully deleted old weather data for location %d", loc.ID)
+			}
+
+			// Save historical data to database
+			for i := range historical {
+				historical[i].LocationID = loc.ID
+				if err := s.repo.SaveWeatherData(ctx, &historical[i]); err != nil {
+					log.Printf("Failed to save historical weather for location %d: %v", loc.ID, err)
+				}
+			}
+			log.Printf("Updated historical weather for location %d (%d hours)", loc.ID, len(historical))
+		}
+
+		// Fetch current/forecast weather (this also triggers calculations)
 		if _, err := s.GetLocationWeather(ctx, loc.ID); err != nil {
 			log.Printf("Failed to refresh location %d: %v", loc.ID, err)
 		}

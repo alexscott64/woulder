@@ -196,15 +196,15 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 	}
 
 	// Merge precipitation data: use NAM CONUS if available, fallback to best_match
-	mergedPrecipitation := mergePrecipitationData(data.Hourly.PrecipitationNAM, data.Hourly.PrecipitationBM)
+	precipitation := mergePrecipitationData(data.Hourly.PrecipitationNAM, data.Hourly.PrecipitationBM)
 
 	// Fallback to single-model fields if multi-model not available
-	if len(mergedPrecipitation) == 0 {
-		mergedPrecipitation = data.Hourly.Precipitation
+	if len(precipitation) == 0 {
+		precipitation = data.Hourly.Precipitation
 	}
 
 	// Verify we have precipitation data
-	if len(mergedPrecipitation) == 0 {
+	if len(precipitation) == 0 {
 		return nil, fmt.Errorf("no precipitation data returned from Open-Meteo")
 	}
 
@@ -219,7 +219,7 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 		Timestamp:     timestamp,
 		Temperature:   data.Current.Temperature2m,
 		FeelsLike:     data.Current.ApparentTemperature,
-		Precipitation: mergedPrecipitation[0],
+		Precipitation: precipitation[0],
 		Humidity:      data.Current.RelativeHumidity2m,
 		WindSpeed:     data.Current.WindSpeed10m,
 		WindDirection: data.Current.WindDirection10m,
@@ -263,15 +263,15 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 	}
 
 	// Merge precipitation data: use NAM CONUS for 0-60h, fallback to best_match
-	mergedPrecipitation := mergePrecipitationData(data.Hourly.PrecipitationNAM, data.Hourly.PrecipitationBM)
+	precipitation := mergePrecipitationData(data.Hourly.PrecipitationNAM, data.Hourly.PrecipitationBM)
 
 	// Fallback to single-model fields if multi-model not available
-	if len(mergedPrecipitation) == 0 {
-		mergedPrecipitation = data.Hourly.Precipitation
+	if len(precipitation) == 0 {
+		precipitation = data.Hourly.Precipitation
 	}
 
 	// Verify we have precipitation data
-	if len(mergedPrecipitation) == 0 {
+	if len(precipitation) == 0 {
 		return nil, nil, nil, fmt.Errorf("no precipitation data returned from Open-Meteo")
 	}
 
@@ -312,7 +312,7 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 		Timestamp:     timestamp,
 		Temperature:   data.Current.Temperature2m,
 		FeelsLike:     data.Current.ApparentTemperature,
-		Precipitation: mergedPrecipitation[0],
+		Precipitation: precipitation[0],
 		Humidity:      data.Current.RelativeHumidity2m,
 		WindSpeed:     data.Current.WindSpeed10m,
 		WindDirection: data.Current.WindDirection10m,
@@ -327,7 +327,7 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 	for i := 0; i < len(data.Hourly.Time); i++ {
 		// Bounds check: ensure all arrays have data for this index
 		if i >= len(temp) || i >= len(feelsLike) ||
-			i >= len(mergedPrecipitation) || i >= len(humidity) ||
+			i >= len(precipitation) || i >= len(humidity) ||
 			i >= len(windSpeed) || i >= len(windDir) ||
 			i >= len(cloudCover) || i >= len(pressure) ||
 			i >= len(weatherCode) {
@@ -352,7 +352,7 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 			Timestamp:     timestamp,
 			Temperature:   temp[i],
 			FeelsLike:     feelsLike[i],
-			Precipitation: mergedPrecipitation[i],
+			Precipitation: precipitation[i],
 			Humidity:      humidity[i],
 			WindSpeed:     windSpeed[i],
 			WindDirection: windDir[i],
@@ -391,15 +391,15 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 	}
 
 	// Merge precipitation data: use NAM CONUS for 0-60h, fallback to best_match
-	mergedPrecipitation := mergePrecipitationData(data.Hourly.PrecipitationNAM, data.Hourly.PrecipitationBM)
+	precipitation := mergePrecipitationData(data.Hourly.PrecipitationNAM, data.Hourly.PrecipitationBM)
 
 	// Fallback to single-model fields if multi-model not available
-	if len(mergedPrecipitation) == 0 {
-		mergedPrecipitation = data.Hourly.Precipitation
+	if len(precipitation) == 0 {
+		precipitation = data.Hourly.Precipitation
 	}
 
 	// Verify we have precipitation data
-	if len(mergedPrecipitation) == 0 {
+	if len(precipitation) == 0 {
 		return nil, fmt.Errorf("no precipitation data returned from Open-Meteo")
 	}
 
@@ -411,7 +411,7 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 	for i := 0; i < len(data.Hourly.Time); i++ {
 		// Bounds check: ensure all arrays have data for this index
 		if i >= len(temp) || i >= len(feelsLike) ||
-			i >= len(mergedPrecipitation) || i >= len(humidity) ||
+			i >= len(precipitation) || i >= len(humidity) ||
 			i >= len(windSpeed) || i >= len(windDir) ||
 			i >= len(cloudCover) || i >= len(pressure) ||
 			i >= len(weatherCode) {
@@ -429,7 +429,7 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 			Timestamp:     timestamp,
 			Temperature:   temp[i],
 			FeelsLike:     feelsLike[i],
-			Precipitation: mergedPrecipitation[i],
+			Precipitation: precipitation[i],
 			Humidity:      humidity[i],
 			WindSpeed:     windSpeed[i],
 			WindDirection: windDir[i],
@@ -446,8 +446,12 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 }
 
 // GetHistoricalWeather fetches recent historical weather data using forecast API with past_days
+// Uses default model (reanalysis/observations) for accurate historical precipitation
+// NAM CONUS is a forecast model and returns stale forecast data, not actual observations
 func (c *OpenMeteoClient) GetHistoricalWeather(lat, lon float64, days int) ([]models.WeatherData, error) {
 	// Use forecast API with past_days - gives us recent historical data for rain calculations
+	// IMPORTANT: Do NOT use NAM CONUS for historical data - it returns old forecast data
+	// Use default model which provides reanalysis/observed data for past hours
 	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&past_days=%d&forecast_days=1&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC",
 		openMeteoForecastURL, lat, lon, days)
 
@@ -467,6 +471,13 @@ func (c *OpenMeteoClient) GetHistoricalWeather(lat, lon float64, days int) ([]mo
 		return nil, fmt.Errorf("failed to decode Open-Meteo response: %w", err)
 	}
 
+	// For historical data, use default precipitation (reanalysis/observations)
+	// Do NOT merge NAM CONUS data here - NAM is a forecast model and returns stale data
+	precipitation := data.Hourly.Precipitation
+
+	// Get hourly data arrays (handles both multi-model and single-model responses)
+	temp, feelsLike, humidity, cloudCover, windDir, weatherCode, windSpeed, pressure := data.getHourlyData()
+
 	now := time.Now()
 	var historical []models.WeatherData
 	for i := range data.Hourly.Time {
@@ -481,18 +492,26 @@ func (c *OpenMeteoClient) GetHistoricalWeather(lat, lon float64, days int) ([]mo
 			continue
 		}
 
+		// Bounds check for all arrays
+		if i >= len(temp) || i >= len(feelsLike) || i >= len(precipitation) ||
+			i >= len(humidity) || i >= len(windSpeed) || i >= len(windDir) ||
+			i >= len(cloudCover) || i >= len(pressure) || i >= len(weatherCode) {
+			log.Printf("Skipping historical hour %d due to incomplete data arrays", i)
+			continue
+		}
+
 		weather := models.WeatherData{
 			Timestamp:     timestamp,
-			Temperature:   data.Hourly.Temperature2m[i],
-			FeelsLike:     data.Hourly.ApparentTemperature[i],
-			Precipitation: data.Hourly.Precipitation[i],
-			Humidity:      data.Hourly.RelativeHumidity2m[i],
-			WindSpeed:     data.Hourly.WindSpeed10m[i],
-			WindDirection: data.Hourly.WindDirection10m[i],
-			CloudCover:    data.Hourly.CloudCover[i],
-			Pressure:      int(data.Hourly.Pressure[i]),
-			Description:   getWeatherDescription(data.Hourly.WeatherCode[i]),
-			Icon:          getWeatherIcon(data.Hourly.WeatherCode[i]),
+			Temperature:   temp[i],
+			FeelsLike:     feelsLike[i],
+			Precipitation: precipitation[i],
+			Humidity:      humidity[i],
+			WindSpeed:     windSpeed[i],
+			WindDirection: windDir[i],
+			CloudCover:    cloudCover[i],
+			Pressure:      int(pressure[i]),
+			Description:   getWeatherDescription(weatherCode[i]),
+			Icon:          getWeatherIcon(weatherCode[i]),
 		}
 
 		historical = append(historical, weather)

@@ -338,6 +338,20 @@ func (db *Database) CleanOldWeatherData(ctx context.Context, days int) error {
 	return err
 }
 
+// DeleteOldWeatherData deletes weather data older than specified days for a specific location
+// Deletes based on both timestamp AND created_at to handle stale forecast data
+func (db *Database) DeleteOldWeatherData(ctx context.Context, locationID int, daysToKeep int) error {
+	// Delete records where either:
+	// 1. The timestamp (observation time) is old, OR
+	// 2. The record was created more than daysToKeep ago (stale forecast data)
+	query := `DELETE FROM woulder.weather_data
+	          WHERE location_id = $1
+	          AND (timestamp < NOW() - INTERVAL '1 day' * $2
+	               OR created_at < NOW() - INTERVAL '1 day' * $2)`
+	_, err := db.conn.ExecContext(ctx, query, locationID, daysToKeep)
+	return err
+}
+
 // -------------------- Rivers --------------------
 
 func (db *Database) GetRiversByLocation(ctx context.Context, locationID int) ([]models.River, error) {
