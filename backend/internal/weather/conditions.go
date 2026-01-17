@@ -208,22 +208,40 @@ func (c *ConditionCalculator) calculateInstantCondition(
 		reasons = append(reasons, fmt.Sprintf("Warm (%.0f°F)", weather.Temperature))
 	}
 
-	// Check wind
-	if weather.WindSpeed > 30 {
-		if level == "good" {
-			level = "bad"
+	// Check wind (temperature-dependent thresholds)
+	// Below 38°F: wind matters at 18mph+
+	// Above 38°F: wind only matters at 20mph+
+	if weather.Temperature < 38 {
+		// Cold temps: lower wind threshold (18mph)
+		if weather.WindSpeed > 30 {
+			if level == "good" {
+				level = "bad"
+			}
+			reasons = append(reasons, fmt.Sprintf("Dangerous winds (%.0fmph)", weather.WindSpeed))
+		} else if weather.WindSpeed > 20 {
+			if level == "good" {
+				level = "marginal"
+			}
+			reasons = append(reasons, fmt.Sprintf("Strong winds (%.0fmph)", weather.WindSpeed))
+		} else if weather.WindSpeed > 18 {
+			if level == "good" {
+				level = "marginal"
+			}
+			reasons = append(reasons, fmt.Sprintf("Moderate winds with cold temps (%.0fmph)", weather.WindSpeed))
 		}
-		reasons = append(reasons, fmt.Sprintf("Dangerous winds (%.0fmph)", weather.WindSpeed))
-	} else if weather.WindSpeed > 20 {
-		if level == "good" {
-			level = "marginal"
+	} else {
+		// Warmer temps: higher wind threshold (20mph)
+		if weather.WindSpeed > 30 {
+			if level == "good" {
+				level = "bad"
+			}
+			reasons = append(reasons, fmt.Sprintf("Dangerous winds (%.0fmph)", weather.WindSpeed))
+		} else if weather.WindSpeed > 20 {
+			if level == "good" {
+				level = "marginal"
+			}
+			reasons = append(reasons, fmt.Sprintf("Strong winds (%.0fmph)", weather.WindSpeed))
 		}
-		reasons = append(reasons, fmt.Sprintf("Strong winds (%.0fmph)", weather.WindSpeed))
-	} else if weather.WindSpeed > 12 {
-		if level == "good" {
-			level = "marginal"
-		}
-		reasons = append(reasons, fmt.Sprintf("Moderate winds (%.0fmph)", weather.WindSpeed))
 	}
 
 	// Check humidity - only relevant when it's cold (affects ice/frost) or hot (affects comfort)
