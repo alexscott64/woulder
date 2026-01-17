@@ -36,14 +36,17 @@ type MockRepository struct {
 	GetSunExposureByLocationFn func(ctx context.Context, locationID int) (*models.LocationSunExposure, error)
 
 	// Mountain Project mocks
-	SaveMPAreaFn                    func(ctx context.Context, area *models.MPArea) error
-	SaveMPRouteFn                   func(ctx context.Context, route *models.MPRoute) error
-	SaveMPTickFn                    func(ctx context.Context, tick *models.MPTick) error
-	GetLastClimbedForLocationFn     func(ctx context.Context, locationID int) (*models.LastClimbedInfo, error)
-	GetClimbHistoryForLocationFn    func(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
-	GetMPAreaByIDFn                 func(ctx context.Context, mpAreaID string) (*models.MPArea, error)
-	GetLastTickTimestampForRouteFn  func(ctx context.Context, routeID string) (*time.Time, error)
-	GetAllRouteIDsForLocationFn     func(ctx context.Context, locationID int) ([]string, error)
+	SaveMPAreaFn                       func(ctx context.Context, area *models.MPArea) error
+	SaveMPRouteFn                      func(ctx context.Context, route *models.MPRoute) error
+	SaveMPTickFn                       func(ctx context.Context, tick *models.MPTick) error
+	GetLastClimbedForLocationFn        func(ctx context.Context, locationID int) (*models.LastClimbedInfo, error)
+	GetClimbHistoryForLocationFn       func(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
+	GetMPAreaByIDFn                    func(ctx context.Context, mpAreaID string) (*models.MPArea, error)
+	GetLastTickTimestampForRouteFn     func(ctx context.Context, routeID string) (*time.Time, error)
+	GetAllRouteIDsForLocationFn        func(ctx context.Context, locationID int) ([]string, error)
+	GetAreasOrderedByActivityFn        func(ctx context.Context, locationID int) ([]models.AreaActivitySummary, error)
+	GetSubareasOrderedByActivityFn     func(ctx context.Context, parentAreaID string, locationID int) ([]models.AreaActivitySummary, error)
+	GetRoutesOrderedByActivityFn       func(ctx context.Context, areaID string, locationID int, limit int) ([]models.RouteActivitySummary, error)
 
 	// Health
 	PingFn  func(ctx context.Context) error
@@ -258,6 +261,30 @@ func (m *MockRepository) GetLastTickTimestampForRoute(ctx context.Context, route
 func (m *MockRepository) GetAllRouteIDsForLocation(ctx context.Context, locationID int) ([]string, error) {
 	if m.GetAllRouteIDsForLocationFn != nil {
 		return m.GetAllRouteIDsForLocationFn(ctx, locationID)
+	}
+	return nil, nil
+}
+
+// GetAreasOrderedByActivity mock
+func (m *MockRepository) GetAreasOrderedByActivity(ctx context.Context, locationID int) ([]models.AreaActivitySummary, error) {
+	if m.GetAreasOrderedByActivityFn != nil {
+		return m.GetAreasOrderedByActivityFn(ctx, locationID)
+	}
+	return nil, nil
+}
+
+// GetSubareasOrderedByActivity mock
+func (m *MockRepository) GetSubareasOrderedByActivity(ctx context.Context, parentAreaID string, locationID int) ([]models.AreaActivitySummary, error) {
+	if m.GetSubareasOrderedByActivityFn != nil {
+		return m.GetSubareasOrderedByActivityFn(ctx, parentAreaID, locationID)
+	}
+	return nil, nil
+}
+
+// GetRoutesOrderedByActivity mock
+func (m *MockRepository) GetRoutesOrderedByActivity(ctx context.Context, areaID string, locationID int, limit int) ([]models.RouteActivitySummary, error) {
+	if m.GetRoutesOrderedByActivityFn != nil {
+		return m.GetRoutesOrderedByActivityFn(ctx, areaID, locationID, limit)
 	}
 	return nil, nil
 }

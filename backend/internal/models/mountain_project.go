@@ -67,3 +67,29 @@ type LastClimbedInfo struct {
 	Comment        *string   `json:"comment,omitempty"`
 	DaysSinceClimb int       `json:"days_since_climb"`
 }
+
+// AreaActivitySummary represents an area with recent activity metadata
+// Used for API responses to show areas ordered by recent climbing activity
+type AreaActivitySummary struct {
+	MPAreaID       string     `json:"mp_area_id"`               // Mountain Project area ID
+	Name           string     `json:"name"`                     // Area name
+	ParentMPAreaID *string    `json:"parent_mp_area_id,omitempty"` // Parent area ID (null for root)
+	LastClimbAt    time.Time  `json:"last_climb_at"`            // Most recent climb timestamp
+	TotalTicks     int        `json:"total_ticks"`              // Total number of climbs
+	UniqueRoutes   int        `json:"unique_routes"`            // Number of distinct routes with activity
+	DaysSinceClimb int        `json:"days_since_climb"`         // Days since last climb
+	HasSubareas    bool       `json:"has_subareas"`             // Whether this area has child subareas
+}
+
+// RouteActivitySummary represents a boulder with recent activity
+// Used for API responses to show routes ordered by recent climbing activity
+type RouteActivitySummary struct {
+	MPRouteID      string            `json:"mp_route_id"`         // Mountain Project route ID
+	Name           string            `json:"name"`                // Route name
+	Rating         string            `json:"rating"`              // Grade (V4, 5.10a, etc.)
+	MPAreaID       string            `json:"mp_area_id"`          // Parent area ID
+	LastClimbAt    time.Time         `json:"last_climb_at"`       // Most recent climb timestamp
+	MostRecentTick ClimbHistoryEntry `json:"most_recent_tick"`    // Latest tick details
+	RecentTicks    []ClimbHistoryEntry `json:"recent_ticks,omitempty"` // Additional recent ticks (optional)
+	DaysSinceClimb int               `json:"days_since_climb"`    // Days since last climb
+}

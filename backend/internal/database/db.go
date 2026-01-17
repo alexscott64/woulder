@@ -804,6 +804,252 @@ func (db *Database) GetClimbHistoryForLocation(ctx context.Context, locationID i
 	return history, nil
 }
 
+// GetAreasOrderedByActivity retrieves areas ordered by most recent climb activity
+// Only includes root areas (parent_mp_area_id IS NULL) and filters for a specific location
+// Uses the same smart date filtering as GetClimbHistoryForLocation
+func (db *Database) GetAreasOrderedByActivity(ctx context.Context, locationID int) ([]models.AreaActivitySummary, error) {
+	query := `
+		WITH adjusted_ticks AS (
+			SELECT
+				t.mp_route_id,
+				CASE
+					WHEN t.climbed_at > NOW() + INTERVAL '350 days'
+					     AND t.climbed_at < NOW() + INTERVAL '380 days'
+					THEN t.climbed_at - INTERVAL '1 year'
+					ELSE t.climbed_at
+				END AS adjusted_climbed_at
+			FROM woulder.mp_ticks t
+			WHERE
+				t.climbed_at <= NOW() + INTERVAL '30 days'
+				AND t.climbed_at >= NOW() - INTERVAL '2 years'
+		)
+		SELECT
+			a.mp_area_id,
+			a.name,
+			a.parent_mp_area_id,
+			MAX(at.adjusted_climbed_at) AS last_climb_at,
+			COUNT(DISTINCT at.mp_route_id) AS unique_routes,
+			COUNT(*)::int AS total_ticks,
+			EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int AS days_since_climb,
+			EXISTS(SELECT 1 FROM woulder.mp_areas sub WHERE sub.parent_mp_area_id = a.mp_area_id) AS has_subareas
+		FROM woulder.mp_areas a
+		INNER JOIN woulder.mp_routes r ON a.mp_area_id = r.mp_area_id
+		INNER JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id
+		WHERE a.location_id = $1
+		  AND a.parent_mp_area_id IS NULL
+		GROUP BY a.mp_area_id, a.name, a.parent_mp_area_id
+		HAVING MAX(at.adjusted_climbed_at) IS NOT NULL
+		ORDER BY MAX(at.adjusted_climbed_at) DESC
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query, locationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var areas []models.AreaActivitySummary
+	for rows.Next() {
+		var area models.AreaActivitySummary
+		err := rows.Scan(
+			&area.MPAreaID,
+			&area.Name,
+			&area.ParentMPAreaID,
+			&area.LastClimbAt,
+			&area.UniqueRoutes,
+			&area.TotalTicks,
+			&area.DaysSinceClimb,
+			&area.HasSubareas,
+		)
+		if err != nil {
+			return nil, err
+		}
+		areas = append(areas, area)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return areas, nil
+}
+
+// GetSubareasOrderedByActivity retrieves subareas of a parent area ordered by most recent climb activity
+// Uses the same smart date filtering as GetClimbHistoryForLocation
+func (db *Database) GetSubareasOrderedByActivity(ctx context.Context, parentAreaID string, locationID int) ([]models.AreaActivitySummary, error) {
+	query := `
+		WITH adjusted_ticks AS (
+			SELECT
+				t.mp_route_id,
+				CASE
+					WHEN t.climbed_at > NOW() + INTERVAL '350 days'
+					     AND t.climbed_at < NOW() + INTERVAL '380 days'
+					THEN t.climbed_at - INTERVAL '1 year'
+					ELSE t.climbed_at
+				END AS adjusted_climbed_at
+			FROM woulder.mp_ticks t
+			WHERE
+				t.climbed_at <= NOW() + INTERVAL '30 days'
+				AND t.climbed_at >= NOW() - INTERVAL '2 years'
+		)
+		SELECT
+			a.mp_area_id,
+			a.name,
+			a.parent_mp_area_id,
+			COALESCE(MAX(at.adjusted_climbed_at), NOW() - INTERVAL '10 years') AS last_climb_at,
+			COUNT(DISTINCT at.mp_route_id) AS unique_routes,
+			COUNT(*)::int AS total_ticks,
+			COALESCE(EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int, 3650) AS days_since_climb,
+			EXISTS(SELECT 1 FROM woulder.mp_areas sub WHERE sub.parent_mp_area_id = a.mp_area_id) AS has_subareas
+		FROM woulder.mp_areas a
+		LEFT JOIN woulder.mp_routes r ON a.mp_area_id = r.mp_area_id
+		LEFT JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id
+		WHERE a.parent_mp_area_id = $1
+		  AND a.location_id = $2
+		GROUP BY a.mp_area_id, a.name, a.parent_mp_area_id
+		ORDER BY MAX(at.adjusted_climbed_at) DESC NULLS LAST
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query, parentAreaID, locationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var areas []models.AreaActivitySummary
+	for rows.Next() {
+		var area models.AreaActivitySummary
+		err := rows.Scan(
+			&area.MPAreaID,
+			&area.Name,
+			&area.ParentMPAreaID,
+			&area.LastClimbAt,
+			&area.UniqueRoutes,
+			&area.TotalTicks,
+			&area.DaysSinceClimb,
+			&area.HasSubareas,
+		)
+		if err != nil {
+			return nil, err
+		}
+		areas = append(areas, area)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return areas, nil
+}
+
+// GetRoutesOrderedByActivity retrieves routes in an area ordered by most recent climb activity
+// Includes the most recent tick for each route, with optional additional recent ticks
+// Uses the same smart date filtering as GetClimbHistoryForLocation
+func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID string, locationID int, limit int) ([]models.RouteActivitySummary, error) {
+	query := `
+		WITH adjusted_ticks AS (
+			SELECT
+				t.mp_route_id,
+				t.user_name,
+				CASE
+					WHEN t.climbed_at > NOW() + INTERVAL '350 days'
+					     AND t.climbed_at < NOW() + INTERVAL '380 days'
+					THEN t.climbed_at - INTERVAL '1 year'
+					ELSE t.climbed_at
+				END AS adjusted_climbed_at,
+				t.style,
+				t.comment,
+				ROW_NUMBER() OVER (PARTITION BY t.mp_route_id ORDER BY
+					CASE
+						WHEN t.climbed_at > NOW() + INTERVAL '350 days'
+						     AND t.climbed_at < NOW() + INTERVAL '380 days'
+						THEN t.climbed_at - INTERVAL '1 year'
+						ELSE t.climbed_at
+					END DESC) AS tick_rank
+			FROM woulder.mp_ticks t
+			WHERE
+				t.climbed_at <= NOW() + INTERVAL '30 days'
+				AND t.climbed_at >= NOW() - INTERVAL '2 years'
+		),
+		route_activity AS (
+			SELECT
+				r.mp_route_id,
+				r.name,
+				r.rating,
+				r.mp_area_id,
+				MAX(at.adjusted_climbed_at) AS last_climb_at,
+				EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int AS days_since_climb
+			FROM woulder.mp_routes r
+			INNER JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id
+			WHERE r.mp_area_id = $1
+			  AND r.location_id = $2
+			GROUP BY r.mp_route_id, r.name, r.rating, r.mp_area_id
+		)
+		SELECT
+			ra.mp_route_id,
+			ra.name,
+			ra.rating,
+			ra.mp_area_id,
+			ra.last_climb_at,
+			ra.days_since_climb,
+			at.user_name,
+			at.adjusted_climbed_at,
+			at.style,
+			at.comment,
+			a.name AS area_name
+		FROM route_activity ra
+		INNER JOIN adjusted_ticks at ON ra.mp_route_id = at.mp_route_id AND at.tick_rank = 1
+		INNER JOIN woulder.mp_areas a ON ra.mp_area_id = a.mp_area_id
+		ORDER BY ra.last_climb_at DESC
+		LIMIT $3
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query, areaID, locationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var routes []models.RouteActivitySummary
+	for rows.Next() {
+		var route models.RouteActivitySummary
+		var mostRecentTick models.ClimbHistoryEntry
+
+		err := rows.Scan(
+			&route.MPRouteID,
+			&route.Name,
+			&route.Rating,
+			&route.MPAreaID,
+			&route.LastClimbAt,
+			&route.DaysSinceClimb,
+			&mostRecentTick.ClimbedBy,
+			&mostRecentTick.ClimbedAt,
+			&mostRecentTick.Style,
+			&mostRecentTick.Comment,
+			&mostRecentTick.AreaName,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Populate the most recent tick fields
+		mostRecentTick.MPRouteID = route.MPRouteID
+		mostRecentTick.RouteName = route.Name
+		mostRecentTick.RouteRating = route.Rating
+		mostRecentTick.MPAreaID = route.MPAreaID
+		mostRecentTick.DaysSinceClimb = route.DaysSinceClimb
+
+		route.MostRecentTick = mostRecentTick
+		routes = append(routes, route)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return routes, nil
+}
+
 func (db *Database) GetMPAreaByID(ctx context.Context, mpAreaID string) (*models.MPArea, error) {
 	query := `
 		SELECT id, mp_area_id, name, parent_mp_area_id, area_type,

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/gin-gonic/gin"
 )
 
@@ -52,4 +53,112 @@ func (h *Handler) GetLastClimbedForLocation(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"last_climbed_info": lastClimbed})
+}
+
+// GetAreasOrderedByActivity retrieves areas ordered by most recent climb activity
+// GET /api/climbs/location/:id/areas
+func (h *Handler) GetAreasOrderedByActivity(c *gin.Context) {
+	// Parse location ID from URL
+	locationIDStr := c.Param("id")
+	locationID, err := strconv.Atoi(locationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		return
+	}
+
+	// Fetch areas ordered by activity
+	areas, err := h.climbTrackingService.GetAreasOrderedByActivity(c.Request.Context(), locationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve area activity data"})
+		return
+	}
+
+	// Return empty array if no data found
+	if areas == nil {
+		areas = []models.AreaActivitySummary{}
+	}
+
+	c.JSON(http.StatusOK, areas)
+}
+
+// GetSubareasOrderedByActivity retrieves subareas of a parent area ordered by recent climb activity
+// GET /api/climbs/location/:id/areas/:area_id/subareas
+func (h *Handler) GetSubareasOrderedByActivity(c *gin.Context) {
+	// Parse location ID and area ID from URL
+	locationIDStr := c.Param("id")
+	locationID, err := strconv.Atoi(locationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		return
+	}
+
+	areaID := c.Param("area_id")
+	if areaID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Area ID is required"})
+		return
+	}
+
+	// Fetch subareas ordered by activity
+	subareas, err := h.climbTrackingService.GetSubareasOrderedByActivity(c.Request.Context(), areaID, locationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve subarea activity data"})
+		return
+	}
+
+	// Return empty array if no data found
+	if subareas == nil {
+		subareas = []models.AreaActivitySummary{}
+	}
+
+	c.JSON(http.StatusOK, subareas)
+}
+
+// GetRoutesOrderedByActivity retrieves routes in an area ordered by recent climb activity
+// GET /api/climbs/location/:id/areas/:area_id/routes?limit=50
+func (h *Handler) GetRoutesOrderedByActivity(c *gin.Context) {
+	// Parse location ID and area ID from URL
+	locationIDStr := c.Param("id")
+	locationID, err := strconv.Atoi(locationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		return
+	}
+
+	areaID := c.Param("area_id")
+	if areaID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Area ID is required"})
+		return
+	}
+
+	// Parse optional limit query parameter (default 50, max 200)
+	limit := 50
+	if limitStr := c.Query("limit"); limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid limit parameter"})
+			return
+		}
+		if parsedLimit < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Limit must be at least 1"})
+			return
+		}
+		if parsedLimit > 200 {
+			parsedLimit = 200
+		}
+		limit = parsedLimit
+	}
+
+	// Fetch routes ordered by activity
+	routes, err := h.climbTrackingService.GetRoutesOrderedByActivity(c.Request.Context(), areaID, locationID, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve route activity data"})
+		return
+	}
+
+	// Return empty array if no data found
+	if routes == nil {
+		routes = []models.RouteActivitySummary{}
+	}
+
+	c.JSON(http.StatusOK, routes)
 }
