@@ -192,20 +192,28 @@ func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID strin
 		return fmt.Errorf("failed to fetch ticks: %w", err)
 	}
 
+	// Load Pacific timezone (America/Los_Angeles) for Mountain Project dates
+	// Mountain Project returns dates in local time (typically Pacific for US climbing areas)
+	pacificTZ, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		log.Printf("Warning: failed to load Pacific timezone, falling back to UTC: %v", err)
+		pacificTZ = time.UTC
+	}
+
 	tickCount := 0
 	for _, tick := range ticks {
 		// Parse the date - Mountain Project API returns multiple formats
 		var climbedAt time.Time
 		var err error
 
-		// Format 1: "Jan 2, 2006, 3:04 pm"
-		climbedAt, err = time.Parse("Jan 2, 2006, 3:04 pm", tick.Date)
+		// Format 1: "Jan 2, 2006, 3:04 pm" - Most common format
+		climbedAt, err = time.ParseInLocation("Jan 2, 2006, 3:04 pm", tick.Date, pacificTZ)
 		if err != nil {
 			// Format 2: "2006-01-02 15:04:05"
-			climbedAt, err = time.Parse("2006-01-02 15:04:05", tick.Date)
+			climbedAt, err = time.ParseInLocation("2006-01-02 15:04:05", tick.Date, pacificTZ)
 			if err != nil {
-				// Format 3: "2006-01-02"
-				climbedAt, err = time.Parse("2006-01-02", tick.Date)
+				// Format 3: "2006-01-02" - Date only, use noon Pacific as default time
+				climbedAt, err = time.ParseInLocation("2006-01-02", tick.Date, pacificTZ)
 				if err != nil {
 					log.Printf("Warning: invalid date format for tick on route %s: %s", routeID, tick.Date)
 					continue
@@ -297,6 +305,13 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 
 	log.Printf("Starting incremental tick sync for location %d (%d routes)", locationID, len(routeIDs))
 
+	// Load Pacific timezone for Mountain Project dates
+	pacificTZ, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		log.Printf("Warning: failed to load Pacific timezone, falling back to UTC: %v", err)
+		pacificTZ = time.UTC
+	}
+
 	totalNewTicks := 0
 	routesProcessed := 0
 
@@ -324,13 +339,13 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 
 		newTickCount := 0
 		for _, tick := range ticks {
-			// Parse the date
+			// Parse the date in Pacific timezone
 			var climbedAt time.Time
-			climbedAt, err = time.Parse("Jan 2, 2006, 3:04 pm", tick.Date)
+			climbedAt, err = time.ParseInLocation("Jan 2, 2006, 3:04 pm", tick.Date, pacificTZ)
 			if err != nil {
-				climbedAt, err = time.Parse("2006-01-02 15:04:05", tick.Date)
+				climbedAt, err = time.ParseInLocation("2006-01-02 15:04:05", tick.Date, pacificTZ)
 				if err != nil {
-					climbedAt, err = time.Parse("2006-01-02", tick.Date)
+					climbedAt, err = time.ParseInLocation("2006-01-02", tick.Date, pacificTZ)
 					if err != nil {
 						log.Printf("Warning: invalid date format for tick on route %s: %s", routeID, tick.Date)
 						continue

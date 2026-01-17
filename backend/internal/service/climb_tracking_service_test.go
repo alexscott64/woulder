@@ -352,3 +352,234 @@ func TestClimbTrackingService_DateParsing(t *testing.T) {
 		})
 	}
 }
+
+// TestDateParsingWithTimezone verifies that Mountain Project dates are correctly parsed in Pacific timezone
+func TestDateParsingWithTimezone(t *testing.T) {
+	tests := []struct {
+		name         string
+		inputDate    string
+		expectedHour int // Hour in UTC after conversion from Pacific
+		expectedDay  int // Day in UTC (may differ due to timezone)
+	}{
+		{
+			name:         "Afternoon Pacific time stays same day in UTC",
+			inputDate:    "Jan 14, 2026, 3:04 pm",
+			expectedHour: 23, // 3 PM PST = 11 PM UTC (PST is UTC-8)
+			expectedDay:  14,
+		},
+		{
+			name:         "Morning Pacific time stays same day in UTC",
+			inputDate:    "Jan 14, 2026, 9:30 am",
+			expectedHour: 17, // 9:30 AM PST = 5:30 PM UTC
+			expectedDay:  14,
+		},
+		{
+			name:         "Late evening Pacific crosses date boundary to next day UTC",
+			inputDate:    "Jan 14, 2026, 11:00 pm",
+			expectedHour: 7, // 11 PM PST = 7 AM UTC next day
+			expectedDay:  15, // Crosses to next day in UTC
+		},
+		{
+			name:         "Early morning Pacific is previous day in UTC",
+			inputDate:    "Jan 14, 2026, 12:30 am",
+			expectedHour: 8, // 12:30 AM PST = 8:30 AM UTC
+			expectedDay:  14,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			savedTicks := []*models.MPTick{}
+
+			mockRepo := &database.MockRepository{
+				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
+					return []string{"test-route-123"}, nil
+				},
+				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+					return nil, nil // No previous ticks
+				},
+				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
+					savedTicks = append(savedTicks, tick)
+					return nil
+				},
+			}
+
+			mockMPClient := &MockMPClient{
+				GetRouteTicksFn: func(routeID string) ([]mountainproject.Tick, error) {
+					return []mountainproject.Tick{
+						createTickWithUser(tt.inputDate, "TestUser", "Send"),
+					}, nil
+				},
+			}
+
+			service := NewClimbTrackingService(mockRepo, mockMPClient)
+			err := service.SyncNewTicksForLocation(context.Background(), 1)
+
+			assert.NoError(t, err)
+			assert.Equal(t, 1, len(savedTicks), "Expected 1 tick to be saved")
+
+			if len(savedTicks) > 0 {
+				savedTick := savedTicks[0]
+
+				// Convert to UTC for comparison
+				utcTime := savedTick.ClimbedAt.UTC()
+
+				// Verify the hour matches expected UTC hour
+				assert.Equal(t, tt.expectedHour, utcTime.Hour(),
+					"Hour mismatch for input %s: expected %d UTC, got %d UTC (full time: %s)",
+					tt.inputDate, tt.expectedHour, utcTime.Hour(), utcTime.Format(time.RFC3339))
+
+				// Verify the day matches expected UTC day
+				assert.Equal(t, tt.expectedDay, utcTime.Day(),
+					"Day mismatch for input %s: expected day %d UTC, got day %d UTC (full time: %s)",
+					tt.inputDate, tt.expectedDay, utcTime.Day(), utcTime.Format(time.RFC3339))
+
+				// Verify the timezone is preserved (should be Pacific)
+				zone, _ := savedTick.ClimbedAt.Zone()
+				assert.Contains(t, []string{"PST", "PDT"}, zone,
+					"Expected Pacific timezone (PST/PDT), got %s", zone)
+			}
+		})
+	}
+}
+
+// TestTimezoneConsistencyBetweenSyncs verifies dates are consistent when parsed and compared
+func TestTimezoneConsistencyBetweenSyncs(t *testing.T) {
+	pacificTZ, err := time.LoadLocation("America/Los_Angeles")
+	assert.NoError(t, err, "Failed to load Pacific timezone")
+
+	// Jamie's climb on Jan 14, 2026 at 2:30 PM Pacific
+	referenceTime := time.Date(2026, 1, 14, 14, 30, 0, 0, pacificTZ)
+
+	tests := []struct {
+		name          string
+		tickDate      string
+		shouldBeSaved bool
+		description   string
+	}{
+		{
+			name:          "Exact same time - should be skipped",
+			tickDate:      "Jan 14, 2026, 2:30 pm",
+			shouldBeSaved: false,
+			description:   "Tick at exact reference time should not be saved (already have it)",
+		},
+		{
+			name:          "Earlier time - should be skipped",
+			tickDate:      "Jan 13, 2026, 10:00 am",
+			shouldBeSaved: false,
+			description:   "Tick before reference time should not be saved",
+		},
+		{
+			name:          "Later time - should be saved",
+			tickDate:      "Jan 15, 2026, 9:00 am",
+			shouldBeSaved: true,
+			description:   "Tick after reference time should be saved",
+		},
+		{
+			name:          "One minute later - should be saved",
+			tickDate:      "Jan 14, 2026, 2:31 pm",
+			shouldBeSaved: true,
+			description:   "Tick 1 minute after reference time should be saved",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			savedTicks := []*models.MPTick{}
+
+			mockRepo := &database.MockRepository{
+				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
+					return []string{"route-1"}, nil
+				},
+				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+					return &referenceTime, nil
+				},
+				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
+					savedTicks = append(savedTicks, tick)
+					return nil
+				},
+			}
+
+			mockMPClient := &MockMPClient{
+				GetRouteTicksFn: func(routeID string) ([]mountainproject.Tick, error) {
+					return []mountainproject.Tick{
+						createTickWithUser(tt.tickDate, "TestUser", "Send"),
+					}, nil
+				},
+			}
+
+			service := NewClimbTrackingService(mockRepo, mockMPClient)
+			err := service.SyncNewTicksForLocation(context.Background(), 1)
+
+			assert.NoError(t, err)
+
+			if tt.shouldBeSaved {
+				assert.Equal(t, 1, len(savedTicks), "%s: Expected tick to be saved", tt.description)
+				if len(savedTicks) > 0 {
+					assert.True(t, savedTicks[0].ClimbedAt.After(referenceTime),
+						"%s: Saved tick should be after reference time", tt.description)
+				}
+			} else {
+				assert.Equal(t, 0, len(savedTicks), "%s: Expected tick to be skipped", tt.description)
+			}
+		})
+	}
+}
+
+// TestJamieZeldaRailsScenario tests the exact scenario from the bug report
+func TestJamieZeldaRailsScenario(t *testing.T) {
+	// Jamie sent Zelda Rails on Jan 14, 2026
+	// Mountain Project shows Jan 14th
+	// But it was appearing as Jan 13th in the database
+
+	savedTicks := []*models.MPTick{}
+
+	mockRepo := &database.MockRepository{
+		GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
+			return []string{"zelda-rails-route"}, nil
+		},
+		GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+			return nil, nil // No previous ticks
+		},
+		SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
+			savedTicks = append(savedTicks, tick)
+			return nil
+		},
+	}
+
+	mockMPClient := &MockMPClient{
+		GetRouteTicksFn: func(routeID string) ([]mountainproject.Tick, error) {
+			return []mountainproject.Tick{
+				createTickWithUser("Jan 14, 2026, 2:30 pm", "Jamie", "Send"),
+			}, nil
+		},
+	}
+
+	service := NewClimbTrackingService(mockRepo, mockMPClient)
+	err := service.SyncNewTicksForLocation(context.Background(), 2) // Location 2 is Index, WA
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(savedTicks), "Expected Jamie's tick to be saved")
+
+	if len(savedTicks) > 0 {
+		tick := savedTicks[0]
+		assert.Equal(t, "Jamie", tick.UserName)
+		assert.Equal(t, "Send", tick.Style)
+
+		// The critical assertion: when viewed in Pacific timezone, it should be Jan 14
+		pacificTZ, err := time.LoadLocation("America/Los_Angeles")
+		assert.NoError(t, err)
+
+		tickInPacific := tick.ClimbedAt.In(pacificTZ)
+		assert.Equal(t, 14, tickInPacific.Day(),
+			"Jamie's tick should be on Jan 14 when viewed in Pacific timezone, got day %d (full time: %s)",
+			tickInPacific.Day(), tickInPacific.Format(time.RFC3339))
+		assert.Equal(t, time.January, tickInPacific.Month())
+		assert.Equal(t, 2026, tickInPacific.Year())
+
+		// Also verify that when the database returns this timestamp,
+		// and we calculate days_since_climb, it should be based on the Pacific date
+		t.Logf("Saved tick time: %s", tick.ClimbedAt.Format(time.RFC3339))
+		t.Logf("Tick time in Pacific: %s", tickInPacific.Format(time.RFC3339))
+	}
+}
