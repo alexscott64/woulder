@@ -516,3 +516,264 @@ func TestHumidityMessages(t *testing.T) {
 		})
 	}
 }
+
+func TestFilterPastHourReasons(t *testing.T) {
+	calc := &ConditionCalculator{}
+
+	tests := []struct {
+		name          string
+		input         models.ClimbingCondition
+		expectedLevel string
+		expectedCount int
+	}{
+		{
+			name: "Keep precipitation, remove temp",
+			input: models.ClimbingCondition{
+				Level:   "bad",
+				Reasons: []string{"Heavy rain (0.15in/hr)", "Cold (38°F)"},
+			},
+			expectedLevel: "bad",
+			expectedCount: 1, // Only rain reason kept
+		},
+		{
+			name: "Remove all temp/wind, return good",
+			input: models.ClimbingCondition{
+				Level:   "marginal",
+				Reasons: []string{"Cold (38°F)", "Moderate winds (15mph)"},
+			},
+			expectedLevel: "good",
+			expectedCount: 0, // All filtered out
+		},
+		{
+			name: "Keep light rain",
+			input: models.ClimbingCondition{
+				Level:   "marginal",
+				Reasons: []string{"Light rain (0.02in/hr)", "Strong winds (22mph)"},
+			},
+			expectedLevel: "marginal",
+			expectedCount: 1, // Only rain kept
+		},
+		{
+			name: "Keep persistent drizzle",
+			input: models.ClimbingCondition{
+				Level:   "marginal",
+				Reasons: []string{"Persistent drizzle (0.08in over 2h)", "Cold (39°F)"},
+			},
+			expectedLevel: "marginal",
+			expectedCount: 1, // Only drizzle kept
+		},
+		{
+			name: "No reasons - return good",
+			input: models.ClimbingCondition{
+				Level:   "good",
+				Reasons: []string{},
+			},
+			expectedLevel: "good",
+			expectedCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calc.filterPastHourReasons(tt.input)
+
+			if result.Level != tt.expectedLevel {
+				t.Errorf("Expected level %s, got %s", tt.expectedLevel, result.Level)
+			}
+
+			if len(result.Reasons) != tt.expectedCount {
+				t.Errorf("Expected %d reasons, got %d: %v", tt.expectedCount, len(result.Reasons), result.Reasons)
+			}
+		})
+	}
+}
+
+func TestWindTemperatureThresholds(t *testing.T) {
+	calc := &ConditionCalculator{}
+	pacificLoc, _ := time.LoadLocation("America/Los_Angeles")
+
+	tests := []struct {
+		name        string
+		temperature float64
+		windSpeed   float64
+		expected    string
+		hasReason   bool
+	}{
+		// Cold temps (< 38°F) - lower wind threshold (18mph)
+		{
+			name:        "Cold temp with 17mph wind - good",
+			temperature: 37,
+			windSpeed:   17,
+			expected:    "marginal", // marginal due to cold, but not wind
+			hasReason:   true,       // Cold reason only
+		},
+		{
+			name:        "Cold temp with 19mph wind - marginal",
+			temperature: 37,
+			windSpeed:   19,
+			expected:    "marginal",
+			hasReason:   true, // Cold + wind
+		},
+		{
+			name:        "Cold temp with 22mph wind - marginal",
+			temperature: 37,
+			windSpeed:   22,
+			expected:    "marginal", // marginal due to cold + strong winds
+			hasReason:   true,
+		},
+		// Warm temps (>= 38°F) - higher wind threshold (20mph)
+		{
+			name:        "Warm temp with 19mph wind - good",
+			temperature: 60,
+			windSpeed:   19,
+			expected:    "good",
+			hasReason:   false,
+		},
+		{
+			name:        "Warm temp with 21mph wind - marginal",
+			temperature: 60,
+			windSpeed:   21,
+			expected:    "marginal",
+			hasReason:   true, // Wind only
+		},
+		{
+			name:        "Warm temp with 35mph wind - bad",
+			temperature: 60,
+			windSpeed:   35,
+			expected:    "bad",
+			hasReason:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			weather := &models.WeatherData{
+				Temperature:   tt.temperature,
+				Precipitation: 0,
+				WindSpeed:     tt.windSpeed,
+				Humidity:      60,
+				Timestamp:     time.Now().In(pacificLoc),
+			}
+
+			result := calc.calculateInstantCondition(weather, []models.WeatherData{})
+
+			if result.Level != tt.expected {
+				t.Errorf("Expected level %s, got %s. Reasons: %v", tt.expected, result.Level, result.Reasons)
+			}
+
+			if tt.hasReason && len(result.Reasons) == 0 {
+				t.Errorf("Expected reasons but got none")
+			}
+		})
+	}
+}
+
+func TestTodayConditionIgnoresPastTempAndWind(t *testing.T) {
+	calc := &ConditionCalculator{}
+	pacificLoc, _ := time.LoadLocation("America/Los_Angeles")
+	if pacificLoc == nil {
+		pacificLoc = time.UTC
+	}
+
+	// Simulate: It's 2pm, and it was cold at 8am (38°F) but now it's 60°F
+	now := time.Now().In(pacificLoc)
+	currentTime := time.Date(now.Year(), now.Month(), now.Day(), 14, 0, 0, 0, pacificLoc) // 2pm
+
+	tests := []struct {
+		name           string
+		current        *models.WeatherData
+		hourlyForecast []models.WeatherData
+		expectedLevel  string
+		shouldNotHave  string // reason that should NOT be in result
+	}{
+		{
+			name: "Past cold temp should be ignored",
+			current: &models.WeatherData{
+				Temperature:   60,
+				Precipitation: 0,
+				WindSpeed:     8,
+				Humidity:      60,
+				Timestamp:     currentTime, // 2pm now, 60°F
+			},
+			hourlyForecast: []models.WeatherData{
+				// Past hour at 8am was cold (should be filtered out)
+				{Timestamp: currentTime.Add(-6 * time.Hour), Temperature: 38, Precipitation: 0, WindSpeed: 8, Humidity: 60}, // 8am
+				// Future hours are good
+				{Timestamp: currentTime.Add(1 * time.Hour), Temperature: 62, Precipitation: 0, WindSpeed: 8, Humidity: 60}, // 3pm
+				{Timestamp: currentTime.Add(2 * time.Hour), Temperature: 61, Precipitation: 0, WindSpeed: 7, Humidity: 58}, // 4pm
+			},
+			expectedLevel: "good",
+			shouldNotHave: "Cold",
+		},
+		{
+			name: "Past high wind should be ignored",
+			current: &models.WeatherData{
+				Temperature:   60,
+				Precipitation: 0,
+				WindSpeed:     10,
+				Humidity:      60,
+				Timestamp:     currentTime, // 2pm now, calm
+			},
+			hourlyForecast: []models.WeatherData{
+				// Past hour at 8am was windy (should be filtered out)
+				{Timestamp: currentTime.Add(-6 * time.Hour), Temperature: 60, Precipitation: 0, WindSpeed: 25, Humidity: 60}, // 8am
+				// Future hours are good
+				{Timestamp: currentTime.Add(1 * time.Hour), Temperature: 62, Precipitation: 0, WindSpeed: 8, Humidity: 60}, // 3pm
+			},
+			expectedLevel: "good",
+			shouldNotHave: "wind",
+		},
+		{
+			name: "Past rain should still affect condition",
+			current: &models.WeatherData{
+				Temperature:   60,
+				Precipitation: 0,
+				WindSpeed:     8,
+				Humidity:      60,
+				Timestamp:     currentTime, // 2pm now, no rain
+			},
+			hourlyForecast: []models.WeatherData{
+				// Past hour at 10am had rain (should be kept because rock might still be wet)
+				{Timestamp: currentTime.Add(-4 * time.Hour), Temperature: 60, Precipitation: 0.08, WindSpeed: 8, Humidity: 75}, // 10am
+				// Future hours are good
+				{Timestamp: currentTime.Add(1 * time.Hour), Temperature: 62, Precipitation: 0, WindSpeed: 8, Humidity: 60}, // 3pm
+			},
+			expectedLevel: "bad", // Should be bad because of rain
+			shouldNotHave: "",    // We DO want rain in the reasons
+		},
+		{
+			name: "Future cold temp should affect condition",
+			current: &models.WeatherData{
+				Temperature:   60,
+				Precipitation: 0,
+				WindSpeed:     8,
+				Humidity:      60,
+				Timestamp:     currentTime, // 2pm now, good
+			},
+			hourlyForecast: []models.WeatherData{
+				// Future hour at 6pm will be cold
+				{Timestamp: currentTime.Add(4 * time.Hour), Temperature: 38, Precipitation: 0, WindSpeed: 8, Humidity: 60}, // 6pm
+			},
+			expectedLevel: "marginal", // Should be marginal because it will be cold later
+			shouldNotHave: "",         // We DO want cold warning for future
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calc.CalculateTodayCondition(tt.current, tt.hourlyForecast, []models.WeatherData{})
+
+			if result.Level != tt.expectedLevel {
+				t.Errorf("Expected level %s, got %s. Reasons: %v", tt.expectedLevel, result.Level, result.Reasons)
+			}
+
+			if tt.shouldNotHave != "" {
+				for _, reason := range result.Reasons {
+					if contains(toLower(reason), toLower(tt.shouldNotHave)) {
+						t.Errorf("Should not have reason containing '%s', but got: %v", tt.shouldNotHave, result.Reasons)
+					}
+				}
+			}
+		})
+	}
+}

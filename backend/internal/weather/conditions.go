@@ -51,6 +51,10 @@ func (c *ConditionCalculator) CalculateTodayCondition(
 	var marginalHours []hourCondition
 
 	for i, hour := range todayHours {
+		// Skip past hours for temp/wind analysis (but keep for precipitation context)
+		// Only consider current hour onwards for temp/wind conditions
+		isPastHour := hour.Timestamp.Before(now)
+
 		// Get recent hours for context (previous 2 hours from today's data)
 		var recentHours []models.WeatherData
 		if i > 0 {
@@ -62,6 +66,12 @@ func (c *ConditionCalculator) CalculateTodayCondition(
 		}
 
 		cond := c.calculateInstantCondition(&hour, recentHours)
+
+		// If this is a past hour, filter out temp/wind reasons (keep only precip-related)
+		if isPastHour {
+			cond = c.filterPastHourReasons(cond)
+		}
+
 		hc := hourCondition{
 			condition:      cond,
 			hour:           hour,
@@ -149,6 +159,47 @@ func (c *ConditionCalculator) CalculateRainLast48h(historical []models.WeatherDa
 	}
 
 	return total
+}
+
+// filterPastHourReasons removes temp/wind reasons from past hours
+// Precipitation reasons are kept because wet rock affects current climbing
+func (c *ConditionCalculator) filterPastHourReasons(cond models.ClimbingCondition) models.ClimbingCondition {
+	var filteredReasons []string
+	hasPrecipIssue := false
+
+	for _, reason := range cond.Reasons {
+		lowerReason := toLower(reason)
+		// Keep precipitation-related reasons (they affect current conditions)
+		if contains(lowerReason, "rain") || contains(lowerReason, "precip") || contains(lowerReason, "drizzle") {
+			filteredReasons = append(filteredReasons, reason)
+			hasPrecipIssue = true
+		}
+		// Skip temp/wind/humidity reasons from past hours
+	}
+
+	// If we filtered out all reasons, or only had temp/wind issues, return good condition
+	if len(filteredReasons) == 0 {
+		return models.ClimbingCondition{Level: "good", Reasons: []string{}}
+	}
+
+	// Recalculate level based on remaining reasons
+	level := "good"
+	if hasPrecipIssue {
+		// Check severity based on remaining precipitation reasons
+		for _, reason := range filteredReasons {
+			lowerReason := toLower(reason)
+			if contains(lowerReason, "heavy") || contains(lowerReason, "moderate") {
+				level = "bad"
+				break
+			} else if contains(lowerReason, "light") || contains(lowerReason, "drizzle") {
+				if level == "good" {
+					level = "marginal"
+				}
+			}
+		}
+	}
+
+	return models.ClimbingCondition{Level: level, Reasons: filteredReasons}
 }
 
 // calculateInstantCondition calculates condition for a single point in time
