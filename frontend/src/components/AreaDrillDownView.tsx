@@ -65,7 +65,7 @@ export function AreaDrillDownView({ locationId, locationName }: AreaDrillDownVie
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Breadcrumbs */}
       <nav className="sticky top-0 bg-gray-50 dark:bg-gray-900 px-2.5 sm:px-3 py-2 border-b border-gray-200 dark:border-gray-700 z-10">
         <ol className="flex items-center gap-1.5 text-xs overflow-x-auto">
@@ -91,7 +91,7 @@ export function AreaDrillDownView({ locationId, locationName }: AreaDrillDownVie
       </nav>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-2.5 sm:p-3">
+      <div className="flex-1 overflow-y-scroll custom-scrollbar p-2.5 sm:p-3">
         {/* Loading State */}
         {(isLoadingAreas || isLoadingRoutes) && (
           <div className="flex items-center justify-center py-12">

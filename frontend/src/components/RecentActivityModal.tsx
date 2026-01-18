@@ -198,7 +198,9 @@ export function RecentActivityModal({
             <RecentClimbsView climbHistory={climbHistory} />
           </div>
         ) : (
-          <AreaDrillDownView locationId={locationId} locationName={locationName} />
+          <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+            <AreaDrillDownView locationId={locationId} locationName={locationName} />
+          </div>
         )}
 
         {/* Footer */}
