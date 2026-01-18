@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Location, WeatherForecast, AllWeatherResponse } from '../types/weather';
+import { Location, WeatherForecast, AllWeatherResponse, AreaActivitySummary, RouteActivitySummary } from '../types/weather';
 import { Area, AreaWithLocations } from '../types/area';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
@@ -53,6 +53,28 @@ export const weatherApi = {
   // Get locations for a specific area
   getLocationsByArea: async (areaId: number): Promise<AreaWithLocations> => {
     const response = await api.get(`/areas/${areaId}/locations`);
+    return response.data;
+  },
+};
+
+export const climbActivityApi = {
+  // Get areas ordered by recent activity for a location
+  getAreasOrderedByActivity: async (locationId: number): Promise<AreaActivitySummary[]> => {
+    const response = await api.get(`/climbs/location/${locationId}/areas`);
+    return response.data;
+  },
+
+  // Get subareas of a parent area ordered by recent activity
+  getSubareasOrderedByActivity: async (locationId: number, areaId: string): Promise<AreaActivitySummary[]> => {
+    const response = await api.get(`/climbs/location/${locationId}/areas/${areaId}/subareas`);
+    return response.data;
+  },
+
+  // Get routes in an area ordered by recent activity
+  getRoutesOrderedByActivity: async (locationId: number, areaId: string, limit = 50): Promise<RouteActivitySummary[]> => {
+    const response = await api.get(`/climbs/location/${locationId}/areas/${areaId}/routes`, {
+      params: { limit }
+    });
     return response.data;
   },
 };

@@ -267,6 +267,33 @@ func (s *ClimbTrackingService) GetClimbHistoryForLocation(
 	return s.repo.GetClimbHistoryForLocation(ctx, locationID, limit)
 }
 
+// GetAreasOrderedByActivity retrieves areas ordered by most recent climb activity
+func (s *ClimbTrackingService) GetAreasOrderedByActivity(
+	ctx context.Context,
+	locationID int,
+) ([]models.AreaActivitySummary, error) {
+	return s.repo.GetAreasOrderedByActivity(ctx, locationID)
+}
+
+// GetSubareasOrderedByActivity retrieves subareas of a parent area ordered by recent climb activity
+func (s *ClimbTrackingService) GetSubareasOrderedByActivity(
+	ctx context.Context,
+	parentAreaID string,
+	locationID int,
+) ([]models.AreaActivitySummary, error) {
+	return s.repo.GetSubareasOrderedByActivity(ctx, parentAreaID, locationID)
+}
+
+// GetRoutesOrderedByActivity retrieves routes in an area ordered by recent climb activity
+func (s *ClimbTrackingService) GetRoutesOrderedByActivity(
+	ctx context.Context,
+	areaID string,
+	locationID int,
+	limit int,
+) ([]models.RouteActivitySummary, error) {
+	return s.repo.GetRoutesOrderedByActivity(ctx, areaID, locationID, limit)
+}
+
 // GetSyncStatus returns the current sync status
 func (s *ClimbTrackingService) GetSyncStatus() (isSyncing bool, lastSync time.Time) {
 	s.syncMutex.Lock()

@@ -67,6 +67,29 @@ export interface ClimbHistoryEntry {
   days_since_climb: number;
 }
 
+export interface AreaActivitySummary {
+  mp_area_id: string;
+  name: string;
+  parent_mp_area_id?: string;
+  last_climb_at: string;     // ISO 8601 timestamp
+  total_ticks: number;
+  unique_routes: number;
+  days_since_climb: number;
+  has_subareas: boolean;
+  subarea_count: number;
+}
+
+export interface RouteActivitySummary {
+  mp_route_id: string;
+  name: string;
+  rating: string;
+  mp_area_id: string;
+  last_climb_at: string;     // ISO 8601 timestamp
+  most_recent_tick: ClimbHistoryEntry;
+  recent_ticks?: ClimbHistoryEntry[];
+  days_since_climb: number;
+}
+
 export interface LastClimbedInfo {
   route_name: string;
   route_rating: string;

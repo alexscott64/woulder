@@ -81,6 +81,9 @@ func main() {
 		apiGroup.GET("/rivers/:id", handler.GetRiverDataByID)
 		apiGroup.POST("/climbs/refresh", handler.RefreshClimbData)
 		apiGroup.GET("/climbs/location/:id", handler.GetLastClimbedForLocation)
+		apiGroup.GET("/climbs/location/:id/areas", handler.GetAreasOrderedByActivity)
+		apiGroup.GET("/climbs/location/:id/areas/:area_id/subareas", handler.GetSubareasOrderedByActivity)
+		apiGroup.GET("/climbs/location/:id/areas/:area_id/routes", handler.GetRoutesOrderedByActivity)
 	}
 
 	// Start server
