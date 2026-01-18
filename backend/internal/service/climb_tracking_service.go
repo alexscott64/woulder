@@ -294,6 +294,15 @@ func (s *ClimbTrackingService) GetRoutesOrderedByActivity(
 	return s.repo.GetRoutesOrderedByActivity(ctx, areaID, locationID, limit)
 }
 
+// GetRecentTicksForRoute retrieves recent ticks for a specific route
+func (s *ClimbTrackingService) GetRecentTicksForRoute(
+	ctx context.Context,
+	routeID string,
+	limit int,
+) ([]models.ClimbHistoryEntry, error) {
+	return s.repo.GetRecentTicksForRoute(ctx, routeID, limit)
+}
+
 // GetSyncStatus returns the current sync status
 func (s *ClimbTrackingService) GetSyncStatus() (isSyncing bool, lastSync time.Time) {
 	s.syncMutex.Lock()

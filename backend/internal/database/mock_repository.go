@@ -47,6 +47,7 @@ type MockRepository struct {
 	GetAreasOrderedByActivityFn        func(ctx context.Context, locationID int) ([]models.AreaActivitySummary, error)
 	GetSubareasOrderedByActivityFn     func(ctx context.Context, parentAreaID string, locationID int) ([]models.AreaActivitySummary, error)
 	GetRoutesOrderedByActivityFn       func(ctx context.Context, areaID string, locationID int, limit int) ([]models.RouteActivitySummary, error)
+	GetRecentTicksForRouteFn           func(ctx context.Context, routeID string, limit int) ([]models.ClimbHistoryEntry, error)
 
 	// Health
 	PingFn  func(ctx context.Context) error
@@ -285,6 +286,14 @@ func (m *MockRepository) GetSubareasOrderedByActivity(ctx context.Context, paren
 func (m *MockRepository) GetRoutesOrderedByActivity(ctx context.Context, areaID string, locationID int, limit int) ([]models.RouteActivitySummary, error) {
 	if m.GetRoutesOrderedByActivityFn != nil {
 		return m.GetRoutesOrderedByActivityFn(ctx, areaID, locationID, limit)
+	}
+	return nil, nil
+}
+
+// GetRecentTicksForRoute mock
+func (m *MockRepository) GetRecentTicksForRoute(ctx context.Context, routeID string, limit int) ([]models.ClimbHistoryEntry, error) {
+	if m.GetRecentTicksForRouteFn != nil {
+		return m.GetRecentTicksForRouteFn(ctx, routeID, limit)
 	}
 	return nil, nil
 }

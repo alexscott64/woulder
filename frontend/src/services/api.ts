@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Location, WeatherForecast, AllWeatherResponse, AreaActivitySummary, RouteActivitySummary } from '../types/weather';
+import { Location, WeatherForecast, AllWeatherResponse, AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry } from '../types/weather';
 import { Area, AreaWithLocations } from '../types/area';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
@@ -71,8 +71,16 @@ export const climbActivityApi = {
   },
 
   // Get routes in an area ordered by recent activity
-  getRoutesOrderedByActivity: async (locationId: number, areaId: string, limit = 50): Promise<RouteActivitySummary[]> => {
+  getRoutesOrderedByActivity: async (locationId: number, areaId: string, limit = 200): Promise<RouteActivitySummary[]> => {
     const response = await api.get(`/climbs/location/${locationId}/areas/${areaId}/routes`, {
+      params: { limit }
+    });
+    return response.data;
+  },
+
+  // Get recent ticks for a specific route
+  getRecentTicksForRoute: async (routeId: string, limit = 5): Promise<ClimbHistoryEntry[]> => {
+    const response = await api.get(`/climbs/routes/${routeId}/ticks`, {
       params: { limit }
     });
     return response.data;

@@ -1,6 +1,7 @@
-import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { ExternalLink, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { RouteActivitySummary, ClimbHistoryEntry } from '../types/weather';
 import { formatDaysAgo } from '../utils/weather/formatters';
+import { useRecentTicksForRoute } from '../hooks/useClimbActivity';
 
 interface RouteListItemProps {
   route: RouteActivitySummary;
@@ -69,10 +70,13 @@ function TickEntry({ tick, showDivider = true }: { tick: ClimbHistoryEntry; show
 
 export function RouteListItem({ route, isExpanded, onToggleExpand }: RouteListItemProps) {
   const mostRecentTick = route.most_recent_tick;
+  const hasBeenClimbed = !!mostRecentTick;
 
-  // TODO: Fetch additional ticks when expanded
-  // For now, we only have the most recent tick
-  const hasMoreTicks = false; // This would be true if recent_ticks has items
+  // Fetch recent ticks when expanded
+  const { data: recentTicks, isLoading } = useRecentTicksForRoute(
+    isExpanded ? route.mp_route_id : null,
+    5
+  );
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 p-2.5">
@@ -98,18 +102,24 @@ export function RouteListItem({ route, isExpanded, onToggleExpand }: RouteListIt
             </a>
           </div>
 
-          {/* Most Recent Tick */}
-          <div className="mt-1.5">
-            <div className="text-xs text-gray-500 dark:text-gray-500 mb-0.5">
-              Most recent:
+          {/* Most Recent Tick or No Activity */}
+          {hasBeenClimbed ? (
+            <div className="mt-1.5">
+              <div className="text-xs text-gray-500 dark:text-gray-500 mb-0.5">
+                Most recent:
+              </div>
+              <TickEntry tick={mostRecentTick} showDivider={false} />
             </div>
-            <TickEntry tick={mostRecentTick} showDivider={false} />
-          </div>
+          ) : (
+            <div className="mt-1.5 text-xs text-gray-500 dark:text-gray-500 italic">
+              No recorded ascents
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Expand/Collapse Button */}
-      {hasMoreTicks && (
+      {/* Expand/Collapse Button - Only show if route has been climbed */}
+      {hasBeenClimbed && (
         <button
           onClick={onToggleExpand}
           className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs sm:text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
@@ -122,18 +132,30 @@ export function RouteListItem({ route, isExpanded, onToggleExpand }: RouteListIt
           ) : (
             <>
               <ChevronDown className="w-4 h-4" />
-              <span>Show more climbs</span>
+              <span>Show last 5 ascents</span>
             </>
           )}
         </button>
       )}
 
       {/* Expanded Ticks List */}
-      {isExpanded && route.recent_ticks && route.recent_ticks.length > 0 && (
-        <div className="mt-3 space-y-0 border-t border-gray-200 dark:border-gray-700">
-          {route.recent_ticks.map((tick, index) => (
-            <TickEntry key={index} tick={tick} />
-          ))}
+      {isExpanded && (
+        <div className="mt-3 border-t border-gray-200 dark:border-gray-700">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+            </div>
+          ) : recentTicks && recentTicks.length > 0 ? (
+            <div className="space-y-0">
+              {recentTicks.map((tick, index) => (
+                <TickEntry key={index} tick={tick} />
+              ))}
+            </div>
+          ) : (
+            <div className="py-3 text-xs text-gray-500 dark:text-gray-500 text-center italic">
+              No recent ascents found
+            </div>
+          )}
         </div>
       )}
     </div>

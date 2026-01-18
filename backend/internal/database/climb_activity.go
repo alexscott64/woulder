@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
@@ -191,8 +192,9 @@ func (db *Database) GetSubareasOrderedByActivity(ctx context.Context, parentArea
 	return areas, nil
 }
 
-// GetRoutesOrderedByActivity retrieves routes in an area ordered by most recent climb activity
-// Includes the most recent tick for each route, with optional additional recent ticks
+// GetRoutesOrderedByActivity retrieves ALL routes in an area ordered by most recent climb activity
+// Shows routes with ticks first (ordered by recency), then routes without ticks (alphabetically)
+// Includes the most recent tick for each route if it has any
 // Uses the same smart date filtering as GetClimbHistoryForLocation
 func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID string, locationID int, limit int) ([]models.RouteActivitySummary, error) {
 	query := `
@@ -219,37 +221,27 @@ func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID strin
 			WHERE
 				t.climbed_at <= NOW() + INTERVAL '30 days'
 				AND t.climbed_at >= NOW() - INTERVAL '2 years'
-		),
-		route_activity AS (
-			SELECT
-				r.mp_route_id,
-				r.name,
-				r.rating,
-				r.mp_area_id,
-				MAX(at.adjusted_climbed_at) AS last_climb_at,
-				EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int AS days_since_climb
-			FROM woulder.mp_routes r
-			INNER JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id
-			WHERE r.mp_area_id = $1
-			  AND r.location_id = $2
-			GROUP BY r.mp_route_id, r.name, r.rating, r.mp_area_id
 		)
 		SELECT
-			ra.mp_route_id,
-			ra.name,
-			ra.rating,
-			ra.mp_area_id,
-			ra.last_climb_at,
-			ra.days_since_climb,
+			r.mp_route_id,
+			r.name,
+			r.rating,
+			r.mp_area_id,
+			COALESCE(MAX(at.adjusted_climbed_at), NOW() - INTERVAL '100 years') AS last_climb_at,
+			COALESCE(EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int, 36500) AS days_since_climb,
 			at.user_name,
 			at.adjusted_climbed_at,
 			at.style,
 			at.comment,
-			a.name AS area_name
-		FROM route_activity ra
-		INNER JOIN adjusted_ticks at ON ra.mp_route_id = at.mp_route_id AND at.tick_rank = 1
-		INNER JOIN woulder.mp_areas a ON ra.mp_area_id = a.mp_area_id
-		ORDER BY ra.last_climb_at DESC
+			a.name AS area_name,
+			CASE WHEN MAX(at.adjusted_climbed_at) IS NULL THEN 1 ELSE 0 END AS no_ticks
+		FROM woulder.mp_routes r
+		LEFT JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id AND at.tick_rank = 1
+		INNER JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
+		WHERE r.mp_area_id = $1
+		  AND r.location_id = $2
+		GROUP BY r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name, at.user_name, at.adjusted_climbed_at, at.style, at.comment
+		ORDER BY no_ticks ASC, MAX(at.adjusted_climbed_at) DESC NULLS LAST, r.name ASC
 		LIMIT $3
 	`
 
@@ -262,7 +254,9 @@ func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID strin
 	var routes []models.RouteActivitySummary
 	for rows.Next() {
 		var route models.RouteActivitySummary
-		var mostRecentTick models.ClimbHistoryEntry
+		var climbedBy, style, comment, areaName sql.NullString
+		var climbedAt sql.NullTime
+		var noTicks int
 
 		err := rows.Scan(
 			&route.MPRouteID,
@@ -271,24 +265,36 @@ func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID strin
 			&route.MPAreaID,
 			&route.LastClimbAt,
 			&route.DaysSinceClimb,
-			&mostRecentTick.ClimbedBy,
-			&mostRecentTick.ClimbedAt,
-			&mostRecentTick.Style,
-			&mostRecentTick.Comment,
-			&mostRecentTick.AreaName,
+			&climbedBy,
+			&climbedAt,
+			&style,
+			&comment,
+			&areaName,
+			&noTicks,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		// Populate the most recent tick fields
-		mostRecentTick.MPRouteID = route.MPRouteID
-		mostRecentTick.RouteName = route.Name
-		mostRecentTick.RouteRating = route.Rating
-		mostRecentTick.MPAreaID = route.MPAreaID
-		mostRecentTick.DaysSinceClimb = route.DaysSinceClimb
+		// Only populate most recent tick if the route has been climbed
+		if climbedAt.Valid {
+			var mostRecentTick models.ClimbHistoryEntry
+			mostRecentTick.MPRouteID = route.MPRouteID
+			mostRecentTick.RouteName = route.Name
+			mostRecentTick.RouteRating = route.Rating
+			mostRecentTick.MPAreaID = route.MPAreaID
+			mostRecentTick.ClimbedBy = climbedBy.String
+			mostRecentTick.ClimbedAt = climbedAt.Time
+			mostRecentTick.Style = style.String
+			if comment.Valid {
+				mostRecentTick.Comment = &comment.String
+			}
+			mostRecentTick.AreaName = areaName.String
+			mostRecentTick.DaysSinceClimb = route.DaysSinceClimb
 
-		route.MostRecentTick = mostRecentTick
+			route.MostRecentTick = mostRecentTick
+		}
+
 		routes = append(routes, route)
 	}
 
@@ -298,3 +304,83 @@ func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID strin
 
 	return routes, nil
 }
+
+// GetRecentTicksForRoute retrieves the most recent ticks for a specific route
+func (db *Database) GetRecentTicksForRoute(ctx context.Context, routeID string, limit int) ([]models.ClimbHistoryEntry, error) {
+	query := `
+		WITH adjusted_ticks AS (
+			SELECT
+				t.mp_route_id,
+				t.user_name,
+				CASE
+					WHEN t.climbed_at > NOW() + INTERVAL '350 days'
+					     AND t.climbed_at < NOW() + INTERVAL '380 days'
+					THEN t.climbed_at - INTERVAL '1 year'
+					ELSE t.climbed_at
+				END AS adjusted_climbed_at,
+				t.style,
+				t.comment
+			FROM woulder.mp_ticks t
+			WHERE t.mp_route_id = $1
+			  AND t.climbed_at <= NOW() + INTERVAL '30 days'
+			  AND t.climbed_at >= NOW() - INTERVAL '2 years'
+		)
+		SELECT
+			r.mp_route_id,
+			r.name AS route_name,
+			r.rating AS route_rating,
+			r.mp_area_id,
+			a.name AS area_name,
+			at.adjusted_climbed_at AS climbed_at,
+			at.user_name AS climbed_by,
+			at.style,
+			at.comment,
+			EXTRACT(DAY FROM (NOW() - at.adjusted_climbed_at))::int AS days_since_climb
+		FROM adjusted_ticks at
+		INNER JOIN woulder.mp_routes r ON at.mp_route_id = r.mp_route_id
+		INNER JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
+		ORDER BY at.adjusted_climbed_at DESC
+		LIMIT $2
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query, routeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ticks []models.ClimbHistoryEntry
+	for rows.Next() {
+		var tick models.ClimbHistoryEntry
+		var comment sql.NullString
+
+		err := rows.Scan(
+			&tick.MPRouteID,
+			&tick.RouteName,
+			&tick.RouteRating,
+			&tick.MPAreaID,
+			&tick.AreaName,
+			&tick.ClimbedAt,
+			&tick.ClimbedBy,
+			&tick.Style,
+			&comment,
+			&tick.DaysSinceClimb,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if comment.Valid {
+			tick.Comment = &comment.String
+		}
+
+		ticks = append(ticks, tick)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return ticks, nil
+}
+

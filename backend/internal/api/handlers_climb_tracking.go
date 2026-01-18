@@ -162,3 +162,46 @@ func (h *Handler) GetRoutesOrderedByActivity(c *gin.Context) {
 
 	c.JSON(http.StatusOK, routes)
 }
+
+// GetRecentTicksForRoute retrieves recent ticks for a specific route
+// GET /api/climbs/routes/:route_id/ticks?limit=5
+func (h *Handler) GetRecentTicksForRoute(c *gin.Context) {
+	// Parse route ID from URL
+	routeID := c.Param("route_id")
+	if routeID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Route ID is required"})
+		return
+	}
+
+	// Parse optional limit query parameter (default 5, max 20)
+	limit := 5
+	if limitStr := c.Query("limit"); limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid limit parameter"})
+			return
+		}
+		if parsedLimit < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Limit must be at least 1"})
+			return
+		}
+		if parsedLimit > 20 {
+			parsedLimit = 20
+		}
+		limit = parsedLimit
+	}
+
+	// Fetch recent ticks for route
+	ticks, err := h.climbTrackingService.GetRecentTicksForRoute(c.Request.Context(), routeID, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve tick data"})
+		return
+	}
+
+	// Return empty array if no data found
+	if ticks == nil {
+		ticks = []models.ClimbHistoryEntry{}
+	}
+
+	c.JSON(http.StatusOK, ticks)
+}

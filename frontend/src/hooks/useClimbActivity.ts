@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { climbActivityApi } from '../services/api';
-import type { AreaActivitySummary, RouteActivitySummary } from '../types/weather';
+import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry } from '../types/weather';
 
 /**
  * Hook to fetch areas ordered by recent climb activity for a location
@@ -35,12 +35,27 @@ export const useSubareasOrderedByActivity = (
 export const useRoutesOrderedByActivity = (
   locationId: number,
   areaId: string | null,
-  limit = 50
+  limit = 200
 ) => {
   return useQuery<RouteActivitySummary[], Error>({
     queryKey: ['routes-activity', locationId, areaId, limit],
     queryFn: () => climbActivityApi.getRoutesOrderedByActivity(locationId, areaId!, limit),
     staleTime: 10 * 60 * 1000, // 10 minutes
     enabled: !!locationId && !!areaId,
+  });
+};
+
+/**
+ * Hook to fetch recent ticks for a specific route
+ */
+export const useRecentTicksForRoute = (
+  routeId: string | null,
+  limit = 5
+) => {
+  return useQuery<ClimbHistoryEntry[], Error>({
+    queryKey: ['route-ticks', routeId, limit],
+    queryFn: () => climbActivityApi.getRecentTicksForRoute(routeId!, limit),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    enabled: !!routeId,
   });
 };

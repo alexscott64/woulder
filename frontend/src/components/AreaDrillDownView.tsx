@@ -33,7 +33,7 @@ export function AreaDrillDownView({ locationId, locationName }: AreaDrillDownVie
   const { data: routes, isLoading: isLoadingRoutes, error: routesError } = useRoutesOrderedByActivity(
     locationId,
     currentAreaId,
-    50
+    200 // Fetch all routes (max 200)
   );
 
   // Determine which data to show
