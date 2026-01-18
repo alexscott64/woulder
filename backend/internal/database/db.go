@@ -804,12 +804,12 @@ func (db *Database) GetClimbHistoryForLocation(ctx context.Context, locationID i
 	return history, nil
 }
 
-// GetAreasOrderedByActivity retrieves areas ordered by most recent climb activity
-// Only includes root areas (parent_mp_area_id IS NULL) and filters for a specific location
+// GetAreasOrderedByActivity retrieves top-level areas ordered by most recent climb activity
+// Shows children of the root area with aggregated activity from all descendant areas
 // Uses the same smart date filtering as GetClimbHistoryForLocation
 func (db *Database) GetAreasOrderedByActivity(ctx context.Context, locationID int) ([]models.AreaActivitySummary, error) {
 	query := `
-		WITH adjusted_ticks AS (
+		WITH RECURSIVE adjusted_ticks AS (
 			SELECT
 				t.mp_route_id,
 				CASE
@@ -822,24 +822,49 @@ func (db *Database) GetAreasOrderedByActivity(ctx context.Context, locationID in
 			WHERE
 				t.climbed_at <= NOW() + INTERVAL '30 days'
 				AND t.climbed_at >= NOW() - INTERVAL '2 years'
+		),
+		root_area AS (
+			SELECT mp_area_id
+			FROM woulder.mp_areas
+			WHERE location_id = $1 AND parent_mp_area_id IS NULL
+			LIMIT 1
+		),
+		top_level_areas AS (
+			SELECT mp_area_id, name, parent_mp_area_id
+			FROM woulder.mp_areas
+			WHERE location_id = $1
+			  AND parent_mp_area_id IN (SELECT mp_area_id FROM root_area)
+		),
+		area_tree AS (
+			-- Start with top-level areas
+			SELECT mp_area_id, mp_area_id as top_level_id
+			FROM top_level_areas
+
+			UNION ALL
+
+			-- Recursively include all descendant areas
+			SELECT a.mp_area_id, at.top_level_id
+			FROM woulder.mp_areas a
+			INNER JOIN area_tree at ON a.parent_mp_area_id = at.mp_area_id
+			WHERE a.location_id = $1
 		)
 		SELECT
-			a.mp_area_id,
-			a.name,
-			a.parent_mp_area_id,
-			MAX(at.adjusted_climbed_at) AS last_climb_at,
-			COUNT(DISTINCT at.mp_route_id) AS unique_routes,
+			tla.mp_area_id,
+			tla.name,
+			tla.parent_mp_area_id,
+			MAX(adj.adjusted_climbed_at) AS last_climb_at,
+			COUNT(DISTINCT r.mp_route_id) AS unique_routes,
 			COUNT(*)::int AS total_ticks,
-			EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int AS days_since_climb,
-			EXISTS(SELECT 1 FROM woulder.mp_areas sub WHERE sub.parent_mp_area_id = a.mp_area_id) AS has_subareas
-		FROM woulder.mp_areas a
-		INNER JOIN woulder.mp_routes r ON a.mp_area_id = r.mp_area_id
-		INNER JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id
-		WHERE a.location_id = $1
-		  AND a.parent_mp_area_id IS NULL
-		GROUP BY a.mp_area_id, a.name, a.parent_mp_area_id
-		HAVING MAX(at.adjusted_climbed_at) IS NOT NULL
-		ORDER BY MAX(at.adjusted_climbed_at) DESC
+			EXTRACT(DAY FROM (NOW() - MAX(adj.adjusted_climbed_at)))::int AS days_since_climb,
+			EXISTS(SELECT 1 FROM woulder.mp_areas sub WHERE sub.parent_mp_area_id = tla.mp_area_id) AS has_subareas,
+			(SELECT COUNT(*)::int FROM woulder.mp_areas sub WHERE sub.parent_mp_area_id = tla.mp_area_id) AS subarea_count
+		FROM top_level_areas tla
+		INNER JOIN area_tree atree ON tla.mp_area_id = atree.top_level_id
+		INNER JOIN woulder.mp_routes r ON atree.mp_area_id = r.mp_area_id
+		INNER JOIN adjusted_ticks adj ON r.mp_route_id = adj.mp_route_id
+		GROUP BY tla.mp_area_id, tla.name, tla.parent_mp_area_id
+		HAVING MAX(adj.adjusted_climbed_at) IS NOT NULL
+		ORDER BY MAX(adj.adjusted_climbed_at) DESC
 	`
 
 	rows, err := db.conn.QueryContext(ctx, query, locationID)
@@ -860,6 +885,7 @@ func (db *Database) GetAreasOrderedByActivity(ctx context.Context, locationID in
 			&area.TotalTicks,
 			&area.DaysSinceClimb,
 			&area.HasSubareas,
+			&area.SubareaCount,
 		)
 		if err != nil {
 			return nil, err
@@ -875,10 +901,11 @@ func (db *Database) GetAreasOrderedByActivity(ctx context.Context, locationID in
 }
 
 // GetSubareasOrderedByActivity retrieves subareas of a parent area ordered by most recent climb activity
+// Recursively aggregates activity from all descendant areas
 // Uses the same smart date filtering as GetClimbHistoryForLocation
 func (db *Database) GetSubareasOrderedByActivity(ctx context.Context, parentAreaID string, locationID int) ([]models.AreaActivitySummary, error) {
 	query := `
-		WITH adjusted_ticks AS (
+		WITH RECURSIVE adjusted_ticks AS (
 			SELECT
 				t.mp_route_id,
 				CASE
@@ -891,23 +918,42 @@ func (db *Database) GetSubareasOrderedByActivity(ctx context.Context, parentArea
 			WHERE
 				t.climbed_at <= NOW() + INTERVAL '30 days'
 				AND t.climbed_at >= NOW() - INTERVAL '2 years'
+		),
+		direct_subareas AS (
+			SELECT mp_area_id, name, parent_mp_area_id
+			FROM woulder.mp_areas
+			WHERE parent_mp_area_id = $1
+			  AND location_id = $2
+		),
+		area_tree AS (
+			-- Start with direct subareas
+			SELECT mp_area_id, mp_area_id as subarea_id
+			FROM direct_subareas
+
+			UNION ALL
+
+			-- Recursively include all descendant areas
+			SELECT a.mp_area_id, at.subarea_id
+			FROM woulder.mp_areas a
+			INNER JOIN area_tree at ON a.parent_mp_area_id = at.mp_area_id
+			WHERE a.location_id = $2
 		)
 		SELECT
-			a.mp_area_id,
-			a.name,
-			a.parent_mp_area_id,
-			COALESCE(MAX(at.adjusted_climbed_at), NOW() - INTERVAL '10 years') AS last_climb_at,
-			COUNT(DISTINCT at.mp_route_id) AS unique_routes,
-			COUNT(*)::int AS total_ticks,
-			COALESCE(EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int, 3650) AS days_since_climb,
-			EXISTS(SELECT 1 FROM woulder.mp_areas sub WHERE sub.parent_mp_area_id = a.mp_area_id) AS has_subareas
-		FROM woulder.mp_areas a
-		LEFT JOIN woulder.mp_routes r ON a.mp_area_id = r.mp_area_id
-		LEFT JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id
-		WHERE a.parent_mp_area_id = $1
-		  AND a.location_id = $2
-		GROUP BY a.mp_area_id, a.name, a.parent_mp_area_id
-		ORDER BY MAX(at.adjusted_climbed_at) DESC NULLS LAST
+			sa.mp_area_id,
+			sa.name,
+			sa.parent_mp_area_id,
+			COALESCE(MAX(adj.adjusted_climbed_at), NOW() - INTERVAL '10 years') AS last_climb_at,
+			COUNT(DISTINCT r.mp_route_id) AS unique_routes,
+			COALESCE(COUNT(adj.mp_route_id), 0)::int AS total_ticks,
+			COALESCE(EXTRACT(DAY FROM (NOW() - MAX(adj.adjusted_climbed_at)))::int, 3650) AS days_since_climb,
+			EXISTS(SELECT 1 FROM woulder.mp_areas sub WHERE sub.parent_mp_area_id = sa.mp_area_id) AS has_subareas,
+			(SELECT COUNT(*)::int FROM woulder.mp_areas sub WHERE sub.parent_mp_area_id = sa.mp_area_id) AS subarea_count
+		FROM direct_subareas sa
+		LEFT JOIN area_tree atree ON sa.mp_area_id = atree.subarea_id
+		LEFT JOIN woulder.mp_routes r ON atree.mp_area_id = r.mp_area_id
+		LEFT JOIN adjusted_ticks adj ON r.mp_route_id = adj.mp_route_id
+		GROUP BY sa.mp_area_id, sa.name, sa.parent_mp_area_id
+		ORDER BY MAX(adj.adjusted_climbed_at) DESC NULLS LAST
 	`
 
 	rows, err := db.conn.QueryContext(ctx, query, parentAreaID, locationID)
@@ -928,6 +974,7 @@ func (db *Database) GetSubareasOrderedByActivity(ctx context.Context, parentArea
 			&area.TotalTicks,
 			&area.DaysSinceClimb,
 			&area.HasSubareas,
+			&area.SubareaCount,
 		)
 		if err != nil {
 			return nil, err

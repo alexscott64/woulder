@@ -76,6 +76,7 @@ export interface AreaActivitySummary {
   unique_routes: number;
   days_since_climb: number;
   has_subareas: boolean;
+  subarea_count: number;
 }
 
 export interface RouteActivitySummary {

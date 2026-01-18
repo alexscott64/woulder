@@ -79,6 +79,7 @@ type AreaActivitySummary struct {
 	UniqueRoutes   int        `json:"unique_routes"`            // Number of distinct routes with activity
 	DaysSinceClimb int        `json:"days_since_climb"`         // Days since last climb
 	HasSubareas    bool       `json:"has_subareas"`             // Whether this area has child subareas
+	SubareaCount   int        `json:"subarea_count"`            // Number of direct child subareas
 }
 
 // RouteActivitySummary represents a boulder with recent activity

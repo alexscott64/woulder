@@ -391,6 +391,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
       {/* Recent Activity Modal */}
       {showRecentActivityModal && climb_history && climb_history.length > 0 && (
         <RecentActivityModal
+          locationId={location.id}
           locationName={location.name}
           climbHistory={climb_history}
           onClose={() => setShowRecentActivityModal(false)}
