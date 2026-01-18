@@ -90,7 +90,23 @@ type RouteActivitySummary struct {
 	Rating         string            `json:"rating"`              // Grade (V4, 5.10a, etc.)
 	MPAreaID       string            `json:"mp_area_id"`          // Parent area ID
 	LastClimbAt    time.Time         `json:"last_climb_at"`       // Most recent climb timestamp
-	MostRecentTick ClimbHistoryEntry `json:"most_recent_tick"`    // Latest tick details
+	MostRecentTick *ClimbHistoryEntry `json:"most_recent_tick,omitempty"` // Latest tick details (null if no ticks)
 	RecentTicks    []ClimbHistoryEntry `json:"recent_ticks,omitempty"` // Additional recent ticks (optional)
 	DaysSinceClimb int               `json:"days_since_climb"`    // Days since last climb
+}
+
+// SearchResult represents a unified search result that can be either an area or a route
+// Used for API responses when searching across both areas and routes
+type SearchResult struct {
+	ResultType     string             `json:"result_type"`         // "area" or "route"
+	ID             string             `json:"id"`                  // Area or route ID
+	Name           string             `json:"name"`                // Area or route name
+	Rating         *string            `json:"rating,omitempty"`    // Grade (only for routes)
+	MPAreaID       string             `json:"mp_area_id"`          // Area ID (self for areas, parent for routes)
+	AreaName       *string            `json:"area_name,omitempty"` // Parent area name (only for routes)
+	LastClimbAt    time.Time          `json:"last_climb_at"`       // Most recent climb timestamp
+	DaysSinceClimb int                `json:"days_since_climb"`    // Days since last climb
+	TotalTicks     *int               `json:"total_ticks,omitempty"`     // Total ticks (only for areas)
+	UniqueRoutes   *int               `json:"unique_routes,omitempty"`   // Unique routes (only for areas)
+	MostRecentTick *ClimbHistoryEntry `json:"most_recent_tick,omitempty"` // Latest tick (only for routes)
 }

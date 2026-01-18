@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { climbActivityApi } from '../services/api';
-import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry } from '../types/weather';
+import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult } from '../types/weather';
 
 /**
  * Hook to fetch areas ordered by recent climb activity for a location
@@ -57,5 +57,37 @@ export const useRecentTicksForRoute = (
     queryFn: () => climbActivityApi.getRecentTicksForRoute(routeId!, limit),
     staleTime: 10 * 60 * 1000, // 10 minutes
     enabled: !!routeId,
+  });
+};
+
+/**
+ * Hook to search all areas and routes in a location by name
+ */
+export const useSearchInLocation = (
+  locationId: number,
+  searchQuery: string,
+  limit = 50
+) => {
+  return useQuery<SearchResult[], Error>({
+    queryKey: ['search-all', locationId, searchQuery, limit],
+    queryFn: () => climbActivityApi.searchInLocation(locationId, searchQuery, limit),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    enabled: !!locationId && searchQuery.length >= 2, // Only search if query is at least 2 chars
+  });
+};
+
+/**
+ * Hook to search all routes in a location by name, grade, or area
+ */
+export const useSearchRoutesInLocation = (
+  locationId: number,
+  searchQuery: string,
+  limit = 50
+) => {
+  return useQuery<RouteActivitySummary[], Error>({
+    queryKey: ['search-routes', locationId, searchQuery, limit],
+    queryFn: () => climbActivityApi.searchRoutesInLocation(locationId, searchQuery, limit),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    enabled: !!locationId && searchQuery.length >= 2, // Only search if query is at least 2 chars
   });
 };

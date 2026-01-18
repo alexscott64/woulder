@@ -1,13 +1,14 @@
 import { ChevronRight, MapPin, ChevronLeft, Loader2, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
-import { useAreasOrderedByActivity, useSubareasOrderedByActivity, useRoutesOrderedByActivity } from '../hooks/useClimbActivity';
-import { AreaActivitySummary } from '../types/weather';
+import { useAreasOrderedByActivity, useSubareasOrderedByActivity, useRoutesOrderedByActivity, useSearchInLocation } from '../hooks/useClimbActivity';
+import { AreaActivitySummary, SearchResult } from '../types/weather';
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { RouteListItem } from './RouteListItem';
 
 interface AreaDrillDownViewProps {
   locationId: number;
   locationName: string;
+  searchQuery?: string;
 }
 
 interface BreadcrumbItem {
@@ -15,7 +16,7 @@ interface BreadcrumbItem {
   areaId: string | null; // null for root
 }
 
-export function AreaDrillDownView({ locationId, locationName }: AreaDrillDownViewProps) {
+export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }: AreaDrillDownViewProps) {
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([
     { name: locationName, areaId: null }
   ]);
@@ -36,16 +37,40 @@ export function AreaDrillDownView({ locationId, locationName }: AreaDrillDownVie
     200 // Fetch all routes (max 200)
   );
 
-  // Determine which data to show
+  // Global search for all areas and routes in location (when search is active)
+  const { data: searchResults, isLoading: isSearching, error: searchError } = useSearchInLocation(
+    locationId,
+    searchQuery,
+    200
+  );
+
+  // Determine which data to show based on search state
+  const isSearchActive = searchQuery.length >= 2;
+
+  // Separate search results into areas and routes
+  const searchAreaResults = isSearchActive ? searchResults?.filter(r => r.result_type === 'area') || [] : [];
+  const searchRouteResults = isSearchActive ? searchResults?.filter(r => r.result_type === 'route') || [] : [];
+
   const areas = currentAreaId === null ? rootAreas : subareas;
   const isLoadingAreas = currentAreaId === null ? isLoadingRootAreas : isLoadingSubareas;
   const areasError = currentAreaId === null ? rootAreasError : subareasError;
 
-  // Show routes if we're in an area that has no subareas
-  const showRoutes = currentAreaId !== null && (!areas || areas.length === 0);
+  // When searching globally, show search results; otherwise show current view
+  const filteredAreas = isSearchActive ? searchAreaResults : areas;
+  const filteredRoutes = isSearchActive ? searchRouteResults : routes;
+  const isLoadingData = isSearchActive ? isSearching : (isLoadingAreas || isLoadingRoutes);
+  const dataError = isSearchActive ? searchError : (areasError || routesError);
 
-  const handleAreaClick = (area: AreaActivitySummary) => {
-    setBreadcrumbs([...breadcrumbs, { name: area.name, areaId: area.mp_area_id }]);
+  // Show routes if we're in an area that has no subareas OR if search is active
+  const showRoutes = isSearchActive || (currentAreaId !== null && (!areas || areas.length === 0));
+
+  // Show areas in search results if any match
+  const showSearchAreas = isSearchActive && searchAreaResults.length > 0;
+
+  const handleAreaClick = (area: AreaActivitySummary | SearchResult) => {
+    // Handle both AreaActivitySummary and SearchResult types
+    const areaId = 'mp_area_id' in area ? area.mp_area_id : area.result_type === 'area' ? area.id : area.mp_area_id;
+    setBreadcrumbs([...breadcrumbs, { name: area.name, areaId }]);
     setExpandedRoutes(new Set()); // Reset expanded routes when navigating
   };
 
@@ -93,14 +118,14 @@ export function AreaDrillDownView({ locationId, locationName }: AreaDrillDownVie
       {/* Content Area */}
       <div className="flex-1 overflow-y-scroll custom-scrollbar p-2.5 sm:p-3">
         {/* Loading State */}
-        {(isLoadingAreas || isLoadingRoutes) && (
+        {isLoadingData && (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
           </div>
         )}
 
         {/* Error State */}
-        {(areasError || routesError) && (
+        {dataError && (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <AlertCircle className="w-12 h-12 text-red-500" />
             <p className="text-red-600 dark:text-red-400 text-center">
@@ -116,57 +141,95 @@ export function AreaDrillDownView({ locationId, locationName }: AreaDrillDownVie
         )}
 
         {/* Areas List */}
-        {!isLoadingAreas && !areasError && areas && areas.length > 0 && !showRoutes && (
+        {!isLoadingData && !dataError && filteredAreas && filteredAreas.length > 0 && !showRoutes && (
           <div className="space-y-1.5">
-            {areas.map((area) => (
-              <button
-                key={area.mp_area_id}
-                onClick={() => handleAreaClick(area)}
-                className="w-full p-2.5 bg-white dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 active:bg-gray-100 dark:active:bg-gray-700 transition-colors text-left"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <MapPin className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
-                        {area.name}
-                      </h3>
-                      <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                        {area.has_subareas ? (
-                          <span>{area.subarea_count} sub-area{area.subarea_count !== 1 ? 's' : ''}</span>
-                        ) : (
-                          <span>{area.unique_routes} boulder{area.unique_routes !== 1 ? 's' : ''}</span>
-                        )}
-                        <span>•</span>
-                        <span>{area.total_ticks} tick{area.total_ticks !== 1 ? 's' : ''}</span>
-                        <span>•</span>
-                        <span>{formatDaysAgo(area.days_since_climb)}</span>
+            {filteredAreas.map((area) => {
+              // Handle both AreaActivitySummary and SearchResult types
+              const isSearchResult = 'result_type' in area;
+              const areaId = isSearchResult ? area.id : area.mp_area_id;
+              const totalTicks = isSearchResult ? (area.total_ticks || 0) : area.total_ticks;
+              const uniqueRoutes = isSearchResult ? (area.unique_routes || 0) : area.unique_routes;
+              const hasSubareas = isSearchResult ? false : area.has_subareas;
+              const subareaCount = isSearchResult ? 0 : area.subarea_count;
+
+              return (
+                <button
+                  key={areaId}
+                  onClick={() => handleAreaClick(area)}
+                  className="w-full p-2.5 bg-white dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 active:bg-gray-100 dark:active:bg-gray-700 transition-colors text-left"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <MapPin className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                          {area.name}
+                        </h3>
+                        <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                          {hasSubareas ? (
+                            <span>{subareaCount} sub-area{subareaCount !== 1 ? 's' : ''}</span>
+                          ) : (
+                            <span>{uniqueRoutes} boulder{uniqueRoutes !== 1 ? 's' : ''}</span>
+                          )}
+                          <span>•</span>
+                          <span>{totalTicks} tick{totalTicks !== 1 ? 's' : ''}</span>
+                          <span>•</span>
+                          <span>{formatDaysAgo(area.days_since_climb)}</span>
+                        </div>
                       </div>
                     </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-600 flex-shrink-0" />
                   </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-600 flex-shrink-0" />
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         )}
 
         {/* Routes List */}
-        {showRoutes && !isLoadingRoutes && !routesError && routes && routes.length > 0 && (
+        {showRoutes && !isLoadingData && !dataError && filteredRoutes && filteredRoutes.length > 0 && (
           <div className="space-y-2.5">
-            {routes.map((route) => (
-              <RouteListItem
-                key={route.mp_route_id}
-                route={route}
-                isExpanded={expandedRoutes.has(route.mp_route_id)}
-                onToggleExpand={() => toggleRouteExpansion(route.mp_route_id)}
-              />
-            ))}
+            {filteredRoutes.map((routeData) => {
+              // Convert SearchResult to RouteActivitySummary if needed
+              const route: any = 'result_type' in routeData
+                ? {
+                    mp_route_id: routeData.id,
+                    name: routeData.name,
+                    rating: routeData.rating || '',
+                    mp_area_id: routeData.mp_area_id,
+                    last_climb_at: routeData.last_climb_at,
+                    most_recent_tick: routeData.most_recent_tick,
+                    days_since_climb: routeData.days_since_climb,
+                  }
+                : routeData;
+
+              return (
+                <RouteListItem
+                  key={route.mp_route_id}
+                  route={route}
+                  isExpanded={expandedRoutes.has(route.mp_route_id)}
+                  onToggleExpand={() => toggleRouteExpansion(route.mp_route_id)}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {/* Empty State - No Search Results */}
+        {!isLoadingData && !dataError && isSearchActive && filteredRoutes && filteredRoutes.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 gap-2 text-center">
+            <MapPin className="w-12 h-12 text-gray-400 dark:text-gray-600" />
+            <p className="text-gray-600 dark:text-gray-400">
+              No routes match "{searchQuery}"
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-500">
+              Try a different search term
+            </p>
           </div>
         )}
 
         {/* Empty State - No Areas */}
-        {!isLoadingAreas && !areasError && areas && areas.length === 0 && !showRoutes && (
+        {!isLoadingData && !dataError && !isSearchActive && areas && areas.length === 0 && !showRoutes && (
           <div className="flex flex-col items-center justify-center py-12 gap-2 text-center">
             <MapPin className="w-12 h-12 text-gray-400 dark:text-gray-600" />
             <p className="text-gray-600 dark:text-gray-400">
@@ -179,7 +242,7 @@ export function AreaDrillDownView({ locationId, locationName }: AreaDrillDownVie
         )}
 
         {/* Empty State - No Routes */}
-        {showRoutes && !isLoadingRoutes && !routesError && (!routes || routes.length === 0) && (
+        {showRoutes && !isLoadingData && !dataError && !isSearchActive && (!filteredRoutes || filteredRoutes.length === 0) && (
           <div className="flex flex-col items-center justify-center py-12 gap-2 text-center">
             <MapPin className="w-12 h-12 text-gray-400 dark:text-gray-600" />
             <p className="text-gray-600 dark:text-gray-400">

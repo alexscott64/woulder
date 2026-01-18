@@ -1,4 +1,4 @@
-import { X, Footprints, ExternalLink, Calendar, User, MapPin, List, FolderTree } from 'lucide-react';
+import { X, Footprints, ExternalLink, Calendar, User, MapPin, List, FolderTree, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState } from 'react';
 import { ClimbHistoryEntry } from '../types/weather';
@@ -141,6 +141,16 @@ export function RecentActivityModal({
   onClose
 }: RecentActivityModalProps) {
   const [view, setView] = useState<View>('recent');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filter climb history based on search query
+  const filteredClimbHistory = searchQuery
+    ? climbHistory.filter(climb =>
+        climb.route_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        climb.area_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        climb.climbed_by.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : climbHistory;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
@@ -190,16 +200,36 @@ export function RecentActivityModal({
               <span>By Area</span>
             </button>
           </div>
+
+          {/* Search Bar */}
+          <div className="mt-3 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" />
+            <input
+              type="text"
+              placeholder={view === 'recent' ? "Search climbs, areas, or climbers..." : "Search areas or routes..."}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Content */}
         {view === 'recent' ? (
           <div className="flex-1 overflow-y-auto p-3 sm:p-4">
-            <RecentClimbsView climbHistory={climbHistory} />
+            <RecentClimbsView climbHistory={filteredClimbHistory} />
           </div>
         ) : (
           <div className="flex flex-col flex-1 overflow-hidden min-h-0">
-            <AreaDrillDownView locationId={locationId} locationName={locationName} />
+            <AreaDrillDownView locationId={locationId} locationName={locationName} searchQuery={searchQuery} />
           </div>
         )}
 

@@ -303,6 +303,26 @@ func (s *ClimbTrackingService) GetRecentTicksForRoute(
 	return s.repo.GetRecentTicksForRoute(ctx, routeID, limit)
 }
 
+// SearchInLocation searches all areas and routes in a location by name
+func (s *ClimbTrackingService) SearchInLocation(
+	ctx context.Context,
+	locationID int,
+	searchQuery string,
+	limit int,
+) ([]models.SearchResult, error) {
+	return s.repo.SearchInLocation(ctx, locationID, searchQuery, limit)
+}
+
+// SearchRoutesInLocation searches all routes in a location by name or grade
+func (s *ClimbTrackingService) SearchRoutesInLocation(
+	ctx context.Context,
+	locationID int,
+	searchQuery string,
+	limit int,
+) ([]models.RouteActivitySummary, error) {
+	return s.repo.SearchRoutesInLocation(ctx, locationID, searchQuery, limit)
+}
+
 // GetSyncStatus returns the current sync status
 func (s *ClimbTrackingService) GetSyncStatus() (isSyncing bool, lastSync time.Time) {
 	s.syncMutex.Lock()

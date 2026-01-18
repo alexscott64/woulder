@@ -278,20 +278,20 @@ func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID strin
 
 		// Only populate most recent tick if the route has been climbed
 		if climbedAt.Valid {
-			var mostRecentTick models.ClimbHistoryEntry
-			mostRecentTick.MPRouteID = route.MPRouteID
-			mostRecentTick.RouteName = route.Name
-			mostRecentTick.RouteRating = route.Rating
-			mostRecentTick.MPAreaID = route.MPAreaID
-			mostRecentTick.ClimbedBy = climbedBy.String
-			mostRecentTick.ClimbedAt = climbedAt.Time
-			mostRecentTick.Style = style.String
+			mostRecentTick := &models.ClimbHistoryEntry{
+				MPRouteID:      route.MPRouteID,
+				RouteName:      route.Name,
+				RouteRating:    route.Rating,
+				MPAreaID:       route.MPAreaID,
+				ClimbedBy:      climbedBy.String,
+				ClimbedAt:      climbedAt.Time,
+				Style:          style.String,
+				AreaName:       areaName.String,
+				DaysSinceClimb: route.DaysSinceClimb,
+			}
 			if comment.Valid {
 				mostRecentTick.Comment = &comment.String
 			}
-			mostRecentTick.AreaName = areaName.String
-			mostRecentTick.DaysSinceClimb = route.DaysSinceClimb
-
 			route.MostRecentTick = mostRecentTick
 		}
 
@@ -382,5 +382,284 @@ func (db *Database) GetRecentTicksForRoute(ctx context.Context, routeID string, 
 	}
 
 	return ticks, nil
+}
+
+// SearchInLocation searches all areas and routes in a location by name
+// Returns unified search results (both areas and routes) ordered by most recent climb activity
+func (db *Database) SearchInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.SearchResult, error) {
+	query := `
+		WITH adjusted_ticks AS (
+			SELECT
+				t.mp_route_id,
+				t.user_name,
+				CASE
+					WHEN t.climbed_at > NOW() + INTERVAL '350 days'
+					     AND t.climbed_at < NOW() + INTERVAL '380 days'
+					THEN t.climbed_at - INTERVAL '1 year'
+					ELSE t.climbed_at
+				END AS adjusted_climbed_at,
+				t.style,
+				t.comment,
+				ROW_NUMBER() OVER (PARTITION BY t.mp_route_id ORDER BY
+					CASE
+						WHEN t.climbed_at > NOW() + INTERVAL '350 days'
+						     AND t.climbed_at < NOW() + INTERVAL '380 days'
+						THEN t.climbed_at - INTERVAL '1 year'
+						ELSE t.climbed_at
+					END DESC) AS tick_rank
+			FROM woulder.mp_ticks t
+			WHERE
+				t.climbed_at <= NOW() + INTERVAL '30 days'
+				AND t.climbed_at >= NOW() - INTERVAL '2 years'
+		),
+		-- Areas with activity
+		area_results AS (
+			SELECT
+				'area' AS result_type,
+				a.mp_area_id AS id,
+				a.name,
+				NULL::text AS rating,
+				a.mp_area_id,
+				NULL::text AS area_name,
+				COALESCE(MAX(at.adjusted_climbed_at), NOW() - INTERVAL '100 years') AS last_climb_at,
+				COALESCE(EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int, 36500) AS days_since_climb,
+				COUNT(DISTINCT r.mp_route_id)::int AS total_ticks,
+				COUNT(DISTINCT r.mp_route_id)::int AS unique_routes,
+				NULL::text AS user_name,
+				NULL::timestamp AS tick_climbed_at,
+				NULL::text AS style,
+				NULL::text AS comment,
+				CASE WHEN MAX(at.adjusted_climbed_at) IS NULL THEN 1 ELSE 0 END AS no_ticks
+			FROM woulder.mp_areas a
+			INNER JOIN woulder.mp_routes r ON a.mp_area_id = r.mp_area_id
+			LEFT JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id
+			WHERE r.location_id = $1
+			  AND LOWER(a.name) LIKE LOWER($2)
+			GROUP BY a.mp_area_id, a.name
+		),
+		-- Routes with activity
+		route_results AS (
+			SELECT
+				'route' AS result_type,
+				r.mp_route_id AS id,
+				r.name,
+				r.rating,
+				r.mp_area_id,
+				a.name AS area_name,
+				COALESCE(MAX(at.adjusted_climbed_at), NOW() - INTERVAL '100 years') AS last_climb_at,
+				COALESCE(EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int, 36500) AS days_since_climb,
+				NULL::int AS total_ticks,
+				NULL::int AS unique_routes,
+				at.user_name,
+				at.adjusted_climbed_at AS tick_climbed_at,
+				at.style,
+				at.comment,
+				CASE WHEN MAX(at.adjusted_climbed_at) IS NULL THEN 1 ELSE 0 END AS no_ticks
+			FROM woulder.mp_routes r
+			LEFT JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id AND at.tick_rank = 1
+			INNER JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
+			WHERE r.location_id = $1
+			  AND (LOWER(r.name) LIKE LOWER($2) OR LOWER(r.rating) LIKE LOWER($2) OR LOWER(a.name) LIKE LOWER($2))
+			GROUP BY r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name, at.user_name, at.adjusted_climbed_at, at.style, at.comment
+		)
+		-- Combine results
+		SELECT * FROM area_results
+		UNION ALL
+		SELECT * FROM route_results
+		ORDER BY no_ticks ASC, last_climb_at DESC NULLS LAST, name ASC
+		LIMIT $3
+	`
+
+	searchPattern := "%" + searchQuery + "%"
+	rows, err := db.conn.QueryContext(ctx, query, locationID, searchPattern, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []models.SearchResult
+	for rows.Next() {
+		var result models.SearchResult
+		var rating, areaName, climbedBy, style, comment sql.NullString
+		var totalTicks, uniqueRoutes sql.NullInt64
+		var climbedAt sql.NullTime
+		var noTicks int
+
+		err := rows.Scan(
+			&result.ResultType,
+			&result.ID,
+			&result.Name,
+			&rating,
+			&result.MPAreaID,
+			&areaName,
+			&result.LastClimbAt,
+			&result.DaysSinceClimb,
+			&totalTicks,
+			&uniqueRoutes,
+			&climbedBy,
+			&climbedAt,
+			&style,
+			&comment,
+			&noTicks,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Populate optional fields based on result type
+		if rating.Valid {
+			result.Rating = &rating.String
+		}
+		if areaName.Valid {
+			result.AreaName = &areaName.String
+		}
+		if totalTicks.Valid {
+			ticks := int(totalTicks.Int64)
+			result.TotalTicks = &ticks
+		}
+		if uniqueRoutes.Valid {
+			routes := int(uniqueRoutes.Int64)
+			result.UniqueRoutes = &routes
+		}
+
+		// Only populate most recent tick for routes with activity
+		if result.ResultType == "route" && climbedAt.Valid {
+			mostRecentTick := &models.ClimbHistoryEntry{
+				MPRouteID:      result.ID,
+				RouteName:      result.Name,
+				RouteRating:    *result.Rating,
+				MPAreaID:       result.MPAreaID,
+				ClimbedBy:      climbedBy.String,
+				ClimbedAt:      climbedAt.Time,
+				Style:          style.String,
+				AreaName:       *result.AreaName,
+				DaysSinceClimb: result.DaysSinceClimb,
+			}
+			if comment.Valid {
+				mostRecentTick.Comment = &comment.String
+			}
+			result.MostRecentTick = mostRecentTick
+		}
+
+		results = append(results, result)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
+// SearchRoutesInLocation searches all routes in a location by name or grade
+// Returns routes ordered by most recent climb activity
+func (db *Database) SearchRoutesInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error) {
+	query := `
+		WITH adjusted_ticks AS (
+			SELECT
+				t.mp_route_id,
+				t.user_name,
+				CASE
+					WHEN t.climbed_at > NOW() + INTERVAL '350 days'
+					     AND t.climbed_at < NOW() + INTERVAL '380 days'
+					THEN t.climbed_at - INTERVAL '1 year'
+					ELSE t.climbed_at
+				END AS adjusted_climbed_at,
+				t.style,
+				t.comment,
+				ROW_NUMBER() OVER (PARTITION BY t.mp_route_id ORDER BY
+					CASE
+						WHEN t.climbed_at > NOW() + INTERVAL '350 days'
+						     AND t.climbed_at < NOW() + INTERVAL '380 days'
+						THEN t.climbed_at - INTERVAL '1 year'
+						ELSE t.climbed_at
+					END DESC) AS tick_rank
+			FROM woulder.mp_ticks t
+			WHERE
+				t.climbed_at <= NOW() + INTERVAL '30 days'
+				AND t.climbed_at >= NOW() - INTERVAL '2 years'
+		)
+		SELECT
+			r.mp_route_id,
+			r.name,
+			r.rating,
+			r.mp_area_id,
+			COALESCE(MAX(at.adjusted_climbed_at), NOW() - INTERVAL '100 years') AS last_climb_at,
+			COALESCE(EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int, 36500) AS days_since_climb,
+			at.user_name,
+			at.adjusted_climbed_at,
+			at.style,
+			at.comment,
+			a.name AS area_name,
+			CASE WHEN MAX(at.adjusted_climbed_at) IS NULL THEN 1 ELSE 0 END AS no_ticks
+		FROM woulder.mp_routes r
+		LEFT JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id AND at.tick_rank = 1
+		INNER JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
+		WHERE r.location_id = $1
+		  AND (LOWER(r.name) LIKE LOWER($2) OR LOWER(r.rating) LIKE LOWER($2) OR LOWER(a.name) LIKE LOWER($2))
+		GROUP BY r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name, at.user_name, at.adjusted_climbed_at, at.style, at.comment
+		ORDER BY no_ticks ASC, MAX(at.adjusted_climbed_at) DESC NULLS LAST, r.name ASC
+		LIMIT $3
+	`
+
+	searchPattern := "%" + searchQuery + "%"
+	rows, err := db.conn.QueryContext(ctx, query, locationID, searchPattern, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var routes []models.RouteActivitySummary
+	for rows.Next() {
+		var route models.RouteActivitySummary
+		var climbedBy, style, comment, areaName sql.NullString
+		var climbedAt sql.NullTime
+		var noTicks int
+
+		err := rows.Scan(
+			&route.MPRouteID,
+			&route.Name,
+			&route.Rating,
+			&route.MPAreaID,
+			&route.LastClimbAt,
+			&route.DaysSinceClimb,
+			&climbedBy,
+			&climbedAt,
+			&style,
+			&comment,
+			&areaName,
+			&noTicks,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Only populate most recent tick if the route has been climbed
+		if climbedAt.Valid {
+			mostRecentTick := &models.ClimbHistoryEntry{
+				MPRouteID:      route.MPRouteID,
+				RouteName:      route.Name,
+				RouteRating:    route.Rating,
+				MPAreaID:       route.MPAreaID,
+				ClimbedBy:      climbedBy.String,
+				ClimbedAt:      climbedAt.Time,
+				Style:          style.String,
+				AreaName:       areaName.String,
+				DaysSinceClimb: route.DaysSinceClimb,
+			}
+			if comment.Valid {
+				mostRecentTick.Comment = &comment.String
+			}
+			route.MostRecentTick = mostRecentTick
+		}
+
+		routes = append(routes, route)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return routes, nil
 }
 

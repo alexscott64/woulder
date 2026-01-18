@@ -205,3 +205,105 @@ func (h *Handler) GetRecentTicksForRoute(c *gin.Context) {
 
 	c.JSON(http.StatusOK, ticks)
 }
+
+// SearchInLocation searches all areas and routes in a location by name
+// GET /api/climbs/location/:id/search-all?q=query&limit=50
+func (h *Handler) SearchInLocation(c *gin.Context) {
+	// Parse location ID from URL
+	locationIDStr := c.Param("id")
+	locationID, err := strconv.Atoi(locationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		return
+	}
+
+	// Get search query from query parameter
+	searchQuery := c.Query("q")
+	if searchQuery == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Search query 'q' is required"})
+		return
+	}
+
+	// Parse optional limit query parameter (default 50, max 200)
+	limit := 50
+	if limitStr := c.Query("limit"); limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid limit parameter"})
+			return
+		}
+		if parsedLimit < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Limit must be at least 1"})
+			return
+		}
+		if parsedLimit > 200 {
+			parsedLimit = 200
+		}
+		limit = parsedLimit
+	}
+
+	// Search both areas and routes
+	results, err := h.climbTrackingService.SearchInLocation(c.Request.Context(), locationID, searchQuery, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search location"})
+		return
+	}
+
+	// Return empty array if no data found
+	if results == nil {
+		results = []models.SearchResult{}
+	}
+
+	c.JSON(http.StatusOK, results)
+}
+
+// SearchRoutesInLocation searches all routes in a location by name, grade, or area
+// GET /api/climbs/location/:id/search?q=query&limit=50
+func (h *Handler) SearchRoutesInLocation(c *gin.Context) {
+	// Parse location ID from URL
+	locationIDStr := c.Param("id")
+	locationID, err := strconv.Atoi(locationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		return
+	}
+
+	// Get search query from query parameter
+	searchQuery := c.Query("q")
+	if searchQuery == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Search query 'q' is required"})
+		return
+	}
+
+	// Parse optional limit query parameter (default 50, max 200)
+	limit := 50
+	if limitStr := c.Query("limit"); limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid limit parameter"})
+			return
+		}
+		if parsedLimit < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Limit must be at least 1"})
+			return
+		}
+		if parsedLimit > 200 {
+			parsedLimit = 200
+		}
+		limit = parsedLimit
+	}
+
+	// Search routes
+	routes, err := h.climbTrackingService.SearchRoutesInLocation(c.Request.Context(), locationID, searchQuery, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search routes"})
+		return
+	}
+
+	// Return empty array if no data found
+	if routes == nil {
+		routes = []models.RouteActivitySummary{}
+	}
+
+	c.JSON(http.StatusOK, routes)
+}

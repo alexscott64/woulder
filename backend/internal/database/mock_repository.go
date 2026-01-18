@@ -48,6 +48,8 @@ type MockRepository struct {
 	GetSubareasOrderedByActivityFn     func(ctx context.Context, parentAreaID string, locationID int) ([]models.AreaActivitySummary, error)
 	GetRoutesOrderedByActivityFn       func(ctx context.Context, areaID string, locationID int, limit int) ([]models.RouteActivitySummary, error)
 	GetRecentTicksForRouteFn           func(ctx context.Context, routeID string, limit int) ([]models.ClimbHistoryEntry, error)
+	SearchInLocationFn                 func(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.SearchResult, error)
+	SearchRoutesInLocationFn           func(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error)
 
 	// Health
 	PingFn  func(ctx context.Context) error
@@ -294,6 +296,22 @@ func (m *MockRepository) GetRoutesOrderedByActivity(ctx context.Context, areaID 
 func (m *MockRepository) GetRecentTicksForRoute(ctx context.Context, routeID string, limit int) ([]models.ClimbHistoryEntry, error) {
 	if m.GetRecentTicksForRouteFn != nil {
 		return m.GetRecentTicksForRouteFn(ctx, routeID, limit)
+	}
+	return nil, nil
+}
+
+// SearchInLocation mock
+func (m *MockRepository) SearchInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.SearchResult, error) {
+	if m.SearchInLocationFn != nil {
+		return m.SearchInLocationFn(ctx, locationID, searchQuery, limit)
+	}
+	return nil, nil
+}
+
+// SearchRoutesInLocation mock
+func (m *MockRepository) SearchRoutesInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error) {
+	if m.SearchRoutesInLocationFn != nil {
+		return m.SearchRoutesInLocationFn(ctx, locationID, searchQuery, limit)
 	}
 	return nil, nil
 }
