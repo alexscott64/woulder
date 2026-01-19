@@ -66,7 +66,14 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
 
   const handleAreaClick = (area: AreaActivitySummary | SearchResult) => {
     // Handle both AreaActivitySummary and SearchResult types
-    const areaId = 'mp_area_id' in area ? area.mp_area_id : area.result_type === 'area' ? area.id : area.mp_area_id;
+    let areaId: string;
+    if ('result_type' in area) {
+      // SearchResult type - use id for areas, mp_area_id for routes
+      areaId = area.result_type === 'area' ? area.id : area.mp_area_id;
+    } else {
+      // AreaActivitySummary type
+      areaId = area.mp_area_id;
+    }
     setBreadcrumbs([...breadcrumbs, { name: area.name, areaId }]);
     setExpandedRoutes(new Set()); // Reset expanded routes when navigating
   };
