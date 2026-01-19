@@ -1,7 +1,7 @@
 import { ChevronRight, MapPin, ChevronLeft, Loader2, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useAreasOrderedByActivity, useSubareasOrderedByActivity, useRoutesOrderedByActivity, useSearchInLocation } from '../hooks/useClimbActivity';
-import { AreaActivitySummary, SearchResult } from '../types/weather';
+import { AreaActivitySummary, SearchResult, RouteActivitySummary } from '../types/weather';
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { RouteListItem } from './RouteListItem';
 
@@ -47,25 +47,22 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
   // Determine which data to show based on search state
   const isSearchActive = searchQuery.length >= 2;
 
-  // Separate search results into areas and routes
-  const searchAreaResults = isSearchActive ? searchResults?.filter(r => r.result_type === 'area') || [] : [];
-  const searchRouteResults = isSearchActive ? searchResults?.filter(r => r.result_type === 'route') || [] : [];
+  // Separate search results into areas and routes with explicit typing
+  const searchAreaResults: SearchResult[] = isSearchActive ? (searchResults?.filter(r => r.result_type === 'area') || []) : [];
+  const searchRouteResults: SearchResult[] = isSearchActive ? (searchResults?.filter(r => r.result_type === 'route') || []) : [];
 
   const areas = currentAreaId === null ? rootAreas : subareas;
   const isLoadingAreas = currentAreaId === null ? isLoadingRootAreas : isLoadingSubareas;
   const areasError = currentAreaId === null ? rootAreasError : subareasError;
 
   // When searching globally, show search results; otherwise show current view
-  const filteredAreas = isSearchActive ? searchAreaResults : areas;
-  const filteredRoutes = isSearchActive ? searchRouteResults : routes;
+  const filteredAreas: (AreaActivitySummary | SearchResult)[] = isSearchActive ? searchAreaResults : (areas || []);
+  const filteredRoutes: (RouteActivitySummary | SearchResult)[] = isSearchActive ? searchRouteResults : (routes || []);
   const isLoadingData = isSearchActive ? isSearching : (isLoadingAreas || isLoadingRoutes);
   const dataError = isSearchActive ? searchError : (areasError || routesError);
 
   // Show routes if we're in an area that has no subareas OR if search is active
   const showRoutes = isSearchActive || (currentAreaId !== null && (!areas || areas.length === 0));
-
-  // Show areas in search results if any match
-  const showSearchAreas = isSearchActive && searchAreaResults.length > 0;
 
   const handleAreaClick = (area: AreaActivitySummary | SearchResult) => {
     // Handle both AreaActivitySummary and SearchResult types
