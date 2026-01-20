@@ -16,6 +16,7 @@ type Handler struct {
 	weatherService       *service.WeatherService
 	riverService         *service.RiverService
 	climbTrackingService *service.ClimbTrackingService
+	boulderDryingService *service.BoulderDryingService
 }
 
 func NewHandler(
@@ -23,12 +24,14 @@ func NewHandler(
 	weatherService *service.WeatherService,
 	riverService *service.RiverService,
 	climbTrackingService *service.ClimbTrackingService,
+	boulderDryingService *service.BoulderDryingService,
 ) *Handler {
 	return &Handler{
 		locationService:      locationService,
 		weatherService:       weatherService,
 		riverService:         riverService,
 		climbTrackingService: climbTrackingService,
+		boulderDryingService: boulderDryingService,
 	}
 }
 

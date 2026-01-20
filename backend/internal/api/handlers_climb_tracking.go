@@ -307,3 +307,25 @@ func (h *Handler) SearchRoutesInLocation(c *gin.Context) {
 
 	c.JSON(http.StatusOK, routes)
 }
+
+
+// GetBoulderDryingStatus calculates boulder-specific drying status
+// GET /api/climbs/routes/:route_id/drying-status
+func (h *Handler) GetBoulderDryingStatus(c *gin.Context) {
+	// Parse route ID from URL
+	routeID := c.Param("route_id")
+	if routeID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Route ID is required"})
+		return
+	}
+
+	// Calculate boulder drying status
+	status, err := h.boulderDryingService.GetBoulderDryingStatus(c.Request.Context(), routeID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to calculate boulder drying status", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, status)
+}
+

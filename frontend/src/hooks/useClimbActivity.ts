@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { climbActivityApi } from '../services/api';
-import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult } from '../types/weather';
+import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus } from '../types/weather';
 
 /**
  * Hook to fetch areas ordered by recent climb activity for a location
@@ -89,5 +89,17 @@ export const useSearchRoutesInLocation = (
     queryFn: () => climbActivityApi.searchRoutesInLocation(locationId, searchQuery, limit),
     staleTime: 10 * 60 * 1000, // 10 minutes
     enabled: !!locationId && searchQuery.length >= 2, // Only search if query is at least 2 chars
+  });
+};
+
+/**
+ * Hook to fetch boulder-specific drying status for a route
+ */
+export const useBoulderDryingStatus = (routeId: string | null) => {
+  return useQuery<BoulderDryingStatus, Error>({
+    queryKey: ['boulder-drying', routeId],
+    queryFn: () => climbActivityApi.getBoulderDryingStatus(routeId!),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    enabled: !!routeId,
   });
 };

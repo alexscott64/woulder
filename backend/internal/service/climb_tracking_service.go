@@ -12,6 +12,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/alexscott64/woulder/backend/internal/mountainproject"
+	"github.com/alexscott64/woulder/backend/internal/weather/boulder_drying"
 )
 
 // MPClientInterface defines the interface for Mountain Project API operations
@@ -120,6 +121,15 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 			LocationID:     item.locationID,
 		}
 
+		// Extract GPS coordinates if available
+		if len(areaData.Coordinates) == 2 {
+			longitude := areaData.Coordinates[0]
+			latitude := areaData.Coordinates[1]
+			area.Longitude = &longitude
+			area.Latitude = &latitude
+			log.Printf("Area GPS: %.4f, %.4f", latitude, longitude)
+		}
+
 		if err := s.repo.SaveMPArea(ctx, area); err != nil {
 			log.Printf("Error saving area %s: %v", item.mpAreaID, err)
 			continue
@@ -128,6 +138,9 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 		processedAreas[item.mpAreaID] = true
 		areaCount++
 		log.Printf("Saved area: %s (%s) - Total areas: %d", areaData.Title, areaIDStr, areaCount)
+
+		// Collect boulder routes for GPS distribution
+		var boulderRoutes []string // Store route IDs for GPS calculation
 
 		// Process children
 		for _, child := range areaData.Children {
@@ -154,7 +167,7 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 					continue // Skip non-boulder routes
 				}
 
-				// Save route
+				// Save route (without GPS for now - will calculate after all routes are collected)
 				route := &models.MPRoute{
 					MPRouteID:  childIDStr,
 					MPAreaID:   item.mpAreaID,
@@ -169,6 +182,9 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 					continue
 				}
 
+				// Add to boulder routes list for GPS calculation
+				boulderRoutes = append(boulderRoutes, childIDStr)
+
 				routeCount++
 				log.Printf("Saved route: %s (%s) - Total routes: %d", child.Title, childIDStr, routeCount)
 
@@ -177,6 +193,14 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 					log.Printf("Error syncing ticks for route %s: %v", childIDStr, err)
 					// Continue processing other routes even if tick sync fails
 				}
+			}
+		}
+
+		// Calculate and update GPS positions for all boulders in this area
+		if len(boulderRoutes) > 0 && area.Latitude != nil && area.Longitude != nil {
+			if err := s.calculateBoulderGPS(ctx, boulderRoutes, *area.Latitude, *area.Longitude); err != nil {
+				log.Printf("Error calculating boulder GPS for area %s: %v", item.mpAreaID, err)
+				// Continue processing even if GPS calculation fails
 			}
 		}
 	}
@@ -475,5 +499,41 @@ func (s *ClimbTrackingService) SyncNewTicksForAllLocations(ctx context.Context) 
 		return fmt.Errorf("sync completed with %d failures", failCount)
 	}
 
+	return nil
+}
+
+// calculateBoulderGPS calculates GPS positions for boulders using circular distribution
+// and updates the database with calculated coordinates and aspects
+func (s *ClimbTrackingService) calculateBoulderGPS(
+	ctx context.Context,
+	routeIDs []string,
+	centerLat, centerLon float64,
+) error {
+	if len(routeIDs) == 0 {
+		return nil
+	}
+
+	// Calculate radius based on number of boulders
+	radius := boulder_drying.CalculateRadiusForArea(len(routeIDs))
+
+	// Calculate positions for all boulders
+	positions := boulder_drying.CalculateBoulderPositions(centerLat, centerLon, len(routeIDs), radius)
+
+	log.Printf("Calculating GPS for %d boulders (radius: %.4f degrees)", len(routeIDs), radius)
+
+	// Update each route with its calculated GPS position and aspect
+	updateCount := 0
+	for i, routeID := range routeIDs {
+		pos := positions[i]
+
+		err := s.repo.UpdateRouteGPS(ctx, routeID, pos.Latitude, pos.Longitude, pos.Aspect)
+		if err != nil {
+			log.Printf("Error updating GPS for route %s: %v", routeID, err)
+			continue
+		}
+		updateCount++
+	}
+
+	log.Printf("Successfully updated GPS for %d/%d boulders", updateCount, len(routeIDs))
 	return nil
 }

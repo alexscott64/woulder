@@ -156,3 +156,20 @@ export interface PestConditions {
   outdoor_pest_score: number; // 0-100
   factors: string[];
 }
+
+export interface BoulderDryingStatus {
+  mp_route_id: string;
+  is_wet: boolean;
+  is_safe: boolean;
+  hours_until_dry: number;
+  status: 'critical' | 'poor' | 'fair' | 'good';
+  message: string;
+  confidence_score: number; // 0-100
+  last_rain_timestamp: string;
+  sun_exposure_hours: number;
+  tree_coverage_percent: number;
+  rock_type: string;
+  aspect: string; // N, NE, E, SE, S, SW, W, NW
+  latitude: number;
+  longitude: number;
+}

@@ -40,9 +40,10 @@ func main() {
 	climbTrackingService := service.NewClimbTrackingService(db, mpClient)
 	weatherServiceLayer := service.NewWeatherService(db, weatherClient, climbTrackingService)
 	riverServiceLayer := service.NewRiverService(db, riverClient)
+	boulderDryingService := service.NewBoulderDryingService(db)
 
 	// Initialize API handler with services
-	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService)
+	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService)
 
 	// Start background weather refresh (every 2 hours)
 	handler.StartBackgroundRefresh(2 * time.Hour)
@@ -85,6 +86,7 @@ func main() {
 		apiGroup.GET("/climbs/location/:id/areas/:area_id/subareas", handler.GetSubareasOrderedByActivity)
 		apiGroup.GET("/climbs/location/:id/areas/:area_id/routes", handler.GetRoutesOrderedByActivity)
 		apiGroup.GET("/climbs/routes/:route_id/ticks", handler.GetRecentTicksForRoute)
+		apiGroup.GET("/climbs/routes/:route_id/drying-status", handler.GetBoulderDryingStatus)
 		apiGroup.GET("/climbs/location/:id/search-all", handler.SearchInLocation)
 		apiGroup.GET("/climbs/location/:id/search", handler.SearchRoutesInLocation)
 	}

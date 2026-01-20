@@ -10,6 +10,8 @@ type MPArea struct {
 	ParentMPAreaID *string    `json:"parent_mp_area_id,omitempty" db:"parent_mp_area_id"`
 	AreaType       string     `json:"area_type" db:"area_type"`
 	LocationID     *int       `json:"location_id,omitempty" db:"location_id"`
+	Latitude       *float64   `json:"latitude,omitempty" db:"latitude"`
+	Longitude      *float64   `json:"longitude,omitempty" db:"longitude"`
 	LastSyncedAt   *time.Time `json:"last_synced_at,omitempty" db:"last_synced_at"`
 	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
@@ -24,6 +26,9 @@ type MPRoute struct {
 	RouteType  string    `json:"route_type" db:"route_type"`
 	Rating     string    `json:"rating" db:"rating"`
 	LocationID *int      `json:"location_id,omitempty" db:"location_id"`
+	Latitude   *float64  `json:"latitude,omitempty" db:"latitude"`
+	Longitude  *float64  `json:"longitude,omitempty" db:"longitude"`
+	Aspect     *string   `json:"aspect,omitempty" db:"aspect"` // N, NE, E, SE, S, SW, W, NW
 	CreatedAt  time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at" db:"updated_at"`
 }
@@ -38,6 +43,18 @@ type MPTick struct {
 	Comment   *string   `json:"comment,omitempty" db:"comment"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// BoulderDryingProfile stores boulder-specific drying metadata
+type BoulderDryingProfile struct {
+	ID                    int        `json:"id" db:"id"`
+	MPRouteID             string     `json:"mp_route_id" db:"mp_route_id"`
+	TreeCoveragePercent   *float64   `json:"tree_coverage_percent,omitempty" db:"tree_coverage_percent"`
+	RockTypeOverride      *string    `json:"rock_type_override,omitempty" db:"rock_type_override"`
+	LastSunCalcAt         *time.Time `json:"last_sun_calc_at,omitempty" db:"last_sun_calc_at"`
+	SunExposureHoursCache *string    `json:"sun_exposure_hours_cache,omitempty" db:"sun_exposure_hours_cache"` // JSONB stored as string
+	CreatedAt             time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // ClimbHistoryEntry represents a single climb from the location's history
