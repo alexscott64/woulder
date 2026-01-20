@@ -48,11 +48,13 @@ func NewCalculator(ipGeoAPIKey string) *Calculator {
 // - Real-time sun exposure based on boulder GPS + aspect
 // - Boulder-specific tree coverage from satellite data
 // - Confidence scoring based on data availability
+// locationTreeCoverage: optional location-level tree coverage percentage (0 to use GPS-based estimates)
 func (c *Calculator) CalculateBoulderDryingStatus(
 	ctx context.Context,
 	route *models.MPRoute,
 	locationDrying *models.RockDryingStatus,
 	profile *models.BoulderDryingProfile,
+	locationTreeCoverage float64,
 ) (*BoulderDryingStatus, error) {
 	status := &BoulderDryingStatus{
 		MPRouteID:         route.MPRouteID,
@@ -84,19 +86,28 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 	if profile != nil && profile.TreeCoveragePercent != nil {
 		status.TreeCoveragePercent = *profile.TreeCoveragePercent
 	} else if status.Latitude != 0 && status.Longitude != 0 {
-		// Fetch tree coverage from satellite data
-		treeCoverage, err := c.treeClient.GetTreeCoverage(ctx, status.Latitude, status.Longitude)
+		// Fetch tree coverage from satellite data (with location default as fallback)
+		treeCoverage, err := c.treeClient.GetTreeCoverageWithDefault(ctx, status.Latitude, status.Longitude, locationTreeCoverage)
 		if err != nil {
 			log.Printf("Warning: Failed to fetch tree coverage for %s: %v", route.MPRouteID, err)
-			// Fall back to location-level tree coverage (if available)
-			status.TreeCoveragePercent = 0 // Default to no tree coverage
-			status.ConfidenceScore -= 15
+			// Fall back to location-level tree coverage if API fails
+			if locationTreeCoverage > 0 {
+				status.TreeCoveragePercent = locationTreeCoverage
+			} else {
+				status.TreeCoveragePercent = 30.0 // Ultimate fallback
+				status.ConfidenceScore -= 15
+			}
 		} else {
 			status.TreeCoveragePercent = treeCoverage
 		}
 	} else {
-		status.TreeCoveragePercent = 0
-		status.ConfidenceScore -= 15
+		// No GPS coordinates - use location tree coverage
+		if locationTreeCoverage > 0 {
+			status.TreeCoveragePercent = locationTreeCoverage
+		} else {
+			status.TreeCoveragePercent = 30.0 // Default
+			status.ConfidenceScore -= 15
+		}
 	}
 
 	// Get sun exposure hours (cached or calculate)

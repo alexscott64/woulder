@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueries } from '@tanstack/react-query';
 import { climbActivityApi } from '../services/api';
 import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus } from '../types/weather';
 
@@ -101,5 +101,19 @@ export const useBoulderDryingStatus = (routeId: string | null) => {
     queryFn: () => climbActivityApi.getBoulderDryingStatus(routeId!),
     staleTime: 10 * 60 * 1000, // 10 minutes
     enabled: !!routeId,
+  });
+};
+
+/**
+ * Hook to fetch boulder-specific drying status for multiple routes
+ */
+export const useBoulderDryingStatuses = (routeIds: string[]) => {
+  return useQueries({
+    queries: routeIds.map(routeId => ({
+      queryKey: ['boulder-drying', routeId],
+      queryFn: () => climbActivityApi.getBoulderDryingStatus(routeId),
+      staleTime: 10 * 60 * 1000, // 10 minutes
+      enabled: !!routeId,
+    })),
   });
 };

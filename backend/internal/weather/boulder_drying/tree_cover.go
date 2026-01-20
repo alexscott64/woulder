@@ -66,24 +66,44 @@ func NewTreeCoverClient() *TreeCoverClient {
 // GetTreeCoverage returns tree canopy coverage percentage for a GPS coordinate
 // Uses GEDI L2B Canopy Cover dataset from NASA
 // Returns percentage 0-100
-func (c *TreeCoverClient) GetTreeCoverage(ctx context.Context, lat, lon float64) (float64, error) {
+// locationTreeCoverage: optional location-level tree coverage to use as base (pass 0 to use GPS-based estimates)
+func (c *TreeCoverClient) GetTreeCoverageWithDefault(ctx context.Context, lat, lon, locationTreeCoverage float64) (float64, error) {
 	if !c.enabled {
-		// Fallback to location-based estimates
-		coverage := c.estimateTreeCoverageFromLocation(lat, lon)
-		log.Printf("Tree coverage estimate for (%.6f, %.6f): %.1f%%", lat, lon, coverage)
+		// Use location-level tree coverage if provided, otherwise estimate from GPS
+		var coverage float64
+		if locationTreeCoverage > 0 {
+			coverage = locationTreeCoverage
+			log.Printf("Tree coverage for (%.6f, %.6f): %.1f%% (from location)", lat, lon, coverage)
+		} else {
+			coverage = c.estimateTreeCoverageFromLocation(lat, lon)
+			log.Printf("Tree coverage estimate for (%.6f, %.6f): %.1f%% (GPS-based)", lat, lon, coverage)
+		}
 		return coverage, nil
 	}
 
 	// Try to fetch from GEDI satellite data
 	coverage, err := c.getTreeCoverageFromGEDI(ctx, lat, lon)
 	if err != nil {
-		log.Printf("Warning: GEDI query failed, using location estimate: %v", err)
-		// Fallback to location-based estimates
-		coverage = c.estimateTreeCoverageFromLocation(lat, lon)
+		log.Printf("Warning: GEDI query failed, using fallback: %v", err)
+		// Fallback to location tree coverage first, then GPS estimates
+		if locationTreeCoverage > 0 {
+			coverage = locationTreeCoverage
+			log.Printf("Tree coverage for (%.6f, %.6f): %.1f%% (from location fallback)", lat, lon, coverage)
+		} else {
+			coverage = c.estimateTreeCoverageFromLocation(lat, lon)
+			log.Printf("Tree coverage for (%.6f, %.6f): %.1f%% (GPS-based fallback)", lat, lon, coverage)
+		}
+	} else {
+		log.Printf("Tree coverage for (%.6f, %.6f): %.1f%% (from GEDI)", lat, lon, coverage)
 	}
 
-	log.Printf("Tree coverage for (%.6f, %.6f): %.1f%%", lat, lon, coverage)
 	return coverage, nil
+}
+
+// GetTreeCoverage returns tree canopy coverage percentage for a GPS coordinate (no location default)
+// Wrapper for backwards compatibility
+func (c *TreeCoverClient) GetTreeCoverage(ctx context.Context, lat, lon float64) (float64, error) {
+	return c.GetTreeCoverageWithDefault(ctx, lat, lon, 0)
 }
 
 // getTreeCoverageFromGEDI queries Google Earth Engine for GEDI canopy cover data

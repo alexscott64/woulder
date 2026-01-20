@@ -64,8 +64,21 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 		profile = nil // Continue without profile
 	}
 
+	// Get location sun exposure (for tree coverage)
+	sunExposure, err := s.repo.GetSunExposureByLocation(ctx, *route.LocationID)
+	if err != nil {
+		log.Printf("Warning: Failed to get sun exposure for location %d: %v", *route.LocationID, err)
+		sunExposure = nil
+	}
+
+	// Extract location tree coverage
+	locationTreeCoverage := 0.0
+	if sunExposure != nil {
+		locationTreeCoverage = sunExposure.TreeCoveragePercent
+	}
+
 	// Calculate boulder-specific drying status
-	status, err := s.calculator.CalculateBoulderDryingStatus(ctx, route, locationDrying, profile)
+	status, err := s.calculator.CalculateBoulderDryingStatus(ctx, route, locationDrying, profile, locationTreeCoverage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate boulder drying status: %w", err)
 	}
