@@ -167,8 +167,8 @@ export const AdvancedSearchBar: React.FC<AdvancedSearchBarProps> = ({
               >
                 <option value="all">All Conditions</option>
                 <option value="dry">Dry Only</option>
-                <option value="drying">Drying ({"<"}24h)</option>
-                <option value="wet">Wet ({">"24h})</option>
+                <option value="drying">Drying (&lt;24h)</option>
+                <option value="wet">Wet (&gt;24h)</option>
               </select>
             </div>
 

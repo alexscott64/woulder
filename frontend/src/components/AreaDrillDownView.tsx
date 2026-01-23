@@ -5,7 +5,6 @@ import { AreaActivitySummary, SearchResult, RouteActivitySummary } from '../type
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { RouteListItem } from './RouteListItem';
 import { AreaConditionCard } from './AreaConditionCard';
-import { AdvancedSearchBar } from './AdvancedSearchBar';
 
 interface AreaDrillDownViewProps {
   locationId: number;
@@ -45,7 +44,7 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
   );
 
   // Fetch area-level drying stats when viewing routes in an area
-  const { data: areaDryingStats, isLoading: isLoadingDryingStats } = useAreaDryingStats(
+  const { data: areaDryingStats } = useAreaDryingStats(
     locationId,
     currentAreaId
   );
@@ -89,16 +88,14 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
   const areaDryingStatsQueries = useMultipleAreaDryingStats(locationId, areaIdsForDryingStats);
 
   // Create a map of area ID to drying stats for easy lookup
-  const areaDryingStatsMap = useMemo(() => {
-    const map = new Map();
-    areaIdsForDryingStats.forEach((id, index) => {
-      const query = areaDryingStatsQueries[index];
-      if (query?.data) {
-        map.set(id, query.data);
-      }
-    });
-    return map;
-  }, [areaIdsForDryingStats, areaDryingStatsQueries]);
+  // Don't memoize - let React Query handle re-renders when data updates
+  const areaDryingStatsMap = new Map();
+  areaIdsForDryingStats.forEach((id, index) => {
+    const query = areaDryingStatsQueries[index];
+    if (query?.data) {
+      areaDryingStatsMap.set(id, query.data);
+    }
+  });
 
   // Get route IDs for fetching drying statuses
   const routeIds = useMemo(() => {
@@ -110,16 +107,14 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
   const dryingStatusQueries = useBoulderDryingStatuses(routeIds);
 
   // Create a map of route ID to drying status for easy lookup
-  const dryingStatusMap = useMemo(() => {
-    const map = new Map();
-    routeIds.forEach((id, index) => {
-      const query = dryingStatusQueries[index];
-      if (query?.data) {
-        map.set(id, query.data);
-      }
-    });
-    return map;
-  }, [routeIds, dryingStatusQueries]);
+  // Don't memoize - let React Query handle re-renders when data updates
+  const dryingStatusMap = new Map();
+  routeIds.forEach((id, index) => {
+    const query = dryingStatusQueries[index];
+    if (query?.data) {
+      dryingStatusMap.set(id, query.data);
+    }
+  });
 
   // Apply filtering and sorting to routes
   const processedRoutes = useMemo(() => {
