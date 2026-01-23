@@ -40,7 +40,7 @@ func main() {
 	climbTrackingService := service.NewClimbTrackingService(db, mpClient)
 	weatherServiceLayer := service.NewWeatherService(db, weatherClient, climbTrackingService)
 	riverServiceLayer := service.NewRiverService(db, riverClient)
-	boulderDryingService := service.NewBoulderDryingService(db)
+	boulderDryingService := service.NewBoulderDryingService(db, weatherClient)
 
 	// Initialize API handler with services
 	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService)

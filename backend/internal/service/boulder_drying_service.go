@@ -8,18 +8,20 @@ import (
 
 	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/alexscott64/woulder/backend/internal/weather"
 	"github.com/alexscott64/woulder/backend/internal/weather/boulder_drying"
 	"github.com/alexscott64/woulder/backend/internal/weather/rock_drying"
 )
 
 // BoulderDryingService handles boulder-specific drying calculations
 type BoulderDryingService struct {
-	repo       database.Repository
-	calculator *boulder_drying.Calculator
+	repo          database.Repository
+	calculator    *boulder_drying.Calculator
+	weatherClient *weather.WeatherService
 }
 
 // NewBoulderDryingService creates a new boulder drying service
-func NewBoulderDryingService(repo database.Repository) *BoulderDryingService {
+func NewBoulderDryingService(repo database.Repository, weatherClient *weather.WeatherService) *BoulderDryingService {
 	// Get API key from environment
 	apiKey := os.Getenv("IPGEOLOCATION_API_KEY")
 	if apiKey == "" {
@@ -27,8 +29,9 @@ func NewBoulderDryingService(repo database.Repository) *BoulderDryingService {
 	}
 
 	return &BoulderDryingService{
-		repo:       repo,
-		calculator: boulder_drying.NewCalculator(apiKey),
+		repo:          repo,
+		calculator:    boulder_drying.NewCalculator(apiKey),
+		weatherClient: weatherClient,
 	}
 }
 
@@ -123,13 +126,20 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	ctx context.Context,
 	locationID int,
 ) (*models.RockDryingStatus, error) {
-	// Get current weather
-	currentWeather, err := s.repo.GetCurrentWeather(ctx, locationID)
-	if err != nil || currentWeather == nil {
-		return nil, fmt.Errorf("failed to get current weather: %w", err)
+	// Get location to fetch coordinates
+	location, err := s.repo.GetLocation(ctx, locationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get location: %w", err)
 	}
 
-	// Get historical weather (last 7 days)
+	// Get FRESH current weather from API (not stale database cache)
+	currentWeather, _, _, err := s.weatherClient.GetCurrentAndForecast(location.Latitude, location.Longitude)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch fresh current weather: %w", err)
+	}
+	currentWeather.LocationID = locationID
+
+	// Get historical weather (last 7 days) from database
 	historicalWeather, err := s.repo.GetHistoricalWeather(ctx, locationID, 168) // 7 days
 	if err != nil {
 		return nil, fmt.Errorf("failed to get historical weather: %w", err)

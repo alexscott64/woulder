@@ -35,6 +35,38 @@ export const BoulderDryingBadge: React.FC<BoulderDryingBadgeProps> = ({ status, 
     return `${days}d`;
   };
 
+  // Format last rain timestamp (handle zero time values)
+  const formatLastRain = (timestamp: string): string => {
+    try {
+      // Handle empty or zero time values
+      if (!timestamp || timestamp === '0001-01-01T00:00:00Z' || timestamp.startsWith('0001-')) {
+        return 'No recent rain';
+      }
+
+      const date = new Date(timestamp);
+
+      // Check if date is invalid or before year 2000 (likely a zero value)
+      if (isNaN(date.getTime()) || date.getFullYear() < 2000) {
+        return 'No recent rain';
+      }
+
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+      if (diffHours < 1) return 'Less than 1 hour ago';
+      if (diffHours === 1) return '1 hour ago';
+      if (diffHours < 24) return `${diffHours} hours ago`;
+
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays === 1) return '1 day ago';
+      if (diffDays > 365) return 'No recent rain';
+      return `${diffDays} days ago`;
+    } catch {
+      return 'Unknown';
+    }
+  };
+
   // Get confidence indicator
   const getConfidenceIndicator = () => {
     if (status.confidence_score >= 90) return '●';
@@ -112,7 +144,7 @@ export const BoulderDryingBadge: React.FC<BoulderDryingBadgeProps> = ({ status, 
       <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-400">
         <div className="flex items-center justify-between">
           <span>GPS: {status.latitude.toFixed(5)}, {status.longitude.toFixed(5)}</span>
-          <span>Last rain: {new Date(status.last_rain_timestamp).toLocaleDateString()}</span>
+          <span>Last rain: {status.last_rain_timestamp ? formatLastRain(status.last_rain_timestamp) : 'No recent rain'}</span>
         </div>
       </div>
     </div>

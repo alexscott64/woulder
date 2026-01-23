@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/alexscott64/woulder/backend/internal/weather/sun"
 )
 
 // DryingForecastPeriod represents dry/wet status for a time period
@@ -30,7 +31,7 @@ type BoulderDryingStatus struct {
 	Status              string                  `json:"status"` // "critical", "poor", "fair", "good"
 	Message             string                  `json:"message"`
 	ConfidenceScore     int                     `json:"confidence_score"` // 0-100
-	LastRainTimestamp   time.Time               `json:"last_rain_timestamp"`
+	LastRainTimestamp   *time.Time              `json:"last_rain_timestamp,omitempty"` // Pointer to allow null
 	SunExposureHours    float64                 `json:"sun_exposure_hours"`     // Hours of direct sun next 6 days
 	TreeCoveragePercent float64                 `json:"tree_coverage_percent"` // 0-100
 	RockType            string                  `json:"rock_type"`
@@ -42,14 +43,13 @@ type BoulderDryingStatus struct {
 
 // Calculator computes boulder-specific drying times
 type Calculator struct {
-	sunClient  *SunPositionClient
 	treeClient *TreeCoverClient
 }
 
 // NewCalculator creates a new boulder drying calculator
-func NewCalculator(ipGeoAPIKey string) *Calculator {
+// Note: apiKey parameter is deprecated and ignored (kept for backwards compatibility)
+func NewCalculator(apiKey string) *Calculator {
 	return &Calculator{
-		sunClient:  NewSunPositionClient(ipGeoAPIKey),
 		treeClient: NewTreeCoverClient(),
 	}
 }
@@ -144,12 +144,15 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 	// Calculate boulder-specific drying time
 	status.HoursUntilDry = c.calculateBoulderDryingTime(locationDrying, status)
 
-	// Parse LastRainTimestamp string to time.Time
+	// Parse LastRainTimestamp string to time.Time (avoid zero time values)
 	if locationDrying.LastRainTimestamp != "" {
 		lastRain, err := time.Parse(time.RFC3339, locationDrying.LastRainTimestamp)
 		if err == nil {
-			status.LastRainTimestamp = lastRain
+			status.LastRainTimestamp = &lastRain
 		}
+	} else {
+		// If no last rain timestamp, set to nil (will be omitted from JSON)
+		status.LastRainTimestamp = nil
 	}
 
 	// Determine wet/safe/status
@@ -201,39 +204,10 @@ func (c *Calculator) calculateSunExposure(
 		}
 	}
 
-	// Fetch sun position data for next 6 days
-	sunData, err := c.sunClient.GetSunPositionForecast(ctx, lat, lon, 6)
-	if err != nil {
-		return 0, fmt.Errorf("failed to fetch sun position data: %w", err)
-	}
-
-	// Calculate total sun exposure hours
-	totalSunHours := 0.0
-	aspectDegrees := AspectToDegrees(aspect)
-
-	for _, hourData := range sunData {
-		// Only count hours when sun is above horizon
-		if hourData.Elevation <= 0 {
-			continue
-		}
-
-		// Check if sun hits boulder face based on aspect
-		// Boulder receives sun when sun azimuth is within ±90° of aspect direction
-		azimuthDiff := angleDifference(hourData.Azimuth, aspectDegrees)
-		if azimuthDiff <= 90 {
-			// Apply tree coverage reduction
-			sunFactor := 1.0
-			if treeCoverage > 75 {
-				sunFactor = 0.3 // Heavy tree cover blocks 70% of sun
-			} else if treeCoverage > 50 {
-				sunFactor = 0.6 // Moderate tree cover blocks 40% of sun
-			} else if treeCoverage > 25 {
-				sunFactor = 0.8 // Light tree cover blocks 20% of sun
-			}
-
-			totalSunHours += sunFactor
-		}
-	}
+	// Calculate sun exposure using offline algorithm
+	// Calculate for next 6 days (144 hours)
+	startTime := time.Now()
+	totalSunHours := sun.CalculateSunExposure(lat, lon, aspect, treeCoverage, startTime, 144)
 
 	log.Printf("Calculated sun exposure for boulder: %.1f hours over 6 days (aspect: %s, tree: %.0f%%)",
 		totalSunHours, aspect, treeCoverage)
@@ -387,8 +361,8 @@ func (c *Calculator) Calculate6DayForecast(
 	// Track current wet/dry state
 	currentlyWet := status.IsWet
 	wetSince := now
-	if currentlyWet && !status.LastRainTimestamp.IsZero() {
-		wetSince = status.LastRainTimestamp
+	if currentlyWet && status.LastRainTimestamp != nil && !status.LastRainTimestamp.IsZero() {
+		wetSince = *status.LastRainTimestamp
 	}
 
 	// Add initial period

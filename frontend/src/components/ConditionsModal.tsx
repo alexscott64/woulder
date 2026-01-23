@@ -93,7 +93,18 @@ export function ConditionsModal({
 
   const formatLastRain = (timestamp: string) => {
     try {
+      // Handle empty or zero time values
+      if (!timestamp || timestamp === '0001-01-01T00:00:00Z' || timestamp.startsWith('0001-')) {
+        return 'No recent rain';
+      }
+
       const date = new Date(timestamp);
+
+      // Check if date is invalid or before year 2000 (likely a zero value)
+      if (isNaN(date.getTime()) || date.getFullYear() < 2000) {
+        return 'No recent rain';
+      }
+
       const now = new Date();
       const diffMs = now.getTime() - date.getTime();
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -104,6 +115,7 @@ export function ConditionsModal({
 
       const diffDays = Math.floor(diffHours / 24);
       if (diffDays === 1) return '1 day ago';
+      if (diffDays > 365) return 'No recent rain';
       return `${diffDays} days ago`;
     } catch {
       return 'Unknown';

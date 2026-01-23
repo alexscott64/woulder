@@ -175,7 +175,7 @@ export interface BoulderDryingStatus {
   status: 'critical' | 'poor' | 'fair' | 'good';
   message: string;
   confidence_score: number; // 0-100
-  last_rain_timestamp: string;
+  last_rain_timestamp?: string; // Optional - omitted when no recent rain
   sun_exposure_hours: number;
   tree_coverage_percent: number;
   rock_type: string;
