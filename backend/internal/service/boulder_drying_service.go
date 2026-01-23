@@ -77,8 +77,15 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 		locationTreeCoverage = sunExposure.TreeCoveragePercent
 	}
 
+	// Get hourly forecast for 6-day forecast
+	hourlyForecast, err := s.repo.GetForecastWeather(ctx, *route.LocationID, 144) // 6 days = 144 hours
+	if err != nil {
+		log.Printf("Warning: Failed to get hourly forecast for location %d: %v", *route.LocationID, err)
+		hourlyForecast = nil // Continue without forecast
+	}
+
 	// Calculate boulder-specific drying status
-	status, err := s.calculator.CalculateBoulderDryingStatus(ctx, route, locationDrying, profile, locationTreeCoverage)
+	status, err := s.calculator.CalculateBoulderDryingStatus(ctx, route, locationDrying, profile, locationTreeCoverage, hourlyForecast)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate boulder drying status: %w", err)
 	}

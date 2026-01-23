@@ -198,7 +198,8 @@ func TestCalculateBoulderDryingStatus(t *testing.T) {
 		TreeCoveragePercent: func() *float64 { v := 30.0; return &v }(),
 	}
 
-	status, err := calc.CalculateBoulderDryingStatus(ctx, route, locationDrying, profile)
+	// No hourly forecast for this test
+	status, err := calc.CalculateBoulderDryingStatus(ctx, route, locationDrying, profile, 30.0, nil)
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -232,5 +233,289 @@ func TestCalculateBoulderDryingStatus(t *testing.T) {
 	// Confidence should be reduced for missing sun API data
 	if status.ConfidenceScore >= 100 {
 		t.Errorf("Expected confidence < 100 due to missing sun API, got %d", status.ConfidenceScore)
+	}
+}
+
+func TestCalculate6DayForecast_CurrentlyDry_StaysDry(t *testing.T) {
+	calc := NewCalculator("test-api-key")
+	now := time.Now()
+
+	status := &BoulderDryingStatus{
+		IsWet:         false,
+		HoursUntilDry: 0,
+	}
+
+	// No rain in forecast - stays dry
+	hourlyForecast := make([]models.WeatherData, 144) // 6 days
+	for i := 0; i < 144; i++ {
+		hourlyForecast[i] = models.WeatherData{
+			Timestamp:     now.Add(time.Duration(i) * time.Hour),
+			Precipitation: 0.0,
+		}
+	}
+
+	forecast := calc.Calculate6DayForecast(status, hourlyForecast, 24.0)
+
+	if len(forecast) != 1 {
+		t.Fatalf("Expected 1 period (all dry), got %d", len(forecast))
+	}
+
+	if !forecast[0].IsDry {
+		t.Error("Expected period to be dry")
+	}
+
+	if forecast[0].Status != "dry" {
+		t.Errorf("Expected status 'dry', got '%s'", forecast[0].Status)
+	}
+}
+
+func TestCalculate6DayForecast_CurrentlyDry_GetWet(t *testing.T) {
+	calc := NewCalculator("test-api-key")
+	now := time.Now()
+
+	status := &BoulderDryingStatus{
+		IsWet:         false,
+		HoursUntilDry: 0,
+	}
+
+	// Rain starts at hour 24
+	hourlyForecast := make([]models.WeatherData, 144)
+	for i := 0; i < 144; i++ {
+		precipitation := 0.0
+		if i == 24 {
+			precipitation = 0.25 // Quarter inch of rain
+		}
+		hourlyForecast[i] = models.WeatherData{
+			Timestamp:     now.Add(time.Duration(i) * time.Hour),
+			Precipitation: precipitation,
+		}
+	}
+
+	forecast := calc.Calculate6DayForecast(status, hourlyForecast, 24.0)
+
+	// Should have 2 periods: dry (0-24h), then wet (24h-48h), then dry (48h+)
+	if len(forecast) < 2 {
+		t.Fatalf("Expected at least 2 periods, got %d", len(forecast))
+	}
+
+	// First period should be dry
+	if !forecast[0].IsDry {
+		t.Error("Expected first period to be dry")
+	}
+
+	// Second period should be wet
+	if forecast[1].IsDry {
+		t.Error("Expected second period to be wet")
+	}
+
+	if forecast[1].Status != "wet" && forecast[1].Status != "drying" {
+		t.Errorf("Expected wet or drying status, got '%s'", forecast[1].Status)
+	}
+
+	if forecast[1].RainAmount != 0.25 {
+		t.Errorf("Expected 0.25 inches of rain, got %.2f", forecast[1].RainAmount)
+	}
+}
+
+func TestCalculate6DayForecast_CurrentlyWet_DriesThenWetAgain(t *testing.T) {
+	calc := NewCalculator("test-api-key")
+	now := time.Now()
+
+	status := &BoulderDryingStatus{
+		IsWet:         true,
+		HoursUntilDry: 12.0,
+		LastRainTimestamp: now.Add(-12 * time.Hour),
+	}
+
+	// No immediate rain, then rain at hour 36
+	hourlyForecast := make([]models.WeatherData, 144)
+	for i := 0; i < 144; i++ {
+		precipitation := 0.0
+		if i == 36 {
+			precipitation = 0.5 // Half inch of rain
+		}
+		hourlyForecast[i] = models.WeatherData{
+			Timestamp:     now.Add(time.Duration(i) * time.Hour),
+			Precipitation: precipitation,
+		}
+	}
+
+	forecast := calc.Calculate6DayForecast(status, hourlyForecast, 24.0)
+
+	// Should have at least 3 periods: wet (drying), dry, wet
+	if len(forecast) < 3 {
+		t.Fatalf("Expected at least 3 periods, got %d", len(forecast))
+	}
+
+	// First period should be wet (drying)
+	if forecast[0].IsDry {
+		t.Error("Expected first period to be wet")
+	}
+
+	// Second period should be dry
+	if !forecast[1].IsDry {
+		t.Error("Expected second period to be dry")
+	}
+
+	// Third period should be wet again
+	if forecast[2].IsDry {
+		t.Error("Expected third period to be wet")
+	}
+}
+
+func TestCalculate6DayForecast_HeavyRain_LongerDrying(t *testing.T) {
+	calc := NewCalculator("test-api-key")
+	now := time.Now()
+
+	status := &BoulderDryingStatus{
+		IsWet:         false,
+		HoursUntilDry: 0,
+	}
+
+	// Heavy rain (1 inch) at hour 24
+	hourlyForecast := make([]models.WeatherData, 144)
+	for i := 0; i < 144; i++ {
+		precipitation := 0.0
+		if i == 24 {
+			precipitation = 1.0 // 1 inch of rain
+		}
+		hourlyForecast[i] = models.WeatherData{
+			Timestamp:     now.Add(time.Duration(i) * time.Hour),
+			Precipitation: precipitation,
+		}
+	}
+
+	forecast := calc.Calculate6DayForecast(status, hourlyForecast, 24.0)
+
+	// Find the wet period
+	var wetPeriod *DryingForecastPeriod
+	for i := range forecast {
+		if !forecast[i].IsDry {
+			wetPeriod = &forecast[i]
+			break
+		}
+	}
+
+	if wetPeriod == nil {
+		t.Fatal("Expected to find a wet period")
+	}
+
+	// Heavy rain (>0.5 inches) should accumulate
+	if wetPeriod.RainAmount < 0.9 {
+		t.Errorf("Expected at least 0.9 inches of rain accumulated, got %.2f", wetPeriod.RainAmount)
+	}
+
+	// Should take longer to dry - check that the wet period extends beyond base drying time
+	// Heavy rain: Base 24h + (1.0 - 0.5) * 12 = 30h total
+	dryTime := wetPeriod.StartTime.Add(30 * time.Hour)
+	if !wetPeriod.EndTime.IsZero() && wetPeriod.EndTime.Before(dryTime.Add(-1*time.Hour)) {
+		t.Errorf("Expected wet period to last at least 29h, but it dried at %v", wetPeriod.EndTime.Sub(wetPeriod.StartTime))
+	}
+}
+
+func TestCalculate6DayForecast_ContinuousRain_AccumulatesAndExtends(t *testing.T) {
+	calc := NewCalculator("test-api-key")
+	now := time.Now()
+
+	status := &BoulderDryingStatus{
+		IsWet:         false,
+		HoursUntilDry: 0,
+	}
+
+	// Continuous light rain for 12 hours
+	hourlyForecast := make([]models.WeatherData, 144)
+	for i := 0; i < 144; i++ {
+		precipitation := 0.0
+		if i >= 24 && i < 36 {
+			precipitation = 0.05 // Light continuous rain
+		}
+		hourlyForecast[i] = models.WeatherData{
+			Timestamp:     now.Add(time.Duration(i) * time.Hour),
+			Precipitation: precipitation,
+		}
+	}
+
+	forecast := calc.Calculate6DayForecast(status, hourlyForecast, 24.0)
+
+	// Find the wet period
+	var wetPeriod *DryingForecastPeriod
+	for i := range forecast {
+		if !forecast[i].IsDry {
+			wetPeriod = &forecast[i]
+			break
+		}
+	}
+
+	if wetPeriod == nil {
+		t.Fatal("Expected to find a wet period")
+	}
+
+	// Should accumulate all the rain
+	expectedTotal := 0.05 * 12 // 0.6 inches total
+	if wetPeriod.RainAmount < expectedTotal-0.1 || wetPeriod.RainAmount > expectedTotal+0.1 {
+		t.Errorf("Expected ~%.2f inches accumulated, got %.2f", expectedTotal, wetPeriod.RainAmount)
+	}
+}
+
+func TestCalculate6DayForecast_EmptyForecast_ReturnsNil(t *testing.T) {
+	calc := NewCalculator("test-api-key")
+
+	status := &BoulderDryingStatus{
+		IsWet:         false,
+		HoursUntilDry: 0,
+	}
+
+	forecast := calc.Calculate6DayForecast(status, []models.WeatherData{}, 24.0)
+
+	if forecast != nil {
+		t.Error("Expected nil forecast for empty hourly data")
+	}
+}
+
+func TestCalculate6DayForecast_DryingTransition(t *testing.T) {
+	calc := NewCalculator("test-api-key")
+	now := time.Now()
+
+	status := &BoulderDryingStatus{
+		IsWet:             true,
+		HoursUntilDry:     24.0,
+		LastRainTimestamp: now.Add(-6 * time.Hour),
+	}
+
+	// No more rain in forecast
+	hourlyForecast := make([]models.WeatherData, 144)
+	for i := 0; i < 144; i++ {
+		hourlyForecast[i] = models.WeatherData{
+			Timestamp:     now.Add(time.Duration(i) * time.Hour),
+			Precipitation: 0.0,
+		}
+	}
+
+	forecast := calc.Calculate6DayForecast(status, hourlyForecast, 24.0)
+
+	if len(forecast) < 1 {
+		t.Fatal("Expected at least 1 period")
+	}
+
+	// First period should be wet but drying
+	if forecast[0].IsDry {
+		t.Error("Expected first period to be wet (still drying)")
+	}
+
+	if forecast[0].Status != "drying" && forecast[0].Status != "wet" {
+		t.Errorf("Expected status 'drying' or 'wet', got '%s'", forecast[0].Status)
+	}
+
+	// Should eventually transition to dry
+	foundDry := false
+	for _, period := range forecast {
+		if period.IsDry {
+			foundDry = true
+			break
+		}
+	}
+
+	if !foundDry {
+		t.Error("Expected to eventually find a dry period")
 	}
 }

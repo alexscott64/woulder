@@ -85,18 +85,31 @@ type LastClimbedInfo struct {
 	DaysSinceClimb int       `json:"days_since_climb"`
 }
 
+// AreaDryingStats represents aggregated drying conditions for an area
+type AreaDryingStats struct {
+	TotalRoutes        int     `json:"total_routes"`         // Total routes in area with GPS data
+	DryCount           int     `json:"dry_count"`            // Routes currently dry
+	DryingCount        int     `json:"drying_count"`         // Routes drying (<24h until dry)
+	WetCount           int     `json:"wet_count"`            // Routes wet (>24h until dry)
+	PercentDry         float64 `json:"percent_dry"`          // Percentage of routes dry (0-100)
+	AvgHoursUntilDry   float64 `json:"avg_hours_until_dry"`  // Average hours until dry (wet routes only)
+	AvgTreeCoverage    float64 `json:"avg_tree_coverage"`    // Average tree coverage % (0-100)
+	ConfidenceScore    int     `json:"confidence_score"`     // Overall confidence (0-100)
+}
+
 // AreaActivitySummary represents an area with recent activity metadata
 // Used for API responses to show areas ordered by recent climbing activity
 type AreaActivitySummary struct {
-	MPAreaID       string     `json:"mp_area_id"`               // Mountain Project area ID
-	Name           string     `json:"name"`                     // Area name
-	ParentMPAreaID *string    `json:"parent_mp_area_id,omitempty"` // Parent area ID (null for root)
-	LastClimbAt    time.Time  `json:"last_climb_at"`            // Most recent climb timestamp
-	TotalTicks     int        `json:"total_ticks"`              // Total number of climbs
-	UniqueRoutes   int        `json:"unique_routes"`            // Number of distinct routes with activity
-	DaysSinceClimb int        `json:"days_since_climb"`         // Days since last climb
-	HasSubareas    bool       `json:"has_subareas"`             // Whether this area has child subareas
-	SubareaCount   int        `json:"subarea_count"`            // Number of direct child subareas
+	MPAreaID       string            `json:"mp_area_id"`               // Mountain Project area ID
+	Name           string            `json:"name"`                     // Area name
+	ParentMPAreaID *string           `json:"parent_mp_area_id,omitempty"` // Parent area ID (null for root)
+	LastClimbAt    time.Time         `json:"last_climb_at"`            // Most recent climb timestamp
+	TotalTicks     int               `json:"total_ticks"`              // Total number of climbs
+	UniqueRoutes   int               `json:"unique_routes"`            // Number of distinct routes with activity
+	DaysSinceClimb int               `json:"days_since_climb"`         // Days since last climb
+	HasSubareas    bool              `json:"has_subareas"`             // Whether this area has child subareas
+	SubareaCount   int               `json:"subarea_count"`            // Number of direct child subareas
+	DryingStats    *AreaDryingStats  `json:"drying_stats,omitempty"`   // Aggregated drying conditions (optional)
 }
 
 // RouteActivitySummary represents a boulder with recent activity

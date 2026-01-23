@@ -11,22 +11,33 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
+// DryingForecastPeriod represents dry/wet status for a time period
+type DryingForecastPeriod struct {
+	StartTime     time.Time `json:"start_time"`
+	EndTime       time.Time `json:"end_time"`
+	IsDry         bool      `json:"is_dry"`
+	Status        string    `json:"status"` // "dry", "drying", "wet"
+	HoursUntilDry float64   `json:"hours_until_dry,omitempty"` // Only present if wet
+	RainAmount    float64   `json:"rain_amount,omitempty"`     // Inches of rain in this period
+}
+
 // BoulderDryingStatus represents the drying status for a specific boulder
 type BoulderDryingStatus struct {
-	MPRouteID           string    `json:"mp_route_id"`
-	IsWet               bool      `json:"is_wet"`
-	IsSafe              bool      `json:"is_safe"`
-	HoursUntilDry       float64   `json:"hours_until_dry"`
-	Status              string    `json:"status"` // "critical", "poor", "fair", "good"
-	Message             string    `json:"message"`
-	ConfidenceScore     int       `json:"confidence_score"` // 0-100
-	LastRainTimestamp   time.Time `json:"last_rain_timestamp"`
-	SunExposureHours    float64   `json:"sun_exposure_hours"`     // Hours of direct sun next 6 days
-	TreeCoveragePercent float64   `json:"tree_coverage_percent"` // 0-100
-	RockType            string    `json:"rock_type"`
-	Aspect              string    `json:"aspect"`      // N, NE, E, SE, S, SW, W, NW
-	Latitude            float64   `json:"latitude"`    // Boulder GPS
-	Longitude           float64   `json:"longitude"`   // Boulder GPS
+	MPRouteID           string                  `json:"mp_route_id"`
+	IsWet               bool                    `json:"is_wet"`
+	IsSafe              bool                    `json:"is_safe"`
+	HoursUntilDry       float64                 `json:"hours_until_dry"`
+	Status              string                  `json:"status"` // "critical", "poor", "fair", "good"
+	Message             string                  `json:"message"`
+	ConfidenceScore     int                     `json:"confidence_score"` // 0-100
+	LastRainTimestamp   time.Time               `json:"last_rain_timestamp"`
+	SunExposureHours    float64                 `json:"sun_exposure_hours"`     // Hours of direct sun next 6 days
+	TreeCoveragePercent float64                 `json:"tree_coverage_percent"` // 0-100
+	RockType            string                  `json:"rock_type"`
+	Aspect              string                  `json:"aspect"`      // N, NE, E, SE, S, SW, W, NW
+	Latitude            float64                 `json:"latitude"`    // Boulder GPS
+	Longitude           float64                 `json:"longitude"`   // Boulder GPS
+	Forecast            []DryingForecastPeriod  `json:"forecast,omitempty"` // 6-day dry/wet forecast
 }
 
 // Calculator computes boulder-specific drying times
@@ -48,13 +59,16 @@ func NewCalculator(ipGeoAPIKey string) *Calculator {
 // - Real-time sun exposure based on boulder GPS + aspect
 // - Boulder-specific tree coverage from satellite data
 // - Confidence scoring based on data availability
+// - 6-day dry/wet forecast based on precipitation forecast
 // locationTreeCoverage: optional location-level tree coverage percentage (0 to use GPS-based estimates)
+// hourlyForecast: optional hourly weather forecast for 6-day forecast (pass nil to skip forecast)
 func (c *Calculator) CalculateBoulderDryingStatus(
 	ctx context.Context,
 	route *models.MPRoute,
 	locationDrying *models.RockDryingStatus,
 	profile *models.BoulderDryingProfile,
 	locationTreeCoverage float64,
+	hourlyForecast []models.WeatherData,
 ) (*BoulderDryingStatus, error) {
 	status := &BoulderDryingStatus{
 		MPRouteID:         route.MPRouteID,
@@ -143,6 +157,11 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 	status.IsSafe = !status.IsWet || !locationDrying.IsWetSensitive
 	status.Status = c.determineDryingStatus(status)
 	status.Message = c.generateStatusMessage(status, locationDrying)
+
+	// Calculate 6-day forecast if hourly forecast provided
+	if len(hourlyForecast) > 0 {
+		status.Forecast = c.Calculate6DayForecast(status, hourlyForecast, status.HoursUntilDry)
+	}
 
 	return status, nil
 }
@@ -349,4 +368,129 @@ func angleDifference(angle1, angle2 float64) float64 {
 // absFloat returns the absolute value of a float64
 func absFloat(x float64) float64 {
 	return math.Abs(x)
+}
+
+// Calculate6DayForecast generates a 6-day forecast showing when the boulder will be dry/wet
+// based on future precipitation and drying times
+func (c *Calculator) Calculate6DayForecast(
+	status *BoulderDryingStatus,
+	hourlyForecast []models.WeatherData,
+	baseDryingHours float64, // Base drying time for location
+) []DryingForecastPeriod {
+	if len(hourlyForecast) == 0 {
+		return nil
+	}
+
+	var forecast []DryingForecastPeriod
+	now := time.Now()
+
+	// Track current wet/dry state
+	currentlyWet := status.IsWet
+	wetSince := now
+	if currentlyWet && !status.LastRainTimestamp.IsZero() {
+		wetSince = status.LastRainTimestamp
+	}
+
+	// Add initial period
+	if currentlyWet {
+		// Start with wet period
+		forecast = append(forecast, DryingForecastPeriod{
+			StartTime:     now,
+			IsDry:         false,
+			Status:        "wet",
+			RainAmount:    0.0, // Will accumulate as we process
+			HoursUntilDry: baseDryingHours,
+		})
+	} else {
+		// Start with dry period
+		forecast = append(forecast, DryingForecastPeriod{
+			StartTime: now,
+			IsDry:     true,
+			Status:    "dry",
+		})
+	}
+
+	// Minimum rain threshold (inches) to consider it "wet"
+	const rainThreshold = 0.01
+
+	// Process hourly forecast
+	for i, hour := range hourlyForecast {
+		// Stop after 6 days (144 hours)
+		if hour.Timestamp.Sub(now).Hours() > 144 {
+			break
+		}
+
+		// Check if this hour has significant rain
+		hasRain := hour.Precipitation >= rainThreshold
+
+		// State transitions
+		if !currentlyWet && hasRain {
+			// Transition: dry -> wet
+			// Close previous dry period
+			forecast[len(forecast)-1].EndTime = hour.Timestamp
+
+			// Start new wet period
+			currentlyWet = true
+			wetSince = hour.Timestamp
+			forecast = append(forecast, DryingForecastPeriod{
+				StartTime:  hour.Timestamp,
+				IsDry:      false,
+				Status:     "wet",
+				RainAmount: hour.Precipitation,
+			})
+		} else if currentlyWet {
+			// Currently wet - check if more rain or drying
+			if hasRain {
+				// More rain - accumulate and reset drying clock
+				forecast[len(forecast)-1].RainAmount += hour.Precipitation
+				wetSince = hour.Timestamp // Reset drying clock
+			}
+
+			// Calculate hours since last rain
+			hoursSinceRain := hour.Timestamp.Sub(wetSince).Hours()
+
+			// Calculate drying time including extra time for heavy rain
+			currentRain := forecast[len(forecast)-1].RainAmount
+			dryingTime := baseDryingHours
+			if currentRain > 0.5 {
+				// Significant rain - add extra drying time: 12h per inch over 0.5"
+				dryingTime += (currentRain - 0.5) * 12
+			}
+
+			if hoursSinceRain >= dryingTime {
+				// Transition: wet -> dry
+				dryTime := wetSince.Add(time.Duration(dryingTime) * time.Hour)
+				forecast[len(forecast)-1].EndTime = dryTime
+				forecast[len(forecast)-1].HoursUntilDry = 0
+
+				// Start new dry period
+				currentlyWet = false
+				forecast = append(forecast, DryingForecastPeriod{
+					StartTime: dryTime,
+					IsDry:     true,
+					Status:    "dry",
+				})
+			} else {
+				// Still wet - update hours until dry and status
+				forecast[len(forecast)-1].HoursUntilDry = dryingTime - hoursSinceRain
+
+				// Determine status based on progress
+				progress := hoursSinceRain / dryingTime
+				if progress > 0.5 {
+					forecast[len(forecast)-1].Status = "drying"
+				} else {
+					forecast[len(forecast)-1].Status = "wet"
+				}
+			}
+		}
+
+		// If last hour, close final period
+		if i == len(hourlyForecast)-1 {
+			if forecast[len(forecast)-1].EndTime.IsZero() {
+				forecast[len(forecast)-1].EndTime = hour.Timestamp.Add(6 * 24 * time.Hour)
+			}
+		}
+	}
+
+	return forecast
 }
