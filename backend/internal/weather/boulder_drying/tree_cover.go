@@ -2,21 +2,18 @@ package boulder_drying
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
-	"time"
+	"strings"
 
-	"golang.org/x/oauth2/google"
+	earthengine "github.com/alexscott64/go-earthengine"
+	"github.com/alexscott64/go-earthengine/helpers"
 )
 
 // TreeCoverClient fetches tree canopy coverage data from Google Earth Engine
 type TreeCoverClient struct {
-	client  *http.Client
-	enabled bool
+	geeClient *earthengine.Client
+	enabled   bool
 }
 
 // IsEnabled returns whether the Google Earth Engine API is enabled
@@ -37,36 +34,35 @@ func NewTreeCoverClient() *TreeCoverClient {
 		return &TreeCoverClient{enabled: false}
 	}
 
-	// Create service account JSON from environment variables
-	serviceAccountJSON := fmt.Sprintf(`{
-		"type": "service_account",
-		"project_id": "%s",
-		"private_key": "%s",
-		"client_email": "%s",
-		"token_uri": "https://oauth2.googleapis.com/token"
-	}`, projectID, privateKey, clientEmail)
+	// Fix private key: replace literal \n with actual newlines
+	// .env files often store the private key with literal \n characters
+	privateKey = strings.ReplaceAll(privateKey, "\\n", "\n")
 
-	// Parse service account credentials
-	config, err := google.JWTConfigFromJSON([]byte(serviceAccountJSON), "https://www.googleapis.com/auth/earthengine")
+	// Set the fixed private key back to environment for the library to use
+	os.Setenv("GOOGLE_EARTH_ENGINE_PRIVATE_KEY", privateKey)
+
+	// Create Earth Engine client using environment variables
+	ctx := context.Background()
+	client, err := earthengine.NewClient(ctx,
+		earthengine.WithProject(projectID),
+		earthengine.WithServiceAccountEnv(),
+	)
 	if err != nil {
-		log.Printf("Warning: Failed to parse Earth Engine credentials: %v - using location-based estimates", err)
+		log.Printf("Warning: Failed to initialize Earth Engine client: %v - using location-based estimates", err)
 		return &TreeCoverClient{enabled: false}
 	}
 
-	// Create HTTP client with OAuth2 authentication
-	client := config.Client(context.Background())
-
 	log.Printf("Google Earth Engine client initialized successfully (project: %s)", projectID)
 	return &TreeCoverClient{
-		client:  client,
-		enabled: true,
+		geeClient: client,
+		enabled:   true,
 	}
 }
 
-// GetTreeCoverage returns tree canopy coverage percentage for a GPS coordinate
-// Uses GEDI L2B Canopy Cover dataset from NASA
+// GetTreeCoverageWithDefault returns tree canopy coverage percentage for a GPS coordinate
+// Uses NLCD 2023 dataset (USA) or Hansen Global Forest Change (international)
 // Returns percentage 0-100
-// locationTreeCoverage: optional location-level tree coverage to use as base (pass 0 to use GPS-based estimates)
+// locationTreeCoverage: optional location-level tree coverage to use as fallback (pass 0 to use GPS-based estimates)
 func (c *TreeCoverClient) GetTreeCoverageWithDefault(ctx context.Context, lat, lon, locationTreeCoverage float64) (float64, error) {
 	if !c.enabled {
 		// Use location-level tree coverage if provided, otherwise estimate from GPS
@@ -81,10 +77,11 @@ func (c *TreeCoverClient) GetTreeCoverageWithDefault(ctx context.Context, lat, l
 		return coverage, nil
 	}
 
-	// Try to fetch from GEDI satellite data
-	coverage, err := c.getTreeCoverageFromGEDI(ctx, lat, lon)
+	// Try to fetch from Earth Engine using the go-earthengine library
+	// This will use NLCD 2023 for USA locations (most accurate)
+	coverage, err := helpers.TreeCoverage(c.geeClient, lat, lon)
 	if err != nil {
-		log.Printf("Warning: GEDI query failed, using fallback: %v", err)
+		log.Printf("Warning: Earth Engine query failed, using fallback: %v", err)
 		// Fallback to location tree coverage first, then GPS estimates
 		if locationTreeCoverage > 0 {
 			coverage = locationTreeCoverage
@@ -94,7 +91,7 @@ func (c *TreeCoverClient) GetTreeCoverageWithDefault(ctx context.Context, lat, l
 			log.Printf("Tree coverage for (%.6f, %.6f): %.1f%% (GPS-based fallback)", lat, lon, coverage)
 		}
 	} else {
-		log.Printf("Tree coverage for (%.6f, %.6f): %.1f%% (from GEDI)", lat, lon, coverage)
+		log.Printf("Tree coverage for (%.6f, %.6f): %.1f%% (from Earth Engine)", lat, lon, coverage)
 	}
 
 	return coverage, nil
@@ -106,107 +103,16 @@ func (c *TreeCoverClient) GetTreeCoverage(ctx context.Context, lat, lon float64)
 	return c.GetTreeCoverageWithDefault(ctx, lat, lon, 0)
 }
 
-// getTreeCoverageFromGEDI queries Google Earth Engine for GEDI canopy cover data
-func (c *TreeCoverClient) getTreeCoverageFromGEDI(ctx context.Context, lat, lon float64) (float64, error) {
-	// Earth Engine Python API would typically be used, but for Go we'll use REST API
-	// For now, use NLCD (National Land Cover Database) which is more accessible
-	// NLCD provides tree canopy percentage for US locations
-
-	// Earth Engine REST API endpoint
-	url := "https://earthengine.googleapis.com/v1/projects/earthengine-public/value:computeValue"
-
-	// Create request to sample NLCD tree canopy at the point
-	// Using NLCD 2021 dataset with tree canopy layer
-	requestBody := map[string]interface{}{
-		"expression": map[string]interface{}{
-			"functionName": "Image.sampleRectangle",
-			"arguments": map[string]interface{}{
-				"image": map[string]interface{}{
-					"functionName": "Image.select",
-					"arguments": map[string]interface{}{
-						"input": map[string]interface{}{
-							"functionName": "Image.load",
-							"arguments": map[string]interface{}{
-								"id": "USGS/NLCD_RELEASES/2021_REL/NLCD",
-							},
-						},
-						"bandSelectors": []string{"tree_canopy"},
-					},
-				},
-				"geometry": map[string]interface{}{
-					"functionName": "Feature.geometry",
-					"arguments": map[string]interface{}{
-						"feature": map[string]interface{}{
-							"functionName": "Feature",
-							"arguments": map[string]interface{}{
-								"geometry": map[string]interface{}{
-									"functionName": "Geometry.Point",
-									"arguments": map[string]interface{}{
-										"coordinates": []float64{lon, lat},
-									},
-								},
-							},
-						},
-					},
-				},
-				"defaultValue": 0,
-			},
-		},
-	}
-
-	jsonData, err := json.Marshal(requestBody)
-	if err != nil {
-		return 0, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Body = io.NopCloser(jsonBuffer(jsonData))
-
-	// Make request with timeout
-	client := c.client
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	// Extract tree canopy percentage from result
-	// The exact structure depends on the Earth Engine API response
-	// For now, fall back to location estimates
-	log.Printf("GEDI API response: %+v", result)
-
-	// Fallback to location-based estimate
-	return c.estimateTreeCoverageFromLocation(lat, lon), nil
-}
-
 // estimateTreeCoverageFromLocation provides tree coverage estimates
 // Based on typical forest coverage in known climbing areas
 func (c *TreeCoverClient) estimateTreeCoverageFromLocation(lat, lon float64) float64 {
-	// Leavenworth area (Washington Cascades): moderate tree coverage
+	// Leavenworth area (Washington Cascades): moderate to high tree coverage
 	// Index Town Wall, Icicle Creek, Peshastin Pinnacles
-	if lat >= 47.5 && lat <= 48.0 && lon >= -121.0 && lon <= -120.5 {
-		// Different zones within Leavenworth
-		if lon < -120.8 { // Icicle Creek
+	if lat >= 47.5 && lat <= 48.0 && lon >= -121.7 && lon <= -120.5 {
+		// Different zones based on longitude
+		if lon < -121.4 { // Index/Town Wall area - dense forest
+			return 65.0 // Very dense forest (Index, Zelda)
+		} else if lon < -120.8 { // Icicle Creek
 			return 60.0 // Dense forest
 		} else { // Town walls and Peshastin
 			return 25.0 // Mixed, more exposed
@@ -249,23 +155,4 @@ func (c *TreeCoverClient) estimateTreeCoverageFromLocation(lat, lon float64) flo
 
 	// Default: moderate coverage for unknown areas
 	return 30.0
-}
-
-// jsonBuffer creates an io.Reader from JSON bytes
-func jsonBuffer(data []byte) io.Reader {
-	return &jsonReader{data: data, pos: 0}
-}
-
-type jsonReader struct {
-	data []byte
-	pos  int
-}
-
-func (r *jsonReader) Read(p []byte) (n int, err error) {
-	if r.pos >= len(r.data) {
-		return 0, io.EOF
-	}
-	n = copy(p, r.data[r.pos:])
-	r.pos += n
-	return n, nil
 }
