@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -22,6 +23,10 @@ type Route struct {
 }
 
 func main() {
+	// Parse command-line flags
+	force := flag.Bool("force", false, "Force re-sync even if tree coverage already exists")
+	flag.Parse()
+
 	// Load .env file
 	if err := godotenv.Load(); err != nil {
 		log.Printf("Warning: .env file not found: %v", err)
@@ -29,6 +34,9 @@ func main() {
 
 	log.Println("=== Boulder Tree Coverage Sync Tool ===")
 	log.Println("This tool fetches and stores tree coverage data for all boulders with GPS coordinates")
+	if *force {
+		log.Println("FORCE MODE: Will re-sync all routes regardless of existing data")
+	}
 	log.Println()
 
 	// Connect to database
@@ -85,21 +93,23 @@ func main() {
 	errorCount := 0
 
 	for i, route := range routes {
-		// Check if tree coverage already exists
-		var existingCoverage *float64
-		err := db.QueryRow(`
-			SELECT tree_coverage_percent
-			FROM woulder.boulder_drying_profiles
-			WHERE mp_route_id = $1
-		`, route.MPRouteID).Scan(&existingCoverage)
+		// Check if tree coverage already exists (unless force mode)
+		if !*force {
+			var existingCoverage *float64
+			err := db.QueryRow(`
+				SELECT tree_coverage_percent
+				FROM woulder.boulder_drying_profiles
+				WHERE mp_route_id = $1
+			`, route.MPRouteID).Scan(&existingCoverage)
 
-		if err == nil && existingCoverage != nil {
-			skipCount++
-			if i%10 == 0 {
-				log.Printf("[%d/%d] Skipping %s (already has tree coverage: %.1f%%)",
-					i+1, len(routes), route.Name, *existingCoverage)
+			if err == nil && existingCoverage != nil {
+				skipCount++
+				if i%10 == 0 {
+					log.Printf("[%d/%d] Skipping %s (already has tree coverage: %.1f%%)",
+						i+1, len(routes), route.Name, *existingCoverage)
+				}
+				continue
 			}
-			continue
 		}
 
 		// Fetch tree coverage for this route
