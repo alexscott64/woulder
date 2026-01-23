@@ -131,3 +131,65 @@ func (db *Database) GetLocationByID(ctx context.Context, locationID int) (*model
 
 	return &location, nil
 }
+
+// GetRoutesWithGPSByArea retrieves all routes in an area that have GPS coordinates
+// This is used for calculating area-level drying statistics
+func (db *Database) GetRoutesWithGPSByArea(ctx context.Context, mpAreaID string) ([]*models.MPRoute, error) {
+	query := `
+		WITH RECURSIVE area_tree AS (
+			-- Start with the given area
+			SELECT mp_area_id
+			FROM woulder.mp_areas
+			WHERE mp_area_id = $1
+
+			UNION ALL
+
+			-- Recursively include all descendant areas
+			SELECT a.mp_area_id
+			FROM woulder.mp_areas a
+			INNER JOIN area_tree at ON a.parent_mp_area_id = at.mp_area_id
+		)
+		SELECT id, mp_route_id, mp_area_id, name, route_type, rating,
+		       location_id, latitude, longitude, aspect, created_at, updated_at
+		FROM woulder.mp_routes r
+		WHERE r.mp_area_id IN (SELECT mp_area_id FROM area_tree)
+		  AND r.latitude IS NOT NULL
+		  AND r.longitude IS NOT NULL
+		ORDER BY r.name
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query, mpAreaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var routes []*models.MPRoute
+	for rows.Next() {
+		var route models.MPRoute
+		err := rows.Scan(
+			&route.ID,
+			&route.MPRouteID,
+			&route.MPAreaID,
+			&route.Name,
+			&route.RouteType,
+			&route.Rating,
+			&route.LocationID,
+			&route.Latitude,
+			&route.Longitude,
+			&route.Aspect,
+			&route.CreatedAt,
+			&route.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		routes = append(routes, &route)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return routes, nil
+}

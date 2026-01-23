@@ -85,6 +85,7 @@ func main() {
 		apiGroup.GET("/climbs/location/:id/areas", handler.GetAreasOrderedByActivity)
 		apiGroup.GET("/climbs/location/:id/areas/:area_id/subareas", handler.GetSubareasOrderedByActivity)
 		apiGroup.GET("/climbs/location/:id/areas/:area_id/routes", handler.GetRoutesOrderedByActivity)
+		apiGroup.GET("/climbs/location/:id/areas/:area_id/drying-stats", handler.GetAreaDryingStats)
 		apiGroup.GET("/climbs/routes/:route_id/ticks", handler.GetRecentTicksForRoute)
 		apiGroup.GET("/climbs/routes/:route_id/drying-status", handler.GetBoulderDryingStatus)
 		apiGroup.GET("/climbs/location/:id/search-all", handler.SearchInLocation)

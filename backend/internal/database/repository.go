@@ -60,6 +60,7 @@ type Repository interface {
 	GetBoulderDryingProfile(ctx context.Context, mpRouteID string) (*models.BoulderDryingProfile, error)
 	SaveBoulderDryingProfile(ctx context.Context, profile *models.BoulderDryingProfile) error
 	GetLocationByID(ctx context.Context, locationID int) (*models.Location, error)
+	GetRoutesWithGPSByArea(ctx context.Context, mpAreaID string) ([]*models.MPRoute, error)
 
 	// Health check
 	Ping(ctx context.Context) error

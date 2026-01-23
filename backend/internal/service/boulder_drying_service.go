@@ -161,3 +161,121 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 
 	return &dryingStatus, nil
 }
+
+// GetAreaDryingStats calculates aggregated drying statistics for an area
+func (s *BoulderDryingService) GetAreaDryingStats(
+	ctx context.Context,
+	mpAreaID string,
+	locationID int,
+) (*models.AreaDryingStats, error) {
+	// Get all routes with GPS in this area (including subareas)
+	routes, err := s.repo.GetRoutesWithGPSByArea(ctx, mpAreaID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get routes for area: %w", err)
+	}
+
+	if len(routes) == 0 {
+		// No routes with GPS data - return nil
+		return nil, nil
+	}
+
+	// Get location-level rock drying status (shared for all routes in location)
+	locationDrying, err := s.getLocationRockDryingStatus(ctx, locationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get location drying status: %w", err)
+	}
+
+	// Get location sun exposure (for tree coverage fallback)
+	sunExposure, err := s.repo.GetSunExposureByLocation(ctx, locationID)
+	if err != nil {
+		log.Printf("Warning: Failed to get sun exposure for location %d: %v", locationID, err)
+		sunExposure = nil
+	}
+
+	locationTreeCoverage := 0.0
+	if sunExposure != nil {
+		locationTreeCoverage = sunExposure.TreeCoveragePercent
+	}
+
+	// Get hourly forecast for 6-day forecast (shared across all routes)
+	hourlyForecast, err := s.repo.GetForecastWeather(ctx, locationID, 144) // 6 days
+	if err != nil {
+		log.Printf("Warning: Failed to get hourly forecast for location %d: %v", locationID, err)
+		hourlyForecast = nil
+	}
+
+	// Calculate drying status for each route and aggregate
+	stats := &models.AreaDryingStats{
+		TotalRoutes: len(routes),
+	}
+
+	var totalHoursUntilDry float64
+	var wetRouteCount int
+	var totalTreeCoverage float64
+	var treeCoverageCount int
+	var totalConfidence int
+
+	for _, route := range routes {
+		// Get boulder drying profile if exists
+		profile, err := s.repo.GetBoulderDryingProfile(ctx, route.MPRouteID)
+		if err != nil {
+			log.Printf("Warning: Failed to get boulder drying profile for %s: %v", route.MPRouteID, err)
+			profile = nil
+		}
+
+		// Calculate boulder-specific drying status
+		status, err := s.calculator.CalculateBoulderDryingStatus(
+			ctx,
+			route,
+			locationDrying,
+			profile,
+			locationTreeCoverage,
+			hourlyForecast,
+		)
+		if err != nil {
+			log.Printf("Warning: Failed to calculate drying status for %s: %v", route.MPRouteID, err)
+			continue
+		}
+
+		// Aggregate statistics
+		if !status.IsWet {
+			stats.DryCount++
+		} else if status.HoursUntilDry > 0 && status.HoursUntilDry <= 24 {
+			stats.DryingCount++
+			totalHoursUntilDry += status.HoursUntilDry
+			wetRouteCount++
+		} else {
+			stats.WetCount++
+			totalHoursUntilDry += status.HoursUntilDry
+			wetRouteCount++
+		}
+
+		// Tree coverage
+		if status.TreeCoveragePercent > 0 {
+			totalTreeCoverage += status.TreeCoveragePercent
+			treeCoverageCount++
+		}
+
+		// Confidence
+		totalConfidence += status.ConfidenceScore
+	}
+
+	// Calculate percentages and averages
+	if stats.TotalRoutes > 0 {
+		stats.PercentDry = (float64(stats.DryCount) / float64(stats.TotalRoutes)) * 100
+	}
+
+	if wetRouteCount > 0 {
+		stats.AvgHoursUntilDry = totalHoursUntilDry / float64(wetRouteCount)
+	}
+
+	if treeCoverageCount > 0 {
+		stats.AvgTreeCoverage = totalTreeCoverage / float64(treeCoverageCount)
+	}
+
+	if stats.TotalRoutes > 0 {
+		stats.ConfidenceScore = totalConfidence / stats.TotalRoutes
+	}
+
+	return stats, nil
+}
