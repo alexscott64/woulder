@@ -1,9 +1,11 @@
-import { ChevronRight, MapPin, ChevronLeft, Loader2, AlertCircle, Filter } from 'lucide-react';
+import { ChevronRight, MapPin, ChevronLeft, Loader2, AlertCircle, Filter, Sun, Droplets, Clock } from 'lucide-react';
 import { useState, useMemo } from 'react';
-import { useAreasOrderedByActivity, useSubareasOrderedByActivity, useRoutesOrderedByActivity, useSearchInLocation, useBoulderDryingStatuses } from '../hooks/useClimbActivity';
+import { useAreasOrderedByActivity, useSubareasOrderedByActivity, useRoutesOrderedByActivity, useSearchInLocation, useBoulderDryingStatuses, useAreaDryingStats, useMultipleAreaDryingStats } from '../hooks/useClimbActivity';
 import { AreaActivitySummary, SearchResult, RouteActivitySummary } from '../types/weather';
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { RouteListItem } from './RouteListItem';
+import { AreaConditionCard } from './AreaConditionCard';
+import { AdvancedSearchBar } from './AdvancedSearchBar';
 
 interface AreaDrillDownViewProps {
   locationId: number;
@@ -42,6 +44,12 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
     200 // Fetch all routes (max 200)
   );
 
+  // Fetch area-level drying stats when viewing routes in an area
+  const { data: areaDryingStats, isLoading: isLoadingDryingStats } = useAreaDryingStats(
+    locationId,
+    currentAreaId
+  );
+
   // Global search for all areas and routes in location (when search is active)
   const { data: searchResults, isLoading: isSearching, error: searchError } = useSearchInLocation(
     locationId,
@@ -68,6 +76,29 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
 
   // Show routes if we're in an area that has no subareas OR if search is active
   const showRoutes = isSearchActive || (currentAreaId !== null && (!areas || areas.length === 0));
+
+  // Get area IDs for fetching drying stats
+  const areaIdsForDryingStats = useMemo(() => {
+    if (!filteredAreas || showRoutes) return [];
+    return filteredAreas
+      .filter(area => !('result_type' in area)) // Only fetch for non-search results
+      .map(area => ('result_type' in area ? area.id : area.mp_area_id));
+  }, [filteredAreas, showRoutes]);
+
+  // Fetch drying stats for all visible areas
+  const areaDryingStatsQueries = useMultipleAreaDryingStats(locationId, areaIdsForDryingStats);
+
+  // Create a map of area ID to drying stats for easy lookup
+  const areaDryingStatsMap = useMemo(() => {
+    const map = new Map();
+    areaIdsForDryingStats.forEach((id, index) => {
+      const query = areaDryingStatsQueries[index];
+      if (query?.data) {
+        map.set(id, query.data);
+      }
+    });
+    return map;
+  }, [areaIdsForDryingStats, areaDryingStatsQueries]);
 
   // Get route IDs for fetching drying statuses
   const routeIds = useMemo(() => {
@@ -184,38 +215,53 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
         </ol>
       </nav>
 
-      {/* Filter Bar - Only show for routes view */}
+      {/* Area Condition Card - Show when viewing routes in an area */}
+      {showRoutes && currentAreaId && areaDryingStats && !isLoadingData && !dataError && (
+        <div className="bg-gray-50 dark:bg-gray-900 p-3 border-b border-gray-200 dark:border-gray-700">
+          <AreaConditionCard
+            areaName={breadcrumbs[breadcrumbs.length - 1].name}
+            stats={areaDryingStats}
+          />
+        </div>
+      )}
+
+      {/* Advanced Search & Filter Bar - Only show for routes view */}
       {showRoutes && !isLoadingData && !dataError && filteredRoutes && filteredRoutes.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-2.5 flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
-            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Filter:</span>
-          </div>
-          <div className="flex gap-1.5">
-            {(['all', 'dry', 'drying', 'wet'] as FilterStatus[]).map((status) => (
-              <button
-                key={status}
-                onClick={() => setFilterStatus(status)}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  filterStatus === status
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-              >
-                {status.charAt(0).toUpperCase() + status.slice(1)}
-              </button>
-            ))}
-          </div>
-          <div className="ml-auto flex items-center gap-1.5">
-            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Sort:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortOption)}
-              className="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600"
-            >
-              <option value="activity">Recent Activity</option>
-              <option value="dry-time">Hours Until Dry</option>
-            </select>
+        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3">
+          <div className="space-y-3">
+            {/* Filter buttons and sort */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Filter:</span>
+              </div>
+              <div className="flex gap-1.5">
+                {(['all', 'dry', 'drying', 'wet'] as FilterStatus[]).map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setFilterStatus(status)}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                      filterStatus === status
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <div className="ml-auto flex items-center gap-1.5">
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Sort:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as SortOption)}
+                  className="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600"
+                >
+                  <option value="activity">Recent Activity</option>
+                  <option value="dry-time">Hours Until Dry</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -247,7 +293,7 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
 
         {/* Areas List */}
         {!isLoadingData && !dataError && filteredAreas && filteredAreas.length > 0 && !showRoutes && (
-          <div className="space-y-1.5">
+          <div className="space-y-3">
             {filteredAreas.map((area) => {
               // Handle both AreaActivitySummary and SearchResult types
               const isSearchResult = 'result_type' in area;
@@ -256,34 +302,90 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
               const uniqueRoutes = isSearchResult ? (area.unique_routes || 0) : area.unique_routes;
               const hasSubareas = isSearchResult ? false : area.has_subareas;
               const subareaCount = isSearchResult ? 0 : area.subarea_count;
+              const dryingStats = areaDryingStatsMap.get(areaId);
+
+              // Get status color based on drying stats
+              const getStatusColor = () => {
+                if (!dryingStats) return 'border-gray-200 dark:border-gray-700';
+                if (dryingStats.percent_dry >= 80) return 'border-l-4 border-l-green-500';
+                if (dryingStats.percent_dry >= 50) return 'border-l-4 border-l-yellow-500';
+                return 'border-l-4 border-l-red-500';
+              };
 
               return (
                 <button
                   key={areaId}
                   onClick={() => handleAreaClick(area)}
-                  className="w-full p-2.5 bg-white dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 active:bg-gray-100 dark:active:bg-gray-700 transition-colors text-left"
+                  className={`w-full p-3 bg-white dark:bg-gray-800 rounded-lg border ${getStatusColor()} hover:shadow-md dark:hover:bg-gray-750 active:bg-gray-50 dark:active:bg-gray-700 transition-all text-left`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <MapPin className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
-                          {area.name}
-                        </h3>
-                        <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                          {hasSubareas ? (
-                            <span>{subareaCount} sub-area{subareaCount !== 1 ? 's' : ''}</span>
-                          ) : (
-                            <span>{uniqueRoutes} boulder{uniqueRoutes !== 1 ? 's' : ''}</span>
-                          )}
-                          <span>•</span>
-                          <span>{totalTicks} tick{totalTicks !== 1 ? 's' : ''}</span>
-                          <span>•</span>
-                          <span>{formatDaysAgo(area.days_since_climb)}</span>
+                  <div className="space-y-2.5">
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <MapPin className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 truncate">
+                            {area.name}
+                          </h3>
+                          <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                            {hasSubareas ? (
+                              <span>{subareaCount} sub-area{subareaCount !== 1 ? 's' : ''}</span>
+                            ) : (
+                              <span>{uniqueRoutes} boulder{uniqueRoutes !== 1 ? 's' : ''}</span>
+                            )}
+                            <span>•</span>
+                            <span>{totalTicks} tick{totalTicks !== 1 ? 's' : ''}</span>
+                            <span>•</span>
+                            <span>{formatDaysAgo(area.days_since_climb)}</span>
+                          </div>
                         </div>
                       </div>
+                      <ChevronRight className="w-5 h-5 text-gray-400 dark:text-gray-600 flex-shrink-0" />
                     </div>
-                    <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-600 flex-shrink-0" />
+
+                    {/* Drying Stats */}
+                    {dryingStats && (
+                      <div className="flex items-center gap-4 pt-2 border-t border-gray-100 dark:border-gray-700">
+                        {/* Percent Dry */}
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-2 h-2 rounded-full ${
+                            dryingStats.percent_dry >= 80 ? 'bg-green-500' :
+                            dryingStats.percent_dry >= 50 ? 'bg-yellow-500' :
+                            'bg-red-500'
+                          }`} />
+                          <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                            {Math.round(dryingStats.percent_dry)}% Dry
+                          </span>
+                        </div>
+
+                        {/* Dry/Drying/Wet Counts */}
+                        <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
+                          <div className="flex items-center gap-1">
+                            <Sun className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                            <span>{dryingStats.dry_count}</span>
+                          </div>
+                          {dryingStats.drying_count > 0 && (
+                            <div className="flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
+                              <span>{dryingStats.drying_count}</span>
+                            </div>
+                          )}
+                          {dryingStats.wet_count > 0 && (
+                            <div className="flex items-center gap-1">
+                              <Droplets className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                              <span>{dryingStats.wet_count}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Confidence */}
+                        {dryingStats.confidence_score > 0 && (
+                          <div className="ml-auto text-xs text-gray-500 dark:text-gray-500">
+                            {dryingStats.confidence_score}% confident
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </button>
               );

@@ -3,6 +3,7 @@ import { RouteActivitySummary, ClimbHistoryEntry } from '../types/weather';
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { useRecentTicksForRoute, useBoulderDryingStatus } from '../hooks/useClimbActivity';
 import { BoulderDryingBadge } from './BoulderDryingBadge';
+import { DryingForecastTimeline } from './DryingForecastTimeline';
 
 interface RouteListItemProps {
   route: RouteActivitySummary;
@@ -159,7 +160,16 @@ export function RouteListItem({ route, isExpanded, onToggleExpand }: RouteListIt
               <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
             </div>
           ) : dryingStatus && (
-            <BoulderDryingBadge status={dryingStatus} />
+            <>
+              <BoulderDryingBadge status={dryingStatus} />
+
+              {/* 6-Day Drying Forecast */}
+              {dryingStatus.forecast && dryingStatus.forecast.length > 0 && (
+                <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <DryingForecastTimeline forecast={dryingStatus.forecast} />
+                </div>
+              )}
+            </>
           )}
 
           {/* Recent Ticks */}

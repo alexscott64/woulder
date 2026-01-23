@@ -1,6 +1,6 @@
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { climbActivityApi } from '../services/api';
-import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus } from '../types/weather';
+import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus, AreaDryingStats } from '../types/weather';
 
 /**
  * Hook to fetch areas ordered by recent climb activity for a location
@@ -114,6 +114,32 @@ export const useBoulderDryingStatuses = (routeIds: string[]) => {
       queryFn: () => climbActivityApi.getBoulderDryingStatus(routeId),
       staleTime: 10 * 60 * 1000, // 10 minutes
       enabled: !!routeId,
+    })),
+  });
+};
+
+/**
+ * Hook to fetch area-level drying statistics
+ */
+export const useAreaDryingStats = (locationId: number, areaId: string | null) => {
+  return useQuery<AreaDryingStats, Error>({
+    queryKey: ['area-drying-stats', locationId, areaId],
+    queryFn: () => climbActivityApi.getAreaDryingStats(locationId, areaId!),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    enabled: !!locationId && !!areaId,
+  });
+};
+
+/**
+ * Hook to fetch area-level drying statistics for multiple areas
+ */
+export const useMultipleAreaDryingStats = (locationId: number, areaIds: string[]) => {
+  return useQueries({
+    queries: areaIds.map(areaId => ({
+      queryKey: ['area-drying-stats', locationId, areaId],
+      queryFn: () => climbActivityApi.getAreaDryingStats(locationId, areaId),
+      staleTime: 10 * 60 * 1000, // 10 minutes
+      enabled: !!locationId && !!areaId,
     })),
   });
 };

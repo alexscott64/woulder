@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Location, WeatherForecast, AllWeatherResponse, AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus } from '../types/weather';
+import { Location, WeatherForecast, AllWeatherResponse, AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus, AreaDryingStats } from '../types/weather';
 import { Area, AreaWithLocations } from '../types/area';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
@@ -105,6 +105,12 @@ export const climbActivityApi = {
   // Get boulder-specific drying status for a route
   getBoulderDryingStatus: async (routeId: string): Promise<BoulderDryingStatus> => {
     const response = await api.get(`/climbs/routes/${routeId}/drying-status`);
+    return response.data;
+  },
+
+  // Get area-level drying statistics
+  getAreaDryingStats: async (locationId: number, areaId: string): Promise<AreaDryingStats> => {
+    const response = await api.get(`/climbs/location/${locationId}/areas/${areaId}/drying-stats`);
     return response.data;
   },
 };
