@@ -12,14 +12,17 @@ import (
 func (db *Database) SaveMPArea(ctx context.Context, area *models.MPArea) error {
 	query := `
 		INSERT INTO woulder.mp_areas (
-			mp_area_id, name, parent_mp_area_id, area_type, location_id, last_synced_at
+			mp_area_id, name, parent_mp_area_id, area_type, location_id,
+			latitude, longitude, last_synced_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (mp_area_id) DO UPDATE SET
 			name = EXCLUDED.name,
 			parent_mp_area_id = EXCLUDED.parent_mp_area_id,
 			area_type = EXCLUDED.area_type,
 			location_id = EXCLUDED.location_id,
+			latitude = EXCLUDED.latitude,
+			longitude = EXCLUDED.longitude,
 			last_synced_at = EXCLUDED.last_synced_at
 	`
 
@@ -29,6 +32,8 @@ func (db *Database) SaveMPArea(ctx context.Context, area *models.MPArea) error {
 		area.ParentMPAreaID,
 		area.AreaType,
 		area.LocationID,
+		area.Latitude,
+		area.Longitude,
 		time.Now(),
 	)
 
@@ -39,15 +44,19 @@ func (db *Database) SaveMPArea(ctx context.Context, area *models.MPArea) error {
 func (db *Database) SaveMPRoute(ctx context.Context, route *models.MPRoute) error {
 	query := `
 		INSERT INTO woulder.mp_routes (
-			mp_route_id, mp_area_id, name, route_type, rating, location_id
+			mp_route_id, mp_area_id, name, route_type, rating, location_id,
+			latitude, longitude, aspect
 		)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (mp_route_id) DO UPDATE SET
 			mp_area_id = EXCLUDED.mp_area_id,
 			name = EXCLUDED.name,
 			route_type = EXCLUDED.route_type,
 			rating = EXCLUDED.rating,
-			location_id = EXCLUDED.location_id
+			location_id = EXCLUDED.location_id,
+			latitude = EXCLUDED.latitude,
+			longitude = EXCLUDED.longitude,
+			aspect = EXCLUDED.aspect
 	`
 
 	_, err := db.conn.ExecContext(ctx, query,
@@ -57,6 +66,9 @@ func (db *Database) SaveMPRoute(ctx context.Context, route *models.MPRoute) erro
 		route.RouteType,
 		route.Rating,
 		route.LocationID,
+		route.Latitude,
+		route.Longitude,
+		route.Aspect,
 	)
 
 	return err
@@ -87,7 +99,7 @@ func (db *Database) SaveMPTick(ctx context.Context, tick *models.MPTick) error {
 func (db *Database) GetMPAreaByID(ctx context.Context, mpAreaID string) (*models.MPArea, error) {
 	query := `
 		SELECT id, mp_area_id, name, parent_mp_area_id, area_type,
-		       location_id, last_synced_at, created_at, updated_at
+		       location_id, latitude, longitude, last_synced_at, created_at, updated_at
 		FROM woulder.mp_areas
 		WHERE mp_area_id = $1
 	`
@@ -100,6 +112,8 @@ func (db *Database) GetMPAreaByID(ctx context.Context, mpAreaID string) (*models
 		&area.ParentMPAreaID,
 		&area.AreaType,
 		&area.LocationID,
+		&area.Latitude,
+		&area.Longitude,
 		&area.LastSyncedAt,
 		&area.CreatedAt,
 		&area.UpdatedAt,
@@ -166,4 +180,16 @@ func (db *Database) GetAllRouteIDsForLocation(ctx context.Context, locationID in
 	}
 
 	return routeIDs, nil
+}
+
+// UpdateRouteGPS updates only the GPS coordinates and aspect for a route
+func (db *Database) UpdateRouteGPS(ctx context.Context, routeID string, latitude, longitude float64, aspect string) error {
+	query := `
+		UPDATE woulder.mp_routes
+		SET latitude = $1, longitude = $2, aspect = $3, updated_at = NOW()
+		WHERE mp_route_id = $4
+	`
+
+	_, err := db.conn.ExecContext(ctx, query, latitude, longitude, aspect, routeID)
+	return err
 }

@@ -1,7 +1,8 @@
 import { ExternalLink, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { RouteActivitySummary, ClimbHistoryEntry } from '../types/weather';
 import { formatDaysAgo } from '../utils/weather/formatters';
-import { useRecentTicksForRoute } from '../hooks/useClimbActivity';
+import { useRecentTicksForRoute, useBoulderDryingStatus } from '../hooks/useClimbActivity';
+import { BoulderDryingBadge } from './BoulderDryingBadge';
 
 interface RouteListItemProps {
   route: RouteActivitySummary;
@@ -78,6 +79,11 @@ export function RouteListItem({ route, isExpanded, onToggleExpand }: RouteListIt
     5
   );
 
+  // Fetch boulder drying status immediately for compact badge
+  const { data: dryingStatus, isLoading: isDryingLoading } = useBoulderDryingStatus(
+    route.mp_route_id
+  );
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 p-2.5">
       {/* Route Header */}
@@ -91,6 +97,12 @@ export function RouteListItem({ route, isExpanded, onToggleExpand }: RouteListIt
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
               {route.rating}
             </span>
+
+            {/* Compact Boulder Drying Badge */}
+            {dryingStatus && !isDryingLoading && (
+              <BoulderDryingBadge status={dryingStatus} compact={true} />
+            )}
+
             <a
               href={`https://www.mountainproject.com/route/${route.mp_route_id}`}
               target="_blank"
@@ -138,24 +150,36 @@ export function RouteListItem({ route, isExpanded, onToggleExpand }: RouteListIt
         </button>
       )}
 
-      {/* Expanded Ticks List */}
+      {/* Expanded Content */}
       {isExpanded && (
-        <div className="mt-3 border-t border-gray-200 dark:border-gray-700">
-          {isLoading ? (
+        <div className="mt-3 space-y-3">
+          {/* Boulder Drying Status */}
+          {isDryingLoading ? (
             <div className="flex items-center justify-center py-4">
               <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
             </div>
-          ) : recentTicks && recentTicks.length > 0 ? (
-            <div className="space-y-0">
-              {recentTicks.map((tick, index) => (
-                <TickEntry key={index} tick={tick} />
-              ))}
-            </div>
-          ) : (
-            <div className="py-3 text-xs text-gray-500 dark:text-gray-500 text-center italic">
-              No recent ascents found
-            </div>
+          ) : dryingStatus && (
+            <BoulderDryingBadge status={dryingStatus} />
           )}
+
+          {/* Recent Ticks */}
+          <div className="border-t border-gray-200 dark:border-gray-700">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+              </div>
+            ) : recentTicks && recentTicks.length > 0 ? (
+              <div className="space-y-0">
+                {recentTicks.map((tick, index) => (
+                  <TickEntry key={index} tick={tick} />
+                ))}
+              </div>
+            ) : (
+              <div className="py-3 text-xs text-gray-500 dark:text-gray-500 text-center italic">
+                No recent ascents found
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

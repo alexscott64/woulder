@@ -7,6 +7,9 @@ backend/*.dylib
 backend/*.test
 backend/*.out
 backend/.env
+backend/*.json
+!backend/go.mod
+!backend/go.sum
 
 # SQLite Database
 *.db

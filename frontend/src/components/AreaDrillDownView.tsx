@@ -1,6 +1,6 @@
-import { ChevronRight, MapPin, ChevronLeft, Loader2, AlertCircle } from 'lucide-react';
-import { useState } from 'react';
-import { useAreasOrderedByActivity, useSubareasOrderedByActivity, useRoutesOrderedByActivity, useSearchInLocation } from '../hooks/useClimbActivity';
+import { ChevronRight, MapPin, ChevronLeft, Loader2, AlertCircle, Filter } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { useAreasOrderedByActivity, useSubareasOrderedByActivity, useRoutesOrderedByActivity, useSearchInLocation, useBoulderDryingStatuses } from '../hooks/useClimbActivity';
 import { AreaActivitySummary, SearchResult, RouteActivitySummary } from '../types/weather';
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { RouteListItem } from './RouteListItem';
@@ -16,11 +16,16 @@ interface BreadcrumbItem {
   areaId: string | null; // null for root
 }
 
+type FilterStatus = 'all' | 'dry' | 'drying' | 'wet';
+type SortOption = 'activity' | 'dry-time';
+
 export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }: AreaDrillDownViewProps) {
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([
     { name: locationName, areaId: null }
   ]);
   const [expandedRoutes, setExpandedRoutes] = useState<Set<string>>(new Set());
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+  const [sortBy, setSortBy] = useState<SortOption>('activity');
 
   // Current area ID is the last item in breadcrumbs
   const currentAreaId = breadcrumbs[breadcrumbs.length - 1].areaId;
@@ -63,6 +68,66 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
 
   // Show routes if we're in an area that has no subareas OR if search is active
   const showRoutes = isSearchActive || (currentAreaId !== null && (!areas || areas.length === 0));
+
+  // Get route IDs for fetching drying statuses
+  const routeIds = useMemo(() => {
+    if (!showRoutes || !filteredRoutes) return [];
+    return filteredRoutes.map(r => ('result_type' in r ? r.id : r.mp_route_id));
+  }, [showRoutes, filteredRoutes]);
+
+  // Fetch drying statuses for all visible routes
+  const dryingStatusQueries = useBoulderDryingStatuses(routeIds);
+
+  // Create a map of route ID to drying status for easy lookup
+  const dryingStatusMap = useMemo(() => {
+    const map = new Map();
+    routeIds.forEach((id, index) => {
+      const query = dryingStatusQueries[index];
+      if (query?.data) {
+        map.set(id, query.data);
+      }
+    });
+    return map;
+  }, [routeIds, dryingStatusQueries]);
+
+  // Apply filtering and sorting to routes
+  const processedRoutes = useMemo(() => {
+    if (!filteredRoutes) return [];
+
+    let processed = filteredRoutes.map(routeData => {
+      const routeId = 'result_type' in routeData ? routeData.id : routeData.mp_route_id;
+      const dryingStatus = dryingStatusMap.get(routeId);
+      return { routeData, dryingStatus };
+    });
+
+    // Apply filter
+    if (filterStatus !== 'all') {
+      processed = processed.filter(({ dryingStatus }) => {
+        if (!dryingStatus) return false; // Hide routes without drying data when filtering
+
+        if (filterStatus === 'dry') {
+          return !dryingStatus.is_wet && dryingStatus.hours_until_dry === 0;
+        } else if (filterStatus === 'drying') {
+          return dryingStatus.is_wet || (dryingStatus.hours_until_dry > 0 && dryingStatus.hours_until_dry < 48);
+        } else if (filterStatus === 'wet') {
+          return dryingStatus.is_wet && dryingStatus.hours_until_dry >= 48;
+        }
+        return true;
+      });
+    }
+
+    // Apply sorting
+    if (sortBy === 'dry-time') {
+      processed.sort((a, b) => {
+        const hoursA = a.dryingStatus?.hours_until_dry ?? 999;
+        const hoursB = b.dryingStatus?.hours_until_dry ?? 999;
+        return hoursA - hoursB;
+      });
+    }
+    // 'activity' sort is already applied from API, no need to re-sort
+
+    return processed.map(({ routeData }) => routeData);
+  }, [filteredRoutes, filterStatus, sortBy, dryingStatusMap]);
 
   const handleAreaClick = (area: AreaActivitySummary | SearchResult) => {
     // Handle both AreaActivitySummary and SearchResult types
@@ -118,6 +183,42 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
           ))}
         </ol>
       </nav>
+
+      {/* Filter Bar - Only show for routes view */}
+      {showRoutes && !isLoadingData && !dataError && filteredRoutes && filteredRoutes.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-2.5 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <Filter className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Filter:</span>
+          </div>
+          <div className="flex gap-1.5">
+            {(['all', 'dry', 'drying', 'wet'] as FilterStatus[]).map((status) => (
+              <button
+                key={status}
+                onClick={() => setFilterStatus(status)}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  filterStatus === status
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div className="ml-auto flex items-center gap-1.5">
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Sort:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
+              className="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600"
+            >
+              <option value="activity">Recent Activity</option>
+              <option value="dry-time">Hours Until Dry</option>
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* Content Area */}
       <div className="flex-1 overflow-y-scroll custom-scrollbar p-2.5 sm:p-3">
@@ -191,9 +292,9 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
         )}
 
         {/* Routes List */}
-        {showRoutes && !isLoadingData && !dataError && filteredRoutes && filteredRoutes.length > 0 && (
+        {showRoutes && !isLoadingData && !dataError && processedRoutes && processedRoutes.length > 0 && (
           <div className="space-y-2.5">
-            {filteredRoutes.map((routeData) => {
+            {processedRoutes.map((routeData) => {
               // Convert SearchResult to RouteActivitySummary if needed
               const route: any = 'result_type' in routeData
                 ? {
@@ -246,7 +347,7 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
         )}
 
         {/* Empty State - No Routes */}
-        {showRoutes && !isLoadingData && !dataError && !isSearchActive && (!filteredRoutes || filteredRoutes.length === 0) && (
+        {showRoutes && !isLoadingData && !dataError && !isSearchActive && (!processedRoutes || processedRoutes.length === 0) && (
           <div className="flex flex-col items-center justify-center py-12 gap-2 text-center">
             <MapPin className="w-12 h-12 text-gray-400 dark:text-gray-600" />
             <p className="text-gray-600 dark:text-gray-400">

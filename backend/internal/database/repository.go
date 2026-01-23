@@ -42,9 +42,11 @@ type Repository interface {
 	SaveMPArea(ctx context.Context, area *models.MPArea) error
 	SaveMPRoute(ctx context.Context, route *models.MPRoute) error
 	SaveMPTick(ctx context.Context, tick *models.MPTick) error
+	UpdateRouteGPS(ctx context.Context, routeID string, latitude, longitude float64, aspect string) error
 	GetLastClimbedForLocation(ctx context.Context, locationID int) (*models.LastClimbedInfo, error) // DEPRECATED: Use GetClimbHistoryForLocation
 	GetClimbHistoryForLocation(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
 	GetMPAreaByID(ctx context.Context, mpAreaID string) (*models.MPArea, error)
+	GetMPRouteByID(ctx context.Context, mpRouteID string) (*models.MPRoute, error)
 	GetLastTickTimestampForRoute(ctx context.Context, routeID string) (*time.Time, error)
 	GetAllRouteIDsForLocation(ctx context.Context, locationID int) ([]string, error)
 	GetAreasOrderedByActivity(ctx context.Context, locationID int) ([]models.AreaActivitySummary, error)
@@ -53,6 +55,11 @@ type Repository interface {
 	GetRecentTicksForRoute(ctx context.Context, routeID string, limit int) ([]models.ClimbHistoryEntry, error)
 	SearchInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.SearchResult, error)
 	SearchRoutesInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error)
+
+	// Boulder drying operations
+	GetBoulderDryingProfile(ctx context.Context, mpRouteID string) (*models.BoulderDryingProfile, error)
+	SaveBoulderDryingProfile(ctx context.Context, profile *models.BoulderDryingProfile) error
+	GetLocationByID(ctx context.Context, locationID int) (*models.Location, error)
 
 	// Health check
 	Ping(ctx context.Context) error

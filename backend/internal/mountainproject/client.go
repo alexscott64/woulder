@@ -39,10 +39,11 @@ func (c *Client) rateLimit() {
 
 // AreaResponse represents the response from the Mountain Project area endpoint
 type AreaResponse struct {
-	ID       int            `json:"id"`
-	Title    string         `json:"title"`
-	Type     string         `json:"type"`     // "Area" typically
-	Children []ChildElement `json:"children"` // Can be subareas or routes
+	ID          int            `json:"id"`
+	Title       string         `json:"title"`
+	Type        string         `json:"type"`        // "Area" typically
+	Children    []ChildElement `json:"children"`    // Can be subareas or routes
+	Coordinates []float64      `json:"coordinates"` // [longitude, latitude] GPS coordinates
 }
 
 // ChildElement represents either a subarea or a route within an area
