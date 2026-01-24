@@ -10,6 +10,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/alexscott64/woulder/backend/internal/weather"
 	"github.com/alexscott64/woulder/backend/internal/weather/boulder_drying"
+	"github.com/alexscott64/woulder/backend/internal/weather/calculator"
 	"github.com/alexscott64/woulder/backend/internal/weather/rock_drying"
 )
 
@@ -241,15 +242,31 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	ctx context.Context,
 	locationID int,
 ) (*models.RockDryingStatus, error) {
-	// Get current weather from database cache (refreshed by background job every 2h)
-	// Using DB cache instead of API for performance - eliminates 200-500ms API latency
-	// Frontend cache is 2min staleTime, so this is always fresh enough
-	weatherStart := time.Now()
-	currentWeather, err := s.repo.GetCurrentWeather(ctx, locationID)
+	// Get location for elevation data (needed for snow calculation)
+	locStart := time.Now()
+	location, err := s.repo.GetLocation(ctx, locationID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current weather from database: %w", err)
+		return nil, fmt.Errorf("failed to get location: %w", err)
 	}
-	log.Printf("[PERF]   GetCurrentWeather (DB) took %v", time.Since(weatherStart))
+	log.Printf("[PERF]   GetLocation took %v", time.Since(locStart))
+
+	// CRITICAL: Fetch FRESH weather from API, not database cache
+	// Database cache is stale and missing accurate snow/precipitation data
+	// This is slower but accuracy is more important than speed for rock drying
+	weatherStart := time.Now()
+	currentWeather, hourlyForecast, _, err := s.weatherClient.GetCurrentAndForecast(
+		location.Latitude, location.Longitude,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch current weather from API: %w", err)
+	}
+	log.Printf("[PERF]   GetCurrentAndForecast (API) took %v", time.Since(weatherStart))
+
+	// Set location ID on weather data
+	currentWeather.LocationID = locationID
+	for i := range hourlyForecast {
+		hourlyForecast[i].LocationID = locationID
+	}
 
 	// Get historical weather (last 7 days) from database
 	histStart := time.Now()
@@ -276,16 +293,34 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	}
 	log.Printf("[PERF]   GetSunExposureByLocation took %v", time.Since(sunStart))
 
+	// CRITICAL FIX: Calculate current snow depth for rock drying
+	// This was missing and causing boulders to show dry during active snow
+	snowStart := time.Now()
+
+	// Combine current and forecast into future data (same as weather service does)
+	futureData := append([]models.WeatherData{*currentWeather}, hourlyForecast...)
+
+	currentSnowDepth := calculator.GetCurrentSnowDepth(historicalWeather, futureData, float64(location.ElevationFt))
+	var snowDepthPtr *float64
+	if currentSnowDepth > 0 {
+		snowDepthPtr = &currentSnowDepth
+		log.Printf("[PERF]   Calculated snow depth: %.2f inches (location %d)", currentSnowDepth, locationID)
+	} else {
+		log.Printf("[PERF]   No snow depth calculated (location %d)", locationID)
+	}
+	log.Printf("[PERF]   GetCurrentSnowDepth took %v", time.Since(snowStart))
+
 	// Calculate rock drying status using existing calculator
 	calcStart := time.Now()
 	calc := &rock_drying.Calculator{}
+
 	dryingStatus := calc.CalculateDryingStatus(
 		rockTypes,
 		currentWeather,
 		historicalWeather,
 		sunExposure,
-		false, // hasSeepageRisk - TODO: Get from location profile if needed
-		nil,   // snowDepthInches - not tracked in WeatherData
+		false,       // hasSeepageRisk - TODO: Get from location profile if needed
+		snowDepthPtr, // FIXED: Now passing actual snow depth from API
 	)
 	log.Printf("[PERF]   CalculateDryingStatus took %v", time.Since(calcStart))
 

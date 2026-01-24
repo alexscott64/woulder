@@ -321,10 +321,11 @@ func TestCalculate6DayForecast_CurrentlyWet_DriesThenWetAgain(t *testing.T) {
 	calc := NewCalculator("test-api-key")
 	now := time.Now()
 
+	lastRain := now.Add(-12 * time.Hour)
 	status := &BoulderDryingStatus{
-		IsWet:         true,
-		HoursUntilDry: 12.0,
-		LastRainTimestamp: now.Add(-12 * time.Hour),
+		IsWet:             true,
+		HoursUntilDry:     12.0,
+		LastRainTimestamp: &lastRain,
 	}
 
 	// No immediate rain, then rain at hour 36
@@ -476,10 +477,11 @@ func TestCalculate6DayForecast_DryingTransition(t *testing.T) {
 	calc := NewCalculator("test-api-key")
 	now := time.Now()
 
+	lastRain2 := now.Add(-6 * time.Hour)
 	status := &BoulderDryingStatus{
 		IsWet:             true,
 		HoursUntilDry:     24.0,
-		LastRainTimestamp: now.Add(-6 * time.Hour),
+		LastRainTimestamp: &lastRain2,
 	}
 
 	// No more rain in forecast
