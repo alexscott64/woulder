@@ -154,7 +154,12 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 	// Calculate 6-day forecast if hourly forecast provided
 	if len(hourlyForecast) > 0 {
 		forecastStart := time.Now()
-		status.Forecast = c.Calculate6DayForecast(status, hourlyForecast, status.HoursUntilDry)
+		// Use minimum drying time of 4 hours for forecast to avoid excessive wet/dry transitions
+		baseDryingHours := status.HoursUntilDry
+		if baseDryingHours < 4.0 {
+			baseDryingHours = 4.0
+		}
+		status.Forecast = c.Calculate6DayForecast(status, hourlyForecast, baseDryingHours)
 		forecastTime := time.Since(forecastStart)
 		if forecastTime > 50*time.Millisecond {
 			log.Printf("[PERF]     6-day forecast calculation took %v (should be <50ms)", forecastTime)
@@ -389,16 +394,27 @@ func (c *Calculator) Calculate6DayForecast(
 			if hoursSinceRain >= dryingTime {
 				// Transition: wet -> dry
 				dryTime := wetSince.Add(time.Duration(dryingTime) * time.Hour)
-				forecast[len(forecast)-1].EndTime = dryTime
-				forecast[len(forecast)-1].HoursUntilDry = 0
 
-				// Start new dry period
-				currentlyWet = false
-				forecast = append(forecast, DryingForecastPeriod{
-					StartTime: dryTime,
-					IsDry:     true,
-					Status:    "dry",
-				})
+				// Only create transition if wet period had meaningful duration (at least 1 hour)
+				wetDuration := dryTime.Sub(forecast[len(forecast)-1].StartTime).Hours()
+				if wetDuration >= 1.0 {
+					forecast[len(forecast)-1].EndTime = dryTime
+					forecast[len(forecast)-1].HoursUntilDry = 0
+
+					// Start new dry period
+					currentlyWet = false
+					forecast = append(forecast, DryingForecastPeriod{
+						StartTime: dryTime,
+						IsDry:     true,
+						Status:    "dry",
+					})
+				} else {
+					// Wet period too short - just mark it as dry and remove it
+					currentlyWet = false
+					if len(forecast) > 0 {
+						forecast = forecast[:len(forecast)-1]
+					}
+				}
 			} else {
 				// Still wet - update hours until dry and status
 				forecast[len(forecast)-1].HoursUntilDry = dryingTime - hoursSinceRain

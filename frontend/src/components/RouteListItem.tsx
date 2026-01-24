@@ -2,6 +2,7 @@ import { ExternalLink, ChevronDown, ChevronUp, Droplets, Sun, Clock, MapPin, Tre
 import { RouteActivitySummary, ClimbHistoryEntry, BoulderDryingStatus } from '../types/weather';
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { useRecentTicksForRoute, useBoulderDryingStatus } from '../hooks/useClimbActivity';
+import { DryingForecastTimeline } from './DryingForecastTimeline';
 
 interface RouteListItemProps {
   route: RouteActivitySummary;
@@ -194,42 +195,7 @@ export function RouteListItem({ route, isExpanded, onToggleExpand, dryingStatus:
           {/* 6-Day Forecast */}
           {dryingStatus?.forecast && dryingStatus.forecast.length > 0 && (
             <div className="p-3 border-t border-gray-200 dark:border-gray-700">
-              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                6-Day Forecast
-              </h4>
-              <div className="relative h-8 bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden">
-                {dryingStatus.forecast.map((period, index) => {
-                  const startTime = new Date(period.start_time);
-                  const endTime = period.end_time ? new Date(period.end_time) : new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
-                  const now = new Date();
-                  const totalDuration = 6 * 24 * 60 * 60 * 1000; // 6 days in ms
-
-                  const startPercent = ((startTime.getTime() - now.getTime()) / totalDuration) * 100;
-                  const width = ((endTime.getTime() - startTime.getTime()) / totalDuration) * 100;
-
-                  const getColor = () => {
-                    if (period.status === 'dry') return 'bg-green-500';
-                    if (period.status === 'drying') return 'bg-yellow-500';
-                    return 'bg-red-500';
-                  };
-
-                  return (
-                    <div
-                      key={index}
-                      className={`absolute h-full ${getColor()}`}
-                      style={{
-                        left: `${Math.max(0, startPercent)}%`,
-                        width: `${width}%`
-                      }}
-                      title={`${period.status} - ${startTime.toLocaleDateString()}`}
-                    />
-                  );
-                })}
-              </div>
-              <div className="flex justify-between mt-1 text-xs text-gray-500 dark:text-gray-500">
-                <span>Now</span>
-                <span>+6 days</span>
-              </div>
+              <DryingForecastTimeline forecast={dryingStatus.forecast} />
             </div>
           )}
 
