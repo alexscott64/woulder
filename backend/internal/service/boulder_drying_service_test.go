@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/alexscott64/woulder/backend/internal/weather/client"
 )
 
 // mockRepository is a mock implementation of the database.Repository interface for testing
@@ -19,6 +20,16 @@ type mockRepository struct {
 	sunExposure         *models.LocationSunExposure
 	location            *models.Location
 	getRoutesWithGPSErr error
+}
+
+// mockBoulderWeatherClient provides mock weather data for boulder drying tests
+type mockBoulderWeatherClient struct {
+	currentWeather  *models.WeatherData
+	forecastWeather []models.WeatherData
+}
+
+func (m *mockBoulderWeatherClient) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *client.SunTimes, error) {
+	return m.currentWeather, m.forecastWeather, nil, nil
 }
 
 
@@ -260,7 +271,12 @@ func TestGetAreaDryingStats_AllDry(t *testing.T) {
 		},
 	}
 
-	service := NewBoulderDryingService(mock, nil)
+	mockWeather := &mockBoulderWeatherClient{
+		currentWeather:  mock.currentWeather,
+		forecastWeather: []models.WeatherData{},
+	}
+
+	service := NewBoulderDryingService(mock, mockWeather)
 	stats, err := service.GetAreaDryingStats(context.Background(), "area1", locationID)
 
 	if err != nil {
@@ -370,7 +386,12 @@ func TestGetAreaDryingStats_Mixed(t *testing.T) {
 		},
 	}
 
-	service := NewBoulderDryingService(mock, nil)
+	mockWeather := &mockBoulderWeatherClient{
+		currentWeather:  mock.currentWeather,
+		forecastWeather: []models.WeatherData{},
+	}
+
+	service := NewBoulderDryingService(mock, mockWeather)
 	stats, err := service.GetAreaDryingStats(context.Background(), "area1", locationID)
 
 	if err != nil {
@@ -407,7 +428,12 @@ func TestGetAreaDryingStats_NoRoutes(t *testing.T) {
 		routes: []*models.MPRoute{}, // Empty
 	}
 
-	service := NewBoulderDryingService(mock, nil)
+	mockWeather := &mockBoulderWeatherClient{
+		currentWeather:  nil,
+		forecastWeather: []models.WeatherData{},
+	}
+
+	service := NewBoulderDryingService(mock, mockWeather)
 	stats, err := service.GetAreaDryingStats(context.Background(), "area1", 1)
 
 	if err != nil {

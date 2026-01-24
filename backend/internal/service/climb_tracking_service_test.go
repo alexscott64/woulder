@@ -526,6 +526,205 @@ func TestTimezoneConsistencyBetweenSyncs(t *testing.T) {
 	}
 }
 
+// TestFutureDateFiltering verifies that ticks with future dates are rejected
+func TestFutureDateFiltering(t *testing.T) {
+	now := time.Now()
+	futureDate := now.Add(7 * 24 * time.Hour) // 7 days in the future
+
+	tests := []struct {
+		name          string
+		tickDate      string
+		shouldBeSaved bool
+		description   string
+	}{
+		{
+			name:          "Past date - should be saved",
+			tickDate:      now.Add(-24 * time.Hour).Format("Jan 2, 2006, 3:04 pm"),
+			shouldBeSaved: true,
+			description:   "Tick from yesterday should be saved",
+		},
+		{
+			name:          "Current time - should be saved",
+			tickDate:      now.Format("Jan 2, 2006, 3:04 pm"),
+			shouldBeSaved: true,
+			description:   "Tick from now should be saved",
+		},
+		{
+			name:          "Within 24h buffer - should be saved",
+			tickDate:      now.Add(12 * time.Hour).Format("Jan 2, 2006, 3:04 pm"),
+			shouldBeSaved: true,
+			description:   "Tick within 24h future buffer should be saved (clock skew)",
+		},
+		{
+			name:          "7 days in future - should be rejected",
+			tickDate:      futureDate.Format("Jan 2, 2006, 3:04 pm"),
+			shouldBeSaved: false,
+			description:   "Tick 7 days in future should be rejected",
+		},
+		{
+			name:          "2 days in future - should be rejected",
+			tickDate:      now.Add(48 * time.Hour).Format("Jan 2, 2006, 3:04 pm"),
+			shouldBeSaved: false,
+			description:   "Tick 2 days in future should be rejected",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			savedTicks := []*models.MPTick{}
+
+			mockRepo := &database.MockRepository{
+				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
+					return []string{"test-route-123"}, nil
+				},
+				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+					return nil, nil // No previous ticks
+				},
+				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
+					savedTicks = append(savedTicks, tick)
+					return nil
+				},
+			}
+
+			mockMPClient := &MockMPClient{
+				GetRouteTicksFn: func(routeID string) ([]mountainproject.Tick, error) {
+					return []mountainproject.Tick{
+						createTickWithUser(tt.tickDate, "TestUser", "Send"),
+					}, nil
+				},
+			}
+
+			service := NewClimbTrackingService(mockRepo, mockMPClient)
+			err := service.SyncNewTicksForLocation(context.Background(), 1)
+
+			assert.NoError(t, err)
+
+			if tt.shouldBeSaved {
+				assert.Equal(t, 1, len(savedTicks), "%s: Expected tick to be saved", tt.description)
+			} else {
+				assert.Equal(t, 0, len(savedTicks), "%s: Expected tick to be rejected", tt.description)
+			}
+		})
+	}
+}
+
+// TestCommentCleaning verifies that HTML entities are decoded and cleaned from comments
+func TestCommentCleaning(t *testing.T) {
+	tests := []struct {
+		name            string
+		inputText       string
+		expectedComment *string
+		description     string
+	}{
+		{
+			name:            "HTML entity middot at start",
+			inputText:       "&middot; Great climb!",
+			expectedComment: strPtr("Great climb!"),
+			description:     "Should decode and remove leading &middot;",
+		},
+		{
+			name:            "Actual middot character at start",
+			inputText:       "· Fun problem",
+			expectedComment: strPtr("Fun problem"),
+			description:     "Should remove leading middot character",
+		},
+		{
+			name:            "Multiple HTML entities",
+			inputText:       "&middot; Rock &amp; roll!",
+			expectedComment: strPtr("Rock & roll!"),
+			description:     "Should decode all HTML entities",
+		},
+		{
+			name:            "Just middot - should be empty",
+			inputText:       "&middot;",
+			expectedComment: nil,
+			description:     "Only middot should result in nil comment",
+		},
+		{
+			name:            "Empty string",
+			inputText:       "",
+			expectedComment: nil,
+			description:     "Empty string should result in nil comment",
+		},
+		{
+			name:            "Normal comment without entities",
+			inputText:       "Awesome send!",
+			expectedComment: strPtr("Awesome send!"),
+			description:     "Normal comment should be preserved",
+		},
+		{
+			name:            "Middot with whitespace",
+			inputText:       "&middot;  \t  Great route",
+			expectedComment: strPtr("Great route"),
+			description:     "Should remove middot and trim whitespace",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			savedTicks := []*models.MPTick{}
+
+			mockRepo := &database.MockRepository{
+				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
+					return []string{"test-route-123"}, nil
+				},
+				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+					return nil, nil
+				},
+				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
+					savedTicks = append(savedTicks, tick)
+					return nil
+				},
+			}
+
+			// Create tick with comment text
+			testTime := time.Now().Add(-1 * time.Hour)
+			userJSON, _ := json.Marshal(map[string]interface{}{
+				"id":   123,
+				"name": "TestUser",
+			})
+			textJSON, _ := json.Marshal(tt.inputText)
+
+			mockMPClient := &MockMPClient{
+				GetRouteTicksFn: func(routeID string) ([]mountainproject.Tick, error) {
+					return []mountainproject.Tick{
+						{
+							Date:  testTime.Format("Jan 2, 2006, 3:04 pm"),
+							Style: "Send",
+							User:  userJSON,
+							Text:  textJSON,
+						},
+					}, nil
+				},
+			}
+
+			service := NewClimbTrackingService(mockRepo, mockMPClient)
+			err := service.SyncNewTicksForLocation(context.Background(), 1)
+
+			assert.NoError(t, err)
+			assert.Equal(t, 1, len(savedTicks), "%s: Expected tick to be saved", tt.description)
+
+			if len(savedTicks) > 0 {
+				tick := savedTicks[0]
+				if tt.expectedComment == nil {
+					assert.Nil(t, tick.Comment, "%s: Expected nil comment", tt.description)
+				} else {
+					assert.NotNil(t, tick.Comment, "%s: Expected non-nil comment", tt.description)
+					if tick.Comment != nil {
+						assert.Equal(t, *tt.expectedComment, *tick.Comment,
+							"%s: Comment mismatch", tt.description)
+					}
+				}
+			}
+		})
+	}
+}
+
+// Helper function to create string pointer
+func strPtr(s string) *string {
+	return &s
+}
+
 // TestJamieZeldaRailsScenario tests the exact scenario from the bug report
 func TestJamieZeldaRailsScenario(t *testing.T) {
 	// Jamie sent Zelda Rails on Jan 14, 2026

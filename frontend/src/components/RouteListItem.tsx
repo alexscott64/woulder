@@ -15,9 +15,24 @@ interface RouteListItemProps {
 // Helper function to clean comments
 const cleanComment = (comment: string | undefined): string => {
   if (!comment) return '';
-  let cleaned = comment.replace(/^Sent!\s*/i, '');
+
+  // Decode HTML entities
+  const decoded = comment
+    .replace(/&middot;/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+
+  // Remove leading middot character (·) and other prefixes
+  let cleaned = decoded
+    .replace(/^·\s*/g, '')
+    .replace(/^Sent!\s*/i, '');
+
+  // Remove leading emojis
   cleaned = cleaned.replace(/^[\u{1F300}-\u{1F9FF}]\s*/u, '');
   cleaned = cleaned.replace(/^[\u{1F300}-\u{1F9FF}\s]+/u, '');
+
   return cleaned.trim();
 };
 

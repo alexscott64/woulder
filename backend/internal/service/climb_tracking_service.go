@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"html"
 	"log"
 	"strconv"
 	"strings"
@@ -49,6 +50,34 @@ type areaQueueItem struct {
 	mpAreaID   string
 	locationID *int
 	parentID   *string
+}
+
+// cleanCommentText cleans and decodes HTML entities from Mountain Project comment text
+// Removes common prefixes like "&middot;" and other HTML entities
+func cleanCommentText(text string) string {
+	if text == "" {
+		return ""
+	}
+
+	// Decode HTML entities (e.g., &middot; -> ·, &amp; -> &)
+	decoded := html.UnescapeString(text)
+
+	// Remove leading middot character (both HTML entity and actual character)
+	decoded = strings.TrimPrefix(decoded, "·")
+	decoded = strings.TrimPrefix(decoded, "&middot;")
+
+	// Remove leading/trailing whitespace
+	decoded = strings.TrimSpace(decoded)
+
+	return decoded
+}
+
+// isTickDateValid checks if a tick date is reasonable (not in the future)
+// Mountain Project sometimes has data quality issues with future dates
+func isTickDateValid(tickDate time.Time) bool {
+	// Allow a small buffer for clock skew (24 hours), but reject anything beyond that
+	maxFutureTime := time.Now().Add(24 * time.Hour)
+	return tickDate.Before(maxFutureTime) || tickDate.Equal(maxFutureTime)
 }
 
 // SyncAreaRecursive performs breadth-first traversal of Mountain Project areas/routes
@@ -245,6 +274,12 @@ func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID strin
 			}
 		}
 
+		// Skip ticks with future dates (data quality issue)
+		if !isTickDateValid(climbedAt) {
+			log.Printf("Warning: skipping tick with future date on route %s: %s", routeID, tick.Date)
+			continue
+		}
+
 		tickModel := &models.MPTick{
 			MPRouteID: routeID,
 			UserName:  tick.GetUserName(),
@@ -252,10 +287,13 @@ func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID strin
 			Style:     tick.Style,
 		}
 
-		// Use the 'text' field as the comment
+		// Use the 'text' field as the comment, clean HTML entities
 		textStr := tick.GetTextString()
 		if textStr != "" {
-			tickModel.Comment = &textStr
+			cleanedText := cleanCommentText(textStr)
+			if cleanedText != "" {
+				tickModel.Comment = &cleanedText
+			}
 		}
 
 		if err := s.repo.SaveMPTick(ctx, tickModel); err != nil {
@@ -433,6 +471,12 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 				}
 			}
 
+			// Skip ticks with future dates (data quality issue)
+			if !isTickDateValid(climbedAt) {
+				log.Printf("Warning: skipping tick with future date on route %s: %s", routeID, tick.Date)
+				continue
+			}
+
 			// Skip if we already have this tick (incremental check)
 			if lastTickTime != nil && !climbedAt.After(*lastTickTime) {
 				continue // Already have this tick or older
@@ -447,7 +491,10 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 
 			textStr := tick.GetTextString()
 			if textStr != "" {
-				tickModel.Comment = &textStr
+				cleanedText := cleanCommentText(textStr)
+				if cleanedText != "" {
+					tickModel.Comment = &cleanedText
+				}
 			}
 
 			if err := s.repo.SaveMPTick(ctx, tickModel); err != nil {

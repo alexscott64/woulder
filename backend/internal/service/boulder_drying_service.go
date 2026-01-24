@@ -11,18 +11,27 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/weather"
 	"github.com/alexscott64/woulder/backend/internal/weather/boulder_drying"
 	"github.com/alexscott64/woulder/backend/internal/weather/calculator"
+	"github.com/alexscott64/woulder/backend/internal/weather/client"
 	"github.com/alexscott64/woulder/backend/internal/weather/rock_drying"
 )
+
+// WeatherClientInterface defines the interface for weather operations
+type WeatherClientInterface interface {
+	GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *client.SunTimes, error)
+}
+
+// Ensure WeatherService implements the interface
+var _ WeatherClientInterface = (*weather.WeatherService)(nil)
 
 // BoulderDryingService handles boulder-specific drying calculations
 type BoulderDryingService struct {
 	repo          database.Repository
 	calculator    *boulder_drying.Calculator
-	weatherClient *weather.WeatherService
+	weatherClient WeatherClientInterface
 }
 
 // NewBoulderDryingService creates a new boulder drying service
-func NewBoulderDryingService(repo database.Repository, weatherClient *weather.WeatherService) *BoulderDryingService {
+func NewBoulderDryingService(repo database.Repository, weatherClient WeatherClientInterface) *BoulderDryingService {
 	return &BoulderDryingService{
 		repo:          repo,
 		calculator:    boulder_drying.NewCalculator(""), // API key no longer used (offline sun calculations)

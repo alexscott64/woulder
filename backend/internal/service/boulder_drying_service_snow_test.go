@@ -6,7 +6,18 @@ import (
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/alexscott64/woulder/backend/internal/weather/client"
 )
+
+// mockWeatherClient provides mock weather data for testing
+type mockWeatherClient struct {
+	currentWeather  *models.WeatherData
+	forecastWeather []models.WeatherData
+}
+
+func (m *mockWeatherClient) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *client.SunTimes, error) {
+	return m.currentWeather, m.forecastWeather, nil, nil
+}
 
 // TestGetLocationRockDryingStatus_WithSnow verifies snow depth is calculated and passed to rock drying
 func TestGetLocationRockDryingStatus_WithSnow(t *testing.T) {
@@ -79,8 +90,14 @@ func TestGetLocationRockDryingStatus_WithSnow(t *testing.T) {
 		})
 	}
 
-	service := NewBoulderDryingService(mock, nil)
-	dryingStatus, err := service.getLocationRockDryingStatus(context.Background(), locationID)
+	// Create mock weather client with the same data as the mock repository
+	mockWeather := &mockWeatherClient{
+		currentWeather:  mock.currentWeather,
+		forecastWeather: mock.forecastWeather,
+	}
+
+	service := NewBoulderDryingService(mock, mockWeather)
+	dryingStatus, _, err := service.getLocationRockDryingStatus(context.Background(), locationID)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
