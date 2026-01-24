@@ -87,7 +87,7 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 
 		// Get location-level rock drying status (shared for all routes in this location)
 		dryingStart := time.Now()
-		locationDrying, err := s.getLocationRockDryingStatus(ctx, locationID)
+		locationDrying, freshForecast, err := s.getLocationRockDryingStatus(ctx, locationID)
 		if err != nil {
 			log.Printf("Warning: Failed to get location drying status for %d: %v", locationID, err)
 			continue
@@ -108,14 +108,10 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 			locationTreeCoverage = sunExposure.TreeCoveragePercent
 		}
 
-		// Get hourly forecast (shared for all routes in this location)
-		forecastStart := time.Now()
-		hourlyForecast, err := s.repo.GetForecastWeather(ctx, locationID, 144) // 6 days
-		if err != nil {
-			log.Printf("Warning: Failed to get hourly forecast for location %d: %v", locationID, err)
-			hourlyForecast = nil
-		}
-		log.Printf("[PERF] GetForecastWeather took %v (got %d hours)", time.Since(forecastStart), len(hourlyForecast))
+		// Use the fresh forecast from getLocationRockDryingStatus (already fetched from API)
+		// This ensures boulder 6-day forecast matches the location drying calculation
+		hourlyForecast := freshForecast
+		log.Printf("[PERF] Using fresh forecast from API (%d hours)", len(hourlyForecast))
 
 		// Calculate drying status for each route in this location
 		for _, route := range routes {
@@ -192,8 +188,8 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 		return nil, fmt.Errorf("route has no associated location")
 	}
 
-	// Get location-level rock drying status
-	locationDrying, err := s.getLocationRockDryingStatus(ctx, *route.LocationID)
+	// Get location-level rock drying status (includes fresh forecast data)
+	locationDrying, hourlyForecast, err := s.getLocationRockDryingStatus(ctx, *route.LocationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get location drying status: %w", err)
 	}
@@ -218,12 +214,7 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 		locationTreeCoverage = sunExposure.TreeCoveragePercent
 	}
 
-	// Get hourly forecast for 6-day forecast
-	hourlyForecast, err := s.repo.GetForecastWeather(ctx, *route.LocationID, 144) // 6 days = 144 hours
-	if err != nil {
-		log.Printf("Warning: Failed to get hourly forecast for location %d: %v", *route.LocationID, err)
-		hourlyForecast = nil // Continue without forecast
-	}
+	// hourlyForecast already obtained from getLocationRockDryingStatus (fresh API data)
 
 	// Calculate boulder-specific drying status
 	status, err := s.calculator.CalculateBoulderDryingStatus(ctx, route, locationDrying, profile, locationTreeCoverage, hourlyForecast)
@@ -238,15 +229,16 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 }
 
 // getLocationRockDryingStatus calculates location-level rock drying status
+// Returns both the drying status and the fresh forecast data used for calculation
 func (s *BoulderDryingService) getLocationRockDryingStatus(
 	ctx context.Context,
 	locationID int,
-) (*models.RockDryingStatus, error) {
+) (*models.RockDryingStatus, []models.WeatherData, error) {
 	// Get location for elevation data (needed for snow calculation)
 	locStart := time.Now()
 	location, err := s.repo.GetLocation(ctx, locationID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get location: %w", err)
+		return nil, nil, fmt.Errorf("failed to get location: %w", err)
 	}
 	log.Printf("[PERF]   GetLocation took %v", time.Since(locStart))
 
@@ -258,7 +250,7 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 		location.Latitude, location.Longitude,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch current weather from API: %w", err)
+		return nil, nil, fmt.Errorf("failed to fetch current weather from API: %w", err)
 	}
 	log.Printf("[PERF]   GetCurrentAndForecast (API) took %v", time.Since(weatherStart))
 
@@ -272,7 +264,7 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	histStart := time.Now()
 	historicalWeather, err := s.repo.GetHistoricalWeather(ctx, locationID, 168) // 7 days
 	if err != nil {
-		return nil, fmt.Errorf("failed to get historical weather: %w", err)
+		return nil, nil, fmt.Errorf("failed to get historical weather: %w", err)
 	}
 	log.Printf("[PERF]   GetHistoricalWeather took %v (got %d hours)", time.Since(histStart), len(historicalWeather))
 
@@ -280,7 +272,7 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	rockStart := time.Now()
 	rockTypes, err := s.repo.GetRockTypesByLocation(ctx, locationID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get rock types: %w", err)
+		return nil, nil, fmt.Errorf("failed to get rock types: %w", err)
 	}
 	log.Printf("[PERF]   GetRockTypesByLocation took %v", time.Since(rockStart))
 
@@ -324,7 +316,9 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	)
 	log.Printf("[PERF]   CalculateDryingStatus took %v", time.Since(calcStart))
 
-	return &dryingStatus, nil
+	// Return both the drying status and the fresh forecast data
+	// The forecast is reused by callers to avoid duplicate API calls
+	return &dryingStatus, hourlyForecast, nil
 }
 
 // GetAreaDryingStats calculates aggregated drying statistics for an area
@@ -448,8 +442,9 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 
 	// OPTIMIZATION: Calculate location-level rock drying status ONCE for all areas
 	// This eliminates redundant weather queries (was: N * 80ms, now: 1 * 80ms)
+	// Also returns fresh forecast data from API for accurate boulder 6-day forecasts
 	locationStart := time.Now()
-	locationDrying, err := s.getLocationRockDryingStatus(ctx, locationID)
+	locationDrying, hourlyForecast, err := s.getLocationRockDryingStatus(ctx, locationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get location drying status: %w", err)
 	}
@@ -467,11 +462,8 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 		locationTreeCoverage = sunExposure.TreeCoveragePercent
 	}
 
-	hourlyForecast, err := s.repo.GetForecastWeather(ctx, locationID, 144) // 6 days
-	if err != nil {
-		log.Printf("Warning: Failed to get hourly forecast for location %d: %v", locationID, err)
-		hourlyForecast = nil
-	}
+	// hourlyForecast already obtained from getLocationRockDryingStatus (fresh API data)
+	log.Printf("[PERF] Using fresh forecast from API (%d hours)", len(hourlyForecast))
 
 	// Fetch ALL routes for ALL areas in a single batch
 	allRouteIDs := []string{}
