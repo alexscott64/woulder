@@ -67,14 +67,12 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
   const isLoadingAreas = currentAreaId === null ? isLoadingRootAreas : isLoadingSubareas;
   const areasError = currentAreaId === null ? rootAreasError : subareasError;
 
+  // Show routes if we're in an area that has no subareas OR if search is active
+  const showRoutes = isSearchActive || (currentAreaId !== null && (!areas || areas.length === 0));
+
   // When searching globally, show search results; otherwise show current view
   const filteredAreas: (AreaActivitySummary | SearchResult)[] = isSearchActive ? searchAreaResults : (areas || []);
   const filteredRoutes: (RouteActivitySummary | SearchResult)[] = isSearchActive ? searchRouteResults : (routes || []);
-  const isLoadingData = isSearchActive ? isSearching : (isLoadingAreas || isLoadingRoutes);
-  const dataError = isSearchActive ? searchError : (areasError || routesError);
-
-  // Show routes if we're in an area that has no subareas OR if search is active
-  const showRoutes = isSearchActive || (currentAreaId !== null && (!areas || areas.length === 0));
 
   // Get area IDs for fetching drying stats
   const areaIdsForDryingStats = useMemo(() => {
@@ -84,18 +82,17 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
       .map(area => ('result_type' in area ? area.id : area.mp_area_id));
   }, [filteredAreas, showRoutes]);
 
-  // Fetch drying stats for all visible areas
-  const areaDryingStatsQueries = useMultipleAreaDryingStats(locationId, areaIdsForDryingStats);
+  // Fetch drying stats for all visible areas using batch endpoint
+  const { data: areaDryingStatsBatch, isLoading: isLoadingAreaDrying } = useMultipleAreaDryingStats(locationId, areaIdsForDryingStats);
 
   // Create a map of area ID to drying stats for easy lookup
   // Don't memoize - let React Query handle re-renders when data updates
   const areaDryingStatsMap = new Map();
-  areaIdsForDryingStats.forEach((id, index) => {
-    const query = areaDryingStatsQueries[index];
-    if (query?.data) {
-      areaDryingStatsMap.set(id, query.data);
-    }
-  });
+  if (areaDryingStatsBatch) {
+    Object.entries(areaDryingStatsBatch).forEach(([areaId, stats]) => {
+      areaDryingStatsMap.set(areaId, stats);
+    });
+  }
 
   // Get route IDs for fetching drying statuses
   const routeIds = useMemo(() => {
@@ -103,18 +100,26 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
     return filteredRoutes.map(r => ('result_type' in r ? r.id : r.mp_route_id));
   }, [showRoutes, filteredRoutes]);
 
-  // Fetch drying statuses for all visible routes
-  const dryingStatusQueries = useBoulderDryingStatuses(routeIds);
+  // Fetch drying statuses for all visible routes using batch endpoint
+  const { data: dryingStatusBatch, isLoading: isLoadingBatchDrying } = useBoulderDryingStatuses(routeIds);
+
+  // Only block loading for core data (areas/routes), not drying stats
+  // Drying stats show skeleton loaders inline, so areas/routes can render immediately
+  const isLoadingData = isSearchActive
+    ? isSearching
+    : (isLoadingAreas ||
+       isLoadingRoutes ||
+       (showRoutes && routeIds.length > 0 && isLoadingBatchDrying)); // Only block routes on drying data
+  const dataError = isSearchActive ? searchError : (areasError || routesError);
 
   // Create a map of route ID to drying status for easy lookup
   // Don't memoize - let React Query handle re-renders when data updates
   const dryingStatusMap = new Map();
-  routeIds.forEach((id, index) => {
-    const query = dryingStatusQueries[index];
-    if (query?.data) {
-      dryingStatusMap.set(id, query.data);
-    }
-  });
+  if (dryingStatusBatch) {
+    Object.entries(dryingStatusBatch).forEach(([routeId, status]) => {
+      dryingStatusMap.set(routeId, status);
+    });
+  }
 
   // Apply filtering and sorting to routes
   const processedRoutes = useMemo(() => {
@@ -339,7 +344,7 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
                     </div>
 
                     {/* Drying Stats */}
-                    {dryingStats && (
+                    {dryingStats ? (
                       <div className="flex items-center gap-4 pt-2 border-t border-gray-100 dark:border-gray-700">
                         {/* Percent Dry */}
                         <div className="flex items-center gap-1.5">
@@ -380,7 +385,19 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
                           </div>
                         )}
                       </div>
-                    )}
+                    ) : isLoadingAreaDrying ? (
+                      <div className="flex items-center gap-4 pt-2 border-t border-gray-100 dark:border-gray-700 animate-pulse">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600" />
+                          <div className="w-16 h-4 bg-gray-300 dark:bg-gray-600 rounded" />
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-3 bg-gray-300 dark:bg-gray-600 rounded" />
+                          <div className="w-8 h-3 bg-gray-300 dark:bg-gray-600 rounded" />
+                          <div className="w-8 h-3 bg-gray-300 dark:bg-gray-600 rounded" />
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </button>
               );
@@ -405,12 +422,17 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
                   }
                 : routeData;
 
+              // Get drying status from batch map
+              const dryingStatus = dryingStatusMap.get(route.mp_route_id);
+
               return (
                 <RouteListItem
                   key={route.mp_route_id}
                   route={route}
                   isExpanded={expandedRoutes.has(route.mp_route_id)}
                   onToggleExpand={() => toggleRouteExpansion(route.mp_route_id)}
+                  dryingStatus={dryingStatus}
+                  useBatchMode={true} // CRITICAL: Prevents individual queries with stale cache
                 />
               );
             })}

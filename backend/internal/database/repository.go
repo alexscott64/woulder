@@ -58,9 +58,11 @@ type Repository interface {
 
 	// Boulder drying operations
 	GetBoulderDryingProfile(ctx context.Context, mpRouteID string) (*models.BoulderDryingProfile, error)
+	GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.BoulderDryingProfile, error)
 	SaveBoulderDryingProfile(ctx context.Context, profile *models.BoulderDryingProfile) error
 	GetLocationByID(ctx context.Context, locationID int) (*models.Location, error)
 	GetRoutesWithGPSByArea(ctx context.Context, mpAreaID string) ([]*models.MPRoute, error)
+	GetMPRoutesByIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.MPRoute, error)
 
 	// Health check
 	Ping(ctx context.Context) error

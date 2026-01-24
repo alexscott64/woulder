@@ -55,10 +55,12 @@ type MockRepository struct {
 	SearchRoutesInLocationFn           func(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error)
 
 	// Boulder drying mocks
-	GetBoulderDryingProfileFn  func(ctx context.Context, mpRouteID string) (*models.BoulderDryingProfile, error)
-	SaveBoulderDryingProfileFn func(ctx context.Context, profile *models.BoulderDryingProfile) error
-	GetLocationByIDFn          func(ctx context.Context, locationID int) (*models.Location, error)
-	GetRoutesWithGPSByAreaFn   func(ctx context.Context, mpAreaID string) ([]*models.MPRoute, error)
+	GetBoulderDryingProfileFn          func(ctx context.Context, mpRouteID string) (*models.BoulderDryingProfile, error)
+	GetBoulderDryingProfilesByRouteIDsFn func(ctx context.Context, mpRouteIDs []string) (map[string]*models.BoulderDryingProfile, error)
+	SaveBoulderDryingProfileFn         func(ctx context.Context, profile *models.BoulderDryingProfile) error
+	GetLocationByIDFn                  func(ctx context.Context, locationID int) (*models.Location, error)
+	GetRoutesWithGPSByAreaFn           func(ctx context.Context, mpAreaID string) ([]*models.MPRoute, error)
+	GetMPRoutesByIDsFn                 func(ctx context.Context, mpRouteIDs []string) (map[string]*models.MPRoute, error)
 
 	// Health
 	PingFn  func(ctx context.Context) error
@@ -344,12 +346,28 @@ func (m *MockRepository) GetMPRouteByID(ctx context.Context, mpRouteID string) (
 	return nil, nil
 }
 
+// GetMPRoutesByIDs mock
+func (m *MockRepository) GetMPRoutesByIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.MPRoute, error) {
+	if m.GetMPRoutesByIDsFn != nil {
+		return m.GetMPRoutesByIDsFn(ctx, mpRouteIDs)
+	}
+	return make(map[string]*models.MPRoute), nil
+}
+
 // GetBoulderDryingProfile mock
 func (m *MockRepository) GetBoulderDryingProfile(ctx context.Context, mpRouteID string) (*models.BoulderDryingProfile, error) {
 	if m.GetBoulderDryingProfileFn != nil {
 		return m.GetBoulderDryingProfileFn(ctx, mpRouteID)
 	}
 	return nil, nil
+}
+
+// GetBoulderDryingProfilesByRouteIDs mock
+func (m *MockRepository) GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.BoulderDryingProfile, error) {
+	if m.GetBoulderDryingProfilesByRouteIDsFn != nil {
+		return m.GetBoulderDryingProfilesByRouteIDsFn(ctx, mpRouteIDs)
+	}
+	return make(map[string]*models.BoulderDryingProfile), nil
 }
 
 // SaveBoulderDryingProfile mock

@@ -87,14 +87,15 @@ type LastClimbedInfo struct {
 
 // AreaDryingStats represents aggregated drying conditions for an area
 type AreaDryingStats struct {
-	TotalRoutes        int     `json:"total_routes"`         // Total routes in area with GPS data
-	DryCount           int     `json:"dry_count"`            // Routes currently dry
-	DryingCount        int     `json:"drying_count"`         // Routes drying (<24h until dry)
-	WetCount           int     `json:"wet_count"`            // Routes wet (>24h until dry)
-	PercentDry         float64 `json:"percent_dry"`          // Percentage of routes dry (0-100)
-	AvgHoursUntilDry   float64 `json:"avg_hours_until_dry"`  // Average hours until dry (wet routes only)
-	AvgTreeCoverage    float64 `json:"avg_tree_coverage"`    // Average tree coverage % (0-100)
-	ConfidenceScore    int     `json:"confidence_score"`     // Overall confidence (0-100)
+	TotalRoutes        int        `json:"total_routes"`                   // Total routes in area with GPS data
+	DryCount           int        `json:"dry_count"`                      // Routes currently dry
+	DryingCount        int        `json:"drying_count"`                   // Routes drying (<24h until dry)
+	WetCount           int        `json:"wet_count"`                      // Routes wet (>24h until dry)
+	PercentDry         float64    `json:"percent_dry"`                    // Percentage of routes dry (0-100)
+	AvgHoursUntilDry   float64    `json:"avg_hours_until_dry"`            // Average hours until dry (wet routes only)
+	AvgTreeCoverage    float64    `json:"avg_tree_coverage"`              // Average tree coverage % (0-100)
+	ConfidenceScore    int        `json:"confidence_score"`               // Overall confidence (0-100)
+	LastRainTimestamp  *time.Time `json:"last_rain_timestamp,omitempty"`  // Most recent rain timestamp from all routes
 }
 
 // AreaActivitySummary represents an area with recent activity metadata

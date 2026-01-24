@@ -194,4 +194,5 @@ export interface AreaDryingStats {
   avg_hours_until_dry: number;  // Average hours until dry (wet routes only)
   avg_tree_coverage: number;    // Average tree coverage % (0-100)
   confidence_score: number;     // Overall confidence (0-100)
+  last_rain_timestamp?: string; // Most recent rain timestamp from all routes
 }

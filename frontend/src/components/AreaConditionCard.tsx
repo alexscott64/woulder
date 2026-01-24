@@ -1,142 +1,105 @@
 import React from 'react';
 import { AreaDryingStats } from '../types/weather';
-import { Mountain, Droplets, Sun, Clock, TreeDeciduous } from 'lucide-react';
+import { Droplets, Sun, Clock } from 'lucide-react';
 
 interface AreaConditionCardProps {
   areaName: string;
-  stats: AreaDryingStats;
-  onClick?: () => void;
-  className?: string;
+  stats?: AreaDryingStats;
+  isLoading?: boolean;
 }
 
 export const AreaConditionCard: React.FC<AreaConditionCardProps> = ({
-  areaName,
   stats,
-  onClick,
-  className = '',
+  isLoading = false,
 }) => {
+  // Skeleton loader with fixed dimensions
+  if (isLoading || !stats) {
+    return (
+      <div className="rounded-lg p-3 bg-gray-200 dark:bg-gray-700 animate-pulse" style={{ minHeight: '80px' }}>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-8 bg-gray-300 dark:bg-gray-600 rounded" />
+              <div className="w-32 h-4 bg-gray-300 dark:bg-gray-600 rounded" />
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="w-8 h-4 bg-gray-300 dark:bg-gray-600 rounded" />
+              <div className="w-8 h-4 bg-gray-300 dark:bg-gray-600 rounded" />
+              <div className="w-8 h-4 bg-gray-300 dark:bg-gray-600 rounded" />
+            </div>
+          </div>
+          <div className="w-24 h-3 bg-gray-300 dark:bg-gray-600 rounded" />
+        </div>
+      </div>
+    );
+  }
   const getStatusColor = (): string => {
-    if (stats.percent_dry >= 80) return 'border-green-500 bg-green-50 dark:bg-green-900/20';
-    if (stats.percent_dry >= 50) return 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20';
-    return 'border-red-500 bg-red-50 dark:bg-red-900/20';
+    if (stats.percent_dry >= 80) return 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300';
+    if (stats.percent_dry >= 50) return 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300';
+    return 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300';
   };
 
-  const getStatusLabel = (): string => {
-    if (stats.percent_dry >= 80) return 'Mostly Dry';
-    if (stats.percent_dry >= 50) return 'Mixed Conditions';
-    return 'Mostly Wet';
-  };
+  // Format last rain timestamp
+  const formatLastRain = (timestamp: string): string => {
+    try {
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return 'Unknown';
 
-  const formatHours = (hours: number): string => {
-    if (hours === 0) return 'Dry';
-    if (hours < 1) return '<1h';
-    if (hours < 24) return `${Math.round(hours)}h`;
-    const days = Math.floor(hours / 24);
-    const remainingHours = Math.round(hours % 24);
-    return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 0) return 'Today';
+      if (diffDays === 1) return 'Yesterday';
+      if (diffDays < 7) return `${diffDays}d ago`;
+      return date.toLocaleDateString();
+    } catch {
+      return 'Unknown';
+    }
   };
 
   return (
-    <div
-      className={`border-2 rounded-lg p-4 transition-all duration-200 ${getStatusColor()} ${
-        onClick ? 'cursor-pointer hover:shadow-md' : ''
-      } ${className}`}
-      onClick={onClick}
-    >
-      {/* Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Mountain className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-          <h3 className="font-semibold text-gray-900 dark:text-white">{areaName}</h3>
-        </div>
-        <div className="flex items-center gap-1 px-2 py-1 bg-white dark:bg-gray-800 rounded text-xs font-medium">
-          <span className="text-gray-600 dark:text-gray-400">
-            {stats.confidence_score}%
-          </span>
-        </div>
-      </div>
-
-      {/* Status badge */}
-      <div className="mb-3">
-        <span className="inline-flex items-center px-2 py-1 bg-white dark:bg-gray-800 rounded text-sm font-medium text-gray-700 dark:text-gray-300">
-          {getStatusLabel()}
-        </span>
-      </div>
-
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 gap-3 mb-3">
-        {/* Percent dry */}
-        <div className="flex flex-col">
-          <span className="text-2xl font-bold text-gray-900 dark:text-white">
-            {Math.round(stats.percent_dry)}%
-          </span>
-          <span className="text-xs text-gray-600 dark:text-gray-400">Dry</span>
-        </div>
-
-        {/* Route counts */}
-        <div className="flex flex-col">
-          <span className="text-2xl font-bold text-gray-900 dark:text-white">
-            {stats.total_routes}
-          </span>
-          <span className="text-xs text-gray-600 dark:text-gray-400">Routes</span>
-        </div>
-      </div>
-
-      {/* Detailed stats */}
-      <div className="grid grid-cols-3 gap-2 pt-3 border-t border-gray-300 dark:border-gray-600">
-        <div className="flex flex-col items-center text-center">
-          <Sun className="w-4 h-4 text-green-600 dark:text-green-400 mb-1" />
-          <span className="text-sm font-semibold text-gray-900 dark:text-white">
-            {stats.dry_count}
-          </span>
-          <span className="text-xs text-gray-600 dark:text-gray-400">Dry</span>
-        </div>
-
-        <div className="flex flex-col items-center text-center">
-          <Clock className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mb-1" />
-          <span className="text-sm font-semibold text-gray-900 dark:text-white">
-            {stats.drying_count}
-          </span>
-          <span className="text-xs text-gray-600 dark:text-gray-400">Drying</span>
-        </div>
-
-        <div className="flex flex-col items-center text-center">
-          <Droplets className="w-4 h-4 text-red-600 dark:text-red-400 mb-1" />
-          <span className="text-sm font-semibold text-gray-900 dark:text-white">
-            {stats.wet_count}
-          </span>
-          <span className="text-xs text-gray-600 dark:text-gray-400">Wet</span>
-        </div>
-      </div>
-
-      {/* Additional info */}
-      {stats.avg_hours_until_dry > 0 && (
-        <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
-          <div className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
-              <Clock className="w-3 h-3" />
-              <span>Avg. dry time</span>
+    <div className={`rounded-lg p-3 ${getStatusColor()}`}>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="text-2xl font-bold">
+              {Math.round(stats.percent_dry)}%
             </div>
-            <span className="font-medium text-gray-900 dark:text-white">
-              {formatHours(stats.avg_hours_until_dry)}
-            </span>
+            <div className="text-sm font-medium">
+              of {stats.total_routes} route{stats.total_routes !== 1 ? 's' : ''} dry
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 text-sm">
+            {stats.dry_count > 0 && (
+              <div className="flex items-center gap-1">
+                <Sun className="w-3.5 h-3.5" />
+                <span className="font-medium">{stats.dry_count}</span>
+              </div>
+            )}
+            {stats.drying_count > 0 && (
+              <div className="flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                <span className="font-medium">{stats.drying_count}</span>
+              </div>
+            )}
+            {stats.wet_count > 0 && (
+              <div className="flex items-center gap-1">
+                <Droplets className="w-3.5 h-3.5" />
+                <span className="font-medium">{stats.wet_count}</span>
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      {stats.avg_tree_coverage > 0 && (
-        <div className="mt-2">
-          <div className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
-              <TreeDeciduous className="w-3 h-3" />
-              <span>Avg. tree coverage</span>
-            </div>
-            <span className="font-medium text-gray-900 dark:text-white">
-              {Math.round(stats.avg_tree_coverage)}%
-            </span>
+        {/* Last Rain */}
+        {stats.last_rain_timestamp && (
+          <div className="text-xs opacity-75">
+            Last rain: {formatLastRain(stats.last_rain_timestamp)}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

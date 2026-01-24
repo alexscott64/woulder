@@ -17,8 +17,10 @@ type mockRepository struct {
 	forecastWeather     []models.WeatherData
 	rockTypes           []models.RockType
 	sunExposure         *models.LocationSunExposure
+	location            *models.Location
 	getRoutesWithGPSErr error
 }
+
 
 func (m *mockRepository) GetRoutesWithGPSByArea(ctx context.Context, mpAreaID string) ([]*models.MPRoute, error) {
 	if m.getRoutesWithGPSErr != nil {
@@ -31,6 +33,17 @@ func (m *mockRepository) GetBoulderDryingProfile(ctx context.Context, mpRouteID 
 	return m.profile, nil
 }
 
+func (m *mockRepository) GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.BoulderDryingProfile, error) {
+	profiles := make(map[string]*models.BoulderDryingProfile)
+	if m.profile != nil {
+		// For testing, return the same profile for all routes
+		for _, id := range mpRouteIDs {
+			profiles[id] = m.profile
+		}
+	}
+	return profiles, nil
+}
+
 func (m *mockRepository) GetMPRouteByID(ctx context.Context, mpRouteID string) (*models.MPRoute, error) {
 	for _, route := range m.routes {
 		if route.MPRouteID == mpRouteID {
@@ -38,6 +51,19 @@ func (m *mockRepository) GetMPRouteByID(ctx context.Context, mpRouteID string) (
 		}
 	}
 	return nil, nil
+}
+
+func (m *mockRepository) GetMPRoutesByIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.MPRoute, error) {
+	routes := make(map[string]*models.MPRoute)
+	for _, route := range m.routes {
+		for _, id := range mpRouteIDs {
+			if route.MPRouteID == id {
+				routes[id] = route
+				break
+			}
+		}
+	}
+	return routes, nil
 }
 
 func (m *mockRepository) GetCurrentWeather(ctx context.Context, locationID int) (*models.WeatherData, error) {
@@ -65,7 +91,16 @@ func (m *mockRepository) GetAllLocations(ctx context.Context) ([]models.Location
 	return nil, nil
 }
 func (m *mockRepository) GetLocation(ctx context.Context, id int) (*models.Location, error) {
-	return nil, nil
+	if m.location != nil {
+		return m.location, nil
+	}
+	// Return a default location if not set
+	return &models.Location{
+		ID:        id,
+		Name:      "Test Location",
+		Latitude:  47.6,
+		Longitude: -120.9,
+	}, nil
 }
 func (m *mockRepository) GetLocationsByArea(ctx context.Context, areaID int) ([]models.Location, error) {
 	return nil, nil
@@ -225,7 +260,7 @@ func TestGetAreaDryingStats_AllDry(t *testing.T) {
 		},
 	}
 
-	service := NewBoulderDryingService(mock)
+	service := NewBoulderDryingService(mock, nil)
 	stats, err := service.GetAreaDryingStats(context.Background(), "area1", locationID)
 
 	if err != nil {
@@ -335,7 +370,7 @@ func TestGetAreaDryingStats_Mixed(t *testing.T) {
 		},
 	}
 
-	service := NewBoulderDryingService(mock)
+	service := NewBoulderDryingService(mock, nil)
 	stats, err := service.GetAreaDryingStats(context.Background(), "area1", locationID)
 
 	if err != nil {
@@ -372,7 +407,7 @@ func TestGetAreaDryingStats_NoRoutes(t *testing.T) {
 		routes: []*models.MPRoute{}, // Empty
 	}
 
-	service := NewBoulderDryingService(mock)
+	service := NewBoulderDryingService(mock, nil)
 	stats, err := service.GetAreaDryingStats(context.Background(), "area1", 1)
 
 	if err != nil {

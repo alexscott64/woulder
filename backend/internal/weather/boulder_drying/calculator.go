@@ -2,7 +2,6 @@ package boulder_drying
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -96,35 +95,22 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 		log.Printf("Warning: Route %s missing aspect, defaulting to South", route.MPRouteID)
 	}
 
-	// Get tree coverage (from profile cache or fetch new)
+	// Get tree coverage (from profile cache ONLY - never fetch during request)
+	// Tree coverage should be pre-populated by background job
 	if profile != nil && profile.TreeCoveragePercent != nil {
 		status.TreeCoveragePercent = *profile.TreeCoveragePercent
-	} else if status.Latitude != 0 && status.Longitude != 0 {
-		// Fetch tree coverage from satellite data (with location default as fallback)
-		treeCoverage, err := c.treeClient.GetTreeCoverageWithDefault(ctx, status.Latitude, status.Longitude, locationTreeCoverage)
-		if err != nil {
-			log.Printf("Warning: Failed to fetch tree coverage for %s: %v", route.MPRouteID, err)
-			// Fall back to location-level tree coverage if API fails
-			if locationTreeCoverage > 0 {
-				status.TreeCoveragePercent = locationTreeCoverage
-			} else {
-				status.TreeCoveragePercent = 30.0 // Ultimate fallback
-				status.ConfidenceScore -= 15
-			}
-		} else {
-			status.TreeCoveragePercent = treeCoverage
-		}
 	} else {
-		// No GPS coordinates - use location tree coverage
+		// Use location-level tree coverage as fallback (never call external API during request)
 		if locationTreeCoverage > 0 {
 			status.TreeCoveragePercent = locationTreeCoverage
 		} else {
-			status.TreeCoveragePercent = 30.0 // Default
+			status.TreeCoveragePercent = 30.0 // Default if no location data
 			status.ConfidenceScore -= 15
 		}
 	}
 
-	// Get sun exposure hours (cached or calculate)
+	// Get sun exposure hours (always calculate fresh - takes milliseconds)
+	sunStart := time.Now()
 	if status.Latitude != 0 && status.Longitude != 0 {
 		sunHours, err := c.calculateSunExposure(ctx, status.Latitude, status.Longitude, status.Aspect, status.TreeCoveragePercent, profile)
 		if err != nil {
@@ -139,6 +125,10 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 		// No GPS - use aspect-based estimate
 		status.SunExposureHours = c.estimateSunExposureFromAspect(status.Aspect)
 		status.ConfidenceScore -= 25
+	}
+	sunTime := time.Since(sunStart)
+	if sunTime > 10*time.Millisecond {
+		log.Printf("[PERF]     Sun exposure calculation took %v (should be <10ms)", sunTime)
 	}
 
 	// Calculate boulder-specific drying time
@@ -163,23 +153,20 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 
 	// Calculate 6-day forecast if hourly forecast provided
 	if len(hourlyForecast) > 0 {
+		forecastStart := time.Now()
 		status.Forecast = c.Calculate6DayForecast(status, hourlyForecast, status.HoursUntilDry)
+		forecastTime := time.Since(forecastStart)
+		if forecastTime > 50*time.Millisecond {
+			log.Printf("[PERF]     6-day forecast calculation took %v (should be <50ms)", forecastTime)
+		}
 	}
 
 	return status, nil
 }
 
-// SunExposureCache stores cached sun exposure calculation
-type SunExposureCache struct {
-	Aspect              string    `json:"aspect"`
-	TreeCoverage        float64   `json:"tree_coverage"`
-	SunExposureHours    float64   `json:"sun_exposure_hours"`
-	CalculatedAt        time.Time `json:"calculated_at"`
-	ForecastStartDate   string    `json:"forecast_start_date"`
-}
-
 // calculateSunExposure computes hours of direct sun hitting the boulder over next 6 days
-// Uses cached sun position data if available, otherwise fetches from API
+// Always calculates fresh since sun exposure is time-dependent (next 6 days from NOW)
+// This is fast because it uses offline astronomical calculations (no API calls)
 func (c *Calculator) calculateSunExposure(
 	ctx context.Context,
 	lat, lon float64,
@@ -187,44 +174,12 @@ func (c *Calculator) calculateSunExposure(
 	treeCoverage float64,
 	profile *models.BoulderDryingProfile,
 ) (float64, error) {
-	// Check cache first (6-hour TTL)
-	if profile != nil && profile.LastSunCalcAt != nil && profile.SunExposureHoursCache != nil {
-		cacheAge := time.Since(*profile.LastSunCalcAt)
-		if cacheAge < 6*time.Hour {
-			// Parse cached sun exposure from JSONB (stored as string)
-			var cache SunExposureCache
-			if err := json.Unmarshal([]byte(*profile.SunExposureHoursCache), &cache); err == nil {
-				// Verify cache is still valid (same aspect and similar tree coverage)
-				if cache.Aspect == aspect && absFloat(cache.TreeCoverage-treeCoverage) < 5.0 {
-					log.Printf("Using cached sun exposure for boulder (age: %v): %.1f hours",
-						cacheAge.Round(time.Minute), cache.SunExposureHours)
-					return cache.SunExposureHours, nil
-				}
-			}
-		}
-	}
-
-	// Calculate sun exposure using offline algorithm
-	// Calculate for next 6 days (144 hours)
+	// Calculate sun exposure using offline algorithm (fast - takes milliseconds)
+	// Calculate for next 6 days (144 hours) starting from NOW
 	startTime := time.Now()
 	totalSunHours := sun.CalculateSunExposure(lat, lon, aspect, treeCoverage, startTime, 144)
 
-	log.Printf("Calculated sun exposure for boulder: %.1f hours over 6 days (aspect: %s, tree: %.0f%%)",
-		totalSunHours, aspect, treeCoverage)
-
 	return totalSunHours, nil
-}
-
-// GetSunExposureCacheData returns the cache data to be saved (used by service layer)
-func (c *Calculator) GetSunExposureCacheData(aspect string, treeCoverage, sunExposureHours float64) ([]byte, error) {
-	cache := SunExposureCache{
-		Aspect:            aspect,
-		TreeCoverage:      treeCoverage,
-		SunExposureHours:  sunExposureHours,
-		CalculatedAt:      time.Now(),
-		ForecastStartDate: time.Now().Format("2006-01-02"),
-	}
-	return json.Marshal(cache)
 }
 
 // calculateBoulderDryingTime applies boulder-specific modifiers to location drying time

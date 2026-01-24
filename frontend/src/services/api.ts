@@ -108,9 +108,33 @@ export const climbActivityApi = {
     return response.data;
   },
 
+  // Get boulder-specific drying status for multiple routes in batch
+  getBatchBoulderDryingStatus: async (routeIds: string[]): Promise<Record<string, BoulderDryingStatus>> => {
+    if (routeIds.length === 0) {
+      return {};
+    }
+    const response = await api.get('/climbs/routes/batch-drying-status', {
+      params: { route_ids: routeIds.join(',') },
+      timeout: 30000, // Longer timeout for batch request
+    });
+    return response.data;
+  },
+
   // Get area-level drying statistics
   getAreaDryingStats: async (locationId: number, areaId: string): Promise<AreaDryingStats> => {
     const response = await api.get(`/climbs/location/${locationId}/areas/${areaId}/drying-stats`);
+    return response.data;
+  },
+
+  // Get area-level drying statistics for multiple areas in batch
+  getBatchAreaDryingStats: async (locationId: number, areaIds: string[]): Promise<Record<string, AreaDryingStats>> => {
+    if (areaIds.length === 0) {
+      return {};
+    }
+    const response = await api.get(`/climbs/location/${locationId}/batch-area-drying-stats`, {
+      params: { area_ids: areaIds.join(',') },
+      timeout: 30000, // Longer timeout for batch request
+    });
     return response.data;
   },
 };
