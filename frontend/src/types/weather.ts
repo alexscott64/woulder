@@ -77,6 +77,7 @@ export interface AreaActivitySummary {
   days_since_climb: number;
   has_subareas: boolean;
   subarea_count: number;
+  drying_stats?: AreaDryingStats; // Area-level drying statistics
 }
 
 export interface RouteActivitySummary {
@@ -157,6 +158,15 @@ export interface PestConditions {
   factors: string[];
 }
 
+export interface DryingForecastPeriod {
+  start_time: string;         // ISO 8601 timestamp
+  end_time?: string;          // ISO 8601 timestamp (optional for last period)
+  is_dry: boolean;
+  status: 'dry' | 'drying' | 'wet';
+  hours_until_dry?: number;   // Only present when wet/drying
+  rain_amount?: number;       // Inches of rain in this period
+}
+
 export interface BoulderDryingStatus {
   mp_route_id: string;
   is_wet: boolean;
@@ -165,11 +175,24 @@ export interface BoulderDryingStatus {
   status: 'critical' | 'poor' | 'fair' | 'good';
   message: string;
   confidence_score: number; // 0-100
-  last_rain_timestamp: string;
+  last_rain_timestamp?: string; // Optional - omitted when no recent rain
   sun_exposure_hours: number;
   tree_coverage_percent: number;
   rock_type: string;
   aspect: string; // N, NE, E, SE, S, SW, W, NW
   latitude: number;
   longitude: number;
+  forecast?: DryingForecastPeriod[]; // 6-day dry/wet forecast
+}
+
+export interface AreaDryingStats {
+  total_routes: number;        // Total routes with GPS data
+  dry_count: number;            // Routes currently dry
+  drying_count: number;         // Routes drying (<24h until dry)
+  wet_count: number;            // Routes wet (>24h until dry)
+  percent_dry: number;          // Percentage of routes dry (0-100)
+  avg_hours_until_dry: number;  // Average hours until dry (wet routes only)
+  avg_tree_coverage: number;    // Average tree coverage % (0-100)
+  confidence_score: number;     // Overall confidence (0-100)
+  last_rain_timestamp?: string; // Most recent rain timestamp from all routes
 }

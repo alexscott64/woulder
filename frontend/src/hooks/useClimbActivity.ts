@@ -1,6 +1,6 @@
-import { useQuery, useQueries } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { climbActivityApi } from '../services/api';
-import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus } from '../types/weather';
+import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus, AreaDryingStats } from '../types/weather';
 
 /**
  * Hook to fetch areas ordered by recent climb activity for a location
@@ -105,15 +105,44 @@ export const useBoulderDryingStatus = (routeId: string | null) => {
 };
 
 /**
- * Hook to fetch boulder-specific drying status for multiple routes
+ * Hook to fetch boulder-specific drying status for multiple routes using batch endpoint
  */
 export const useBoulderDryingStatuses = (routeIds: string[]) => {
-  return useQueries({
-    queries: routeIds.map(routeId => ({
-      queryKey: ['boulder-drying', routeId],
-      queryFn: () => climbActivityApi.getBoulderDryingStatus(routeId),
-      staleTime: 10 * 60 * 1000, // 10 minutes
-      enabled: !!routeId,
-    })),
+  return useQuery<Record<string, BoulderDryingStatus>, Error>({
+    queryKey: ['boulder-drying-batch', ...routeIds.sort()], // Sort for consistent cache key
+    queryFn: () => climbActivityApi.getBatchBoulderDryingStatus(routeIds),
+    staleTime: 2 * 60 * 1000, // 2 minutes - shorter to catch weather changes
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    refetchOnMount: true, // Always refetch when component mounts
+    enabled: routeIds.length > 0,
+  });
+};
+
+/**
+ * Hook to fetch area-level drying statistics
+ */
+export const useAreaDryingStats = (locationId: number, areaId: string | null) => {
+  return useQuery<AreaDryingStats, Error>({
+    queryKey: ['area-drying-stats', locationId, areaId],
+    queryFn: () => climbActivityApi.getAreaDryingStats(locationId, areaId!),
+    staleTime: 2 * 60 * 1000, // 2 minutes - MUST match route batch to avoid mismatches
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    enabled: !!locationId && !!areaId,
+  });
+};
+
+/**
+ * Hook to fetch area-level drying statistics for multiple areas using batch endpoint
+ * This eliminates N separate API calls and dramatically improves performance
+ */
+export const useMultipleAreaDryingStats = (locationId: number, areaIds: string[]) => {
+  return useQuery<Record<string, AreaDryingStats>, Error>({
+    queryKey: ['area-drying-stats-batch', locationId, ...areaIds.sort()], // Sort for consistent cache key
+    queryFn: () => climbActivityApi.getBatchAreaDryingStats(locationId, areaIds),
+    staleTime: 2 * 60 * 1000, // 2 minutes - MUST match route batch to avoid mismatches
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    enabled: !!locationId && areaIds.length > 0,
   });
 };

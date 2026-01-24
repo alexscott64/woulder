@@ -15,11 +15,12 @@ type MockRepository struct {
 	GetLocationsByAreaFn func(ctx context.Context, areaID int) ([]models.Location, error)
 
 	// Weather mocks
-	SaveWeatherDataFn      func(ctx context.Context, data *models.WeatherData) error
-	GetHistoricalWeatherFn func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error)
-	GetForecastWeatherFn   func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error)
-	GetCurrentWeatherFn    func(ctx context.Context, locationID int) (*models.WeatherData, error)
-	CleanOldWeatherDataFn  func(ctx context.Context, daysToKeep int) error
+	SaveWeatherDataFn        func(ctx context.Context, data *models.WeatherData) error
+	GetHistoricalWeatherFn   func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error)
+	GetForecastWeatherFn     func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error)
+	GetCurrentWeatherFn      func(ctx context.Context, locationID int) (*models.WeatherData, error)
+	CleanOldWeatherDataFn    func(ctx context.Context, daysToKeep int) error
+	DeleteOldWeatherDataFn   func(ctx context.Context, locationID int, daysToKeep int) error
 
 	// River mocks
 	GetRiversByLocationFn func(ctx context.Context, locationID int) ([]models.River, error)
@@ -39,9 +40,11 @@ type MockRepository struct {
 	SaveMPAreaFn                       func(ctx context.Context, area *models.MPArea) error
 	SaveMPRouteFn                      func(ctx context.Context, route *models.MPRoute) error
 	SaveMPTickFn                       func(ctx context.Context, tick *models.MPTick) error
+	UpdateRouteGPSFn                   func(ctx context.Context, routeID string, latitude, longitude float64, aspect string) error
 	GetLastClimbedForLocationFn        func(ctx context.Context, locationID int) (*models.LastClimbedInfo, error)
 	GetClimbHistoryForLocationFn       func(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
 	GetMPAreaByIDFn                    func(ctx context.Context, mpAreaID string) (*models.MPArea, error)
+	GetMPRouteByIDFn                   func(ctx context.Context, mpRouteID string) (*models.MPRoute, error)
 	GetLastTickTimestampForRouteFn     func(ctx context.Context, routeID string) (*time.Time, error)
 	GetAllRouteIDsForLocationFn        func(ctx context.Context, locationID int) ([]string, error)
 	GetAreasOrderedByActivityFn        func(ctx context.Context, locationID int) ([]models.AreaActivitySummary, error)
@@ -50,6 +53,14 @@ type MockRepository struct {
 	GetRecentTicksForRouteFn           func(ctx context.Context, routeID string, limit int) ([]models.ClimbHistoryEntry, error)
 	SearchInLocationFn                 func(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.SearchResult, error)
 	SearchRoutesInLocationFn           func(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error)
+
+	// Boulder drying mocks
+	GetBoulderDryingProfileFn          func(ctx context.Context, mpRouteID string) (*models.BoulderDryingProfile, error)
+	GetBoulderDryingProfilesByRouteIDsFn func(ctx context.Context, mpRouteIDs []string) (map[string]*models.BoulderDryingProfile, error)
+	SaveBoulderDryingProfileFn         func(ctx context.Context, profile *models.BoulderDryingProfile) error
+	GetLocationByIDFn                  func(ctx context.Context, locationID int) (*models.Location, error)
+	GetRoutesWithGPSByAreaFn           func(ctx context.Context, mpAreaID string) ([]*models.MPRoute, error)
+	GetMPRoutesByIDsFn                 func(ctx context.Context, mpRouteIDs []string) (map[string]*models.MPRoute, error)
 
 	// Health
 	PingFn  func(ctx context.Context) error
@@ -121,6 +132,9 @@ func (m *MockRepository) CleanOldWeatherData(ctx context.Context, daysToKeep int
 
 // DeleteOldWeatherData mock
 func (m *MockRepository) DeleteOldWeatherData(ctx context.Context, locationID int, daysToKeep int) error {
+	if m.DeleteOldWeatherDataFn != nil {
+		return m.DeleteOldWeatherDataFn(ctx, locationID, daysToKeep)
+	}
 	return nil
 }
 
@@ -312,6 +326,70 @@ func (m *MockRepository) SearchInLocation(ctx context.Context, locationID int, s
 func (m *MockRepository) SearchRoutesInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error) {
 	if m.SearchRoutesInLocationFn != nil {
 		return m.SearchRoutesInLocationFn(ctx, locationID, searchQuery, limit)
+	}
+	return nil, nil
+}
+
+// UpdateRouteGPS mock
+func (m *MockRepository) UpdateRouteGPS(ctx context.Context, routeID string, latitude, longitude float64, aspect string) error {
+	if m.UpdateRouteGPSFn != nil {
+		return m.UpdateRouteGPSFn(ctx, routeID, latitude, longitude, aspect)
+	}
+	return nil
+}
+
+// GetMPRouteByID mock
+func (m *MockRepository) GetMPRouteByID(ctx context.Context, mpRouteID string) (*models.MPRoute, error) {
+	if m.GetMPRouteByIDFn != nil {
+		return m.GetMPRouteByIDFn(ctx, mpRouteID)
+	}
+	return nil, nil
+}
+
+// GetMPRoutesByIDs mock
+func (m *MockRepository) GetMPRoutesByIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.MPRoute, error) {
+	if m.GetMPRoutesByIDsFn != nil {
+		return m.GetMPRoutesByIDsFn(ctx, mpRouteIDs)
+	}
+	return make(map[string]*models.MPRoute), nil
+}
+
+// GetBoulderDryingProfile mock
+func (m *MockRepository) GetBoulderDryingProfile(ctx context.Context, mpRouteID string) (*models.BoulderDryingProfile, error) {
+	if m.GetBoulderDryingProfileFn != nil {
+		return m.GetBoulderDryingProfileFn(ctx, mpRouteID)
+	}
+	return nil, nil
+}
+
+// GetBoulderDryingProfilesByRouteIDs mock
+func (m *MockRepository) GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.BoulderDryingProfile, error) {
+	if m.GetBoulderDryingProfilesByRouteIDsFn != nil {
+		return m.GetBoulderDryingProfilesByRouteIDsFn(ctx, mpRouteIDs)
+	}
+	return make(map[string]*models.BoulderDryingProfile), nil
+}
+
+// SaveBoulderDryingProfile mock
+func (m *MockRepository) SaveBoulderDryingProfile(ctx context.Context, profile *models.BoulderDryingProfile) error {
+	if m.SaveBoulderDryingProfileFn != nil {
+		return m.SaveBoulderDryingProfileFn(ctx, profile)
+	}
+	return nil
+}
+
+// GetLocationByID mock
+func (m *MockRepository) GetLocationByID(ctx context.Context, locationID int) (*models.Location, error) {
+	if m.GetLocationByIDFn != nil {
+		return m.GetLocationByIDFn(ctx, locationID)
+	}
+	return nil, nil
+}
+
+// GetRoutesWithGPSByArea mock
+func (m *MockRepository) GetRoutesWithGPSByArea(ctx context.Context, mpAreaID string) ([]*models.MPRoute, error) {
+	if m.GetRoutesWithGPSByAreaFn != nil {
+		return m.GetRoutesWithGPSByAreaFn(ctx, mpAreaID)
 	}
 	return nil, nil
 }

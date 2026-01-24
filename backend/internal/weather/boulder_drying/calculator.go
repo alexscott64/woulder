@@ -2,43 +2,53 @@ package boulder_drying
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/alexscott64/woulder/backend/internal/weather/sun"
 )
+
+// DryingForecastPeriod represents dry/wet status for a time period
+type DryingForecastPeriod struct {
+	StartTime     time.Time `json:"start_time"`
+	EndTime       time.Time `json:"end_time"`
+	IsDry         bool      `json:"is_dry"`
+	Status        string    `json:"status"` // "dry", "drying", "wet"
+	HoursUntilDry float64   `json:"hours_until_dry,omitempty"` // Only present if wet
+	RainAmount    float64   `json:"rain_amount,omitempty"`     // Inches of rain in this period
+}
 
 // BoulderDryingStatus represents the drying status for a specific boulder
 type BoulderDryingStatus struct {
-	MPRouteID           string    `json:"mp_route_id"`
-	IsWet               bool      `json:"is_wet"`
-	IsSafe              bool      `json:"is_safe"`
-	HoursUntilDry       float64   `json:"hours_until_dry"`
-	Status              string    `json:"status"` // "critical", "poor", "fair", "good"
-	Message             string    `json:"message"`
-	ConfidenceScore     int       `json:"confidence_score"` // 0-100
-	LastRainTimestamp   time.Time `json:"last_rain_timestamp"`
-	SunExposureHours    float64   `json:"sun_exposure_hours"`     // Hours of direct sun next 6 days
-	TreeCoveragePercent float64   `json:"tree_coverage_percent"` // 0-100
-	RockType            string    `json:"rock_type"`
-	Aspect              string    `json:"aspect"`      // N, NE, E, SE, S, SW, W, NW
-	Latitude            float64   `json:"latitude"`    // Boulder GPS
-	Longitude           float64   `json:"longitude"`   // Boulder GPS
+	MPRouteID           string                  `json:"mp_route_id"`
+	IsWet               bool                    `json:"is_wet"`
+	IsSafe              bool                    `json:"is_safe"`
+	HoursUntilDry       float64                 `json:"hours_until_dry"`
+	Status              string                  `json:"status"` // "critical", "poor", "fair", "good"
+	Message             string                  `json:"message"`
+	ConfidenceScore     int                     `json:"confidence_score"` // 0-100
+	LastRainTimestamp   *time.Time              `json:"last_rain_timestamp,omitempty"` // Pointer to allow null
+	SunExposureHours    float64                 `json:"sun_exposure_hours"`     // Hours of direct sun next 6 days
+	TreeCoveragePercent float64                 `json:"tree_coverage_percent"` // 0-100
+	RockType            string                  `json:"rock_type"`
+	Aspect              string                  `json:"aspect"`      // N, NE, E, SE, S, SW, W, NW
+	Latitude            float64                 `json:"latitude"`    // Boulder GPS
+	Longitude           float64                 `json:"longitude"`   // Boulder GPS
+	Forecast            []DryingForecastPeriod  `json:"forecast,omitempty"` // 6-day dry/wet forecast
 }
 
 // Calculator computes boulder-specific drying times
 type Calculator struct {
-	sunClient  *SunPositionClient
 	treeClient *TreeCoverClient
 }
 
 // NewCalculator creates a new boulder drying calculator
-func NewCalculator(ipGeoAPIKey string) *Calculator {
+// Note: apiKey parameter is deprecated and ignored (kept for backwards compatibility)
+func NewCalculator(apiKey string) *Calculator {
 	return &Calculator{
-		sunClient:  NewSunPositionClient(ipGeoAPIKey),
 		treeClient: NewTreeCoverClient(),
 	}
 }
@@ -48,13 +58,16 @@ func NewCalculator(ipGeoAPIKey string) *Calculator {
 // - Real-time sun exposure based on boulder GPS + aspect
 // - Boulder-specific tree coverage from satellite data
 // - Confidence scoring based on data availability
+// - 6-day dry/wet forecast based on precipitation forecast
 // locationTreeCoverage: optional location-level tree coverage percentage (0 to use GPS-based estimates)
+// hourlyForecast: optional hourly weather forecast for 6-day forecast (pass nil to skip forecast)
 func (c *Calculator) CalculateBoulderDryingStatus(
 	ctx context.Context,
 	route *models.MPRoute,
 	locationDrying *models.RockDryingStatus,
 	profile *models.BoulderDryingProfile,
 	locationTreeCoverage float64,
+	hourlyForecast []models.WeatherData,
 ) (*BoulderDryingStatus, error) {
 	status := &BoulderDryingStatus{
 		MPRouteID:         route.MPRouteID,
@@ -82,35 +95,22 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 		log.Printf("Warning: Route %s missing aspect, defaulting to South", route.MPRouteID)
 	}
 
-	// Get tree coverage (from profile cache or fetch new)
+	// Get tree coverage (from profile cache ONLY - never fetch during request)
+	// Tree coverage should be pre-populated by background job
 	if profile != nil && profile.TreeCoveragePercent != nil {
 		status.TreeCoveragePercent = *profile.TreeCoveragePercent
-	} else if status.Latitude != 0 && status.Longitude != 0 {
-		// Fetch tree coverage from satellite data (with location default as fallback)
-		treeCoverage, err := c.treeClient.GetTreeCoverageWithDefault(ctx, status.Latitude, status.Longitude, locationTreeCoverage)
-		if err != nil {
-			log.Printf("Warning: Failed to fetch tree coverage for %s: %v", route.MPRouteID, err)
-			// Fall back to location-level tree coverage if API fails
-			if locationTreeCoverage > 0 {
-				status.TreeCoveragePercent = locationTreeCoverage
-			} else {
-				status.TreeCoveragePercent = 30.0 // Ultimate fallback
-				status.ConfidenceScore -= 15
-			}
-		} else {
-			status.TreeCoveragePercent = treeCoverage
-		}
 	} else {
-		// No GPS coordinates - use location tree coverage
+		// Use location-level tree coverage as fallback (never call external API during request)
 		if locationTreeCoverage > 0 {
 			status.TreeCoveragePercent = locationTreeCoverage
 		} else {
-			status.TreeCoveragePercent = 30.0 // Default
+			status.TreeCoveragePercent = 30.0 // Default if no location data
 			status.ConfidenceScore -= 15
 		}
 	}
 
-	// Get sun exposure hours (cached or calculate)
+	// Get sun exposure hours (always calculate fresh - takes milliseconds)
+	sunStart := time.Now()
 	if status.Latitude != 0 && status.Longitude != 0 {
 		sunHours, err := c.calculateSunExposure(ctx, status.Latitude, status.Longitude, status.Aspect, status.TreeCoveragePercent, profile)
 		if err != nil {
@@ -126,16 +126,23 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 		status.SunExposureHours = c.estimateSunExposureFromAspect(status.Aspect)
 		status.ConfidenceScore -= 25
 	}
+	sunTime := time.Since(sunStart)
+	if sunTime > 10*time.Millisecond {
+		log.Printf("[PERF]     Sun exposure calculation took %v (should be <10ms)", sunTime)
+	}
 
 	// Calculate boulder-specific drying time
 	status.HoursUntilDry = c.calculateBoulderDryingTime(locationDrying, status)
 
-	// Parse LastRainTimestamp string to time.Time
+	// Parse LastRainTimestamp string to time.Time (avoid zero time values)
 	if locationDrying.LastRainTimestamp != "" {
 		lastRain, err := time.Parse(time.RFC3339, locationDrying.LastRainTimestamp)
 		if err == nil {
-			status.LastRainTimestamp = lastRain
+			status.LastRainTimestamp = &lastRain
 		}
+	} else {
+		// If no last rain timestamp, set to nil (will be omitted from JSON)
+		status.LastRainTimestamp = nil
 	}
 
 	// Determine wet/safe/status
@@ -144,20 +151,22 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 	status.Status = c.determineDryingStatus(status)
 	status.Message = c.generateStatusMessage(status, locationDrying)
 
+	// Calculate 6-day forecast if hourly forecast provided
+	if len(hourlyForecast) > 0 {
+		forecastStart := time.Now()
+		status.Forecast = c.Calculate6DayForecast(status, hourlyForecast, status.HoursUntilDry)
+		forecastTime := time.Since(forecastStart)
+		if forecastTime > 50*time.Millisecond {
+			log.Printf("[PERF]     6-day forecast calculation took %v (should be <50ms)", forecastTime)
+		}
+	}
+
 	return status, nil
 }
 
-// SunExposureCache stores cached sun exposure calculation
-type SunExposureCache struct {
-	Aspect              string    `json:"aspect"`
-	TreeCoverage        float64   `json:"tree_coverage"`
-	SunExposureHours    float64   `json:"sun_exposure_hours"`
-	CalculatedAt        time.Time `json:"calculated_at"`
-	ForecastStartDate   string    `json:"forecast_start_date"`
-}
-
 // calculateSunExposure computes hours of direct sun hitting the boulder over next 6 days
-// Uses cached sun position data if available, otherwise fetches from API
+// Always calculates fresh since sun exposure is time-dependent (next 6 days from NOW)
+// This is fast because it uses offline astronomical calculations (no API calls)
 func (c *Calculator) calculateSunExposure(
 	ctx context.Context,
 	lat, lon float64,
@@ -165,73 +174,12 @@ func (c *Calculator) calculateSunExposure(
 	treeCoverage float64,
 	profile *models.BoulderDryingProfile,
 ) (float64, error) {
-	// Check cache first (6-hour TTL)
-	if profile != nil && profile.LastSunCalcAt != nil && profile.SunExposureHoursCache != nil {
-		cacheAge := time.Since(*profile.LastSunCalcAt)
-		if cacheAge < 6*time.Hour {
-			// Parse cached sun exposure from JSONB (stored as string)
-			var cache SunExposureCache
-			if err := json.Unmarshal([]byte(*profile.SunExposureHoursCache), &cache); err == nil {
-				// Verify cache is still valid (same aspect and similar tree coverage)
-				if cache.Aspect == aspect && absFloat(cache.TreeCoverage-treeCoverage) < 5.0 {
-					log.Printf("Using cached sun exposure for boulder (age: %v): %.1f hours",
-						cacheAge.Round(time.Minute), cache.SunExposureHours)
-					return cache.SunExposureHours, nil
-				}
-			}
-		}
-	}
-
-	// Fetch sun position data for next 6 days
-	sunData, err := c.sunClient.GetSunPositionForecast(ctx, lat, lon, 6)
-	if err != nil {
-		return 0, fmt.Errorf("failed to fetch sun position data: %w", err)
-	}
-
-	// Calculate total sun exposure hours
-	totalSunHours := 0.0
-	aspectDegrees := AspectToDegrees(aspect)
-
-	for _, hourData := range sunData {
-		// Only count hours when sun is above horizon
-		if hourData.Elevation <= 0 {
-			continue
-		}
-
-		// Check if sun hits boulder face based on aspect
-		// Boulder receives sun when sun azimuth is within ±90° of aspect direction
-		azimuthDiff := angleDifference(hourData.Azimuth, aspectDegrees)
-		if azimuthDiff <= 90 {
-			// Apply tree coverage reduction
-			sunFactor := 1.0
-			if treeCoverage > 75 {
-				sunFactor = 0.3 // Heavy tree cover blocks 70% of sun
-			} else if treeCoverage > 50 {
-				sunFactor = 0.6 // Moderate tree cover blocks 40% of sun
-			} else if treeCoverage > 25 {
-				sunFactor = 0.8 // Light tree cover blocks 20% of sun
-			}
-
-			totalSunHours += sunFactor
-		}
-	}
-
-	log.Printf("Calculated sun exposure for boulder: %.1f hours over 6 days (aspect: %s, tree: %.0f%%)",
-		totalSunHours, aspect, treeCoverage)
+	// Calculate sun exposure using offline algorithm (fast - takes milliseconds)
+	// Calculate for next 6 days (144 hours) starting from NOW
+	startTime := time.Now()
+	totalSunHours := sun.CalculateSunExposure(lat, lon, aspect, treeCoverage, startTime, 144)
 
 	return totalSunHours, nil
-}
-
-// GetSunExposureCacheData returns the cache data to be saved (used by service layer)
-func (c *Calculator) GetSunExposureCacheData(aspect string, treeCoverage, sunExposureHours float64) ([]byte, error) {
-	cache := SunExposureCache{
-		Aspect:            aspect,
-		TreeCoverage:      treeCoverage,
-		SunExposureHours:  sunExposureHours,
-		CalculatedAt:      time.Now(),
-		ForecastStartDate: time.Now().Format("2006-01-02"),
-	}
-	return json.Marshal(cache)
 }
 
 // calculateBoulderDryingTime applies boulder-specific modifiers to location drying time
@@ -349,4 +297,129 @@ func angleDifference(angle1, angle2 float64) float64 {
 // absFloat returns the absolute value of a float64
 func absFloat(x float64) float64 {
 	return math.Abs(x)
+}
+
+// Calculate6DayForecast generates a 6-day forecast showing when the boulder will be dry/wet
+// based on future precipitation and drying times
+func (c *Calculator) Calculate6DayForecast(
+	status *BoulderDryingStatus,
+	hourlyForecast []models.WeatherData,
+	baseDryingHours float64, // Base drying time for location
+) []DryingForecastPeriod {
+	if len(hourlyForecast) == 0 {
+		return nil
+	}
+
+	var forecast []DryingForecastPeriod
+	now := time.Now()
+
+	// Track current wet/dry state
+	currentlyWet := status.IsWet
+	wetSince := now
+	if currentlyWet && status.LastRainTimestamp != nil && !status.LastRainTimestamp.IsZero() {
+		wetSince = *status.LastRainTimestamp
+	}
+
+	// Add initial period
+	if currentlyWet {
+		// Start with wet period
+		forecast = append(forecast, DryingForecastPeriod{
+			StartTime:     now,
+			IsDry:         false,
+			Status:        "wet",
+			RainAmount:    0.0, // Will accumulate as we process
+			HoursUntilDry: baseDryingHours,
+		})
+	} else {
+		// Start with dry period
+		forecast = append(forecast, DryingForecastPeriod{
+			StartTime: now,
+			IsDry:     true,
+			Status:    "dry",
+		})
+	}
+
+	// Minimum rain threshold (inches) to consider it "wet"
+	const rainThreshold = 0.01
+
+	// Process hourly forecast
+	for i, hour := range hourlyForecast {
+		// Stop after 6 days (144 hours)
+		if hour.Timestamp.Sub(now).Hours() > 144 {
+			break
+		}
+
+		// Check if this hour has significant rain
+		hasRain := hour.Precipitation >= rainThreshold
+
+		// State transitions
+		if !currentlyWet && hasRain {
+			// Transition: dry -> wet
+			// Close previous dry period
+			forecast[len(forecast)-1].EndTime = hour.Timestamp
+
+			// Start new wet period
+			currentlyWet = true
+			wetSince = hour.Timestamp
+			forecast = append(forecast, DryingForecastPeriod{
+				StartTime:  hour.Timestamp,
+				IsDry:      false,
+				Status:     "wet",
+				RainAmount: hour.Precipitation,
+			})
+		} else if currentlyWet {
+			// Currently wet - check if more rain or drying
+			if hasRain {
+				// More rain - accumulate and reset drying clock
+				forecast[len(forecast)-1].RainAmount += hour.Precipitation
+				wetSince = hour.Timestamp // Reset drying clock
+			}
+
+			// Calculate hours since last rain
+			hoursSinceRain := hour.Timestamp.Sub(wetSince).Hours()
+
+			// Calculate drying time including extra time for heavy rain
+			currentRain := forecast[len(forecast)-1].RainAmount
+			dryingTime := baseDryingHours
+			if currentRain > 0.5 {
+				// Significant rain - add extra drying time: 12h per inch over 0.5"
+				dryingTime += (currentRain - 0.5) * 12
+			}
+
+			if hoursSinceRain >= dryingTime {
+				// Transition: wet -> dry
+				dryTime := wetSince.Add(time.Duration(dryingTime) * time.Hour)
+				forecast[len(forecast)-1].EndTime = dryTime
+				forecast[len(forecast)-1].HoursUntilDry = 0
+
+				// Start new dry period
+				currentlyWet = false
+				forecast = append(forecast, DryingForecastPeriod{
+					StartTime: dryTime,
+					IsDry:     true,
+					Status:    "dry",
+				})
+			} else {
+				// Still wet - update hours until dry and status
+				forecast[len(forecast)-1].HoursUntilDry = dryingTime - hoursSinceRain
+
+				// Determine status based on progress
+				progress := hoursSinceRain / dryingTime
+				if progress > 0.5 {
+					forecast[len(forecast)-1].Status = "drying"
+				} else {
+					forecast[len(forecast)-1].Status = "wet"
+				}
+			}
+		}
+
+		// If last hour, close final period
+		if i == len(hourlyForecast)-1 {
+			if forecast[len(forecast)-1].EndTime.IsZero() {
+				forecast[len(forecast)-1].EndTime = hour.Timestamp.Add(6 * 24 * time.Hour)
+			}
+		}
+	}
+
+	return forecast
 }

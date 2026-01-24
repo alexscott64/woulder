@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/gin-gonic/gin"
@@ -309,6 +310,46 @@ func (h *Handler) SearchRoutesInLocation(c *gin.Context) {
 }
 
 
+// GetBatchBoulderDryingStatus calculates boulder-specific drying status for multiple routes
+// GET /api/climbs/routes/batch-drying-status?route_ids=id1,id2,id3
+func (h *Handler) GetBatchBoulderDryingStatus(c *gin.Context) {
+	// Parse route IDs from query parameter
+	routeIDsStr := c.Query("route_ids")
+	if routeIDsStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "route_ids query parameter is required"})
+		return
+	}
+
+	// Split comma-separated route IDs
+	routeIDs := []string{}
+	for _, id := range strings.Split(routeIDsStr, ",") {
+		trimmed := strings.TrimSpace(id)
+		if trimmed != "" {
+			routeIDs = append(routeIDs, trimmed)
+		}
+	}
+
+	if len(routeIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one route ID is required"})
+		return
+	}
+
+	// Limit batch size to prevent abuse
+	if len(routeIDs) > 200 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Maximum 200 route IDs allowed per batch request"})
+		return
+	}
+
+	// Calculate boulder drying statuses in batch
+	statuses, err := h.boulderDryingService.GetBatchBoulderDryingStatus(c.Request.Context(), routeIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to calculate boulder drying statuses", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, statuses)
+}
+
 // GetBoulderDryingStatus calculates boulder-specific drying status
 // GET /api/climbs/routes/:route_id/drying-status
 func (h *Handler) GetBoulderDryingStatus(c *gin.Context) {
@@ -327,5 +368,87 @@ func (h *Handler) GetBoulderDryingStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, status)
+}
+
+// GetAreaDryingStats calculates aggregated drying statistics for an area
+// GET /api/climbs/location/:id/areas/:area_id/drying-stats
+func (h *Handler) GetAreaDryingStats(c *gin.Context) {
+	// Parse location ID from URL
+	locationIDStr := c.Param("id")
+	locationID, err := strconv.Atoi(locationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		return
+	}
+
+	// Parse area ID from URL
+	areaID := c.Param("area_id")
+	if areaID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Area ID is required"})
+		return
+	}
+
+	// Calculate area drying stats
+	stats, err := h.boulderDryingService.GetAreaDryingStats(c.Request.Context(), areaID, locationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to calculate area drying stats", "details": err.Error()})
+		return
+	}
+
+	// Return null if no routes with GPS data
+	if stats == nil {
+		c.JSON(http.StatusOK, gin.H{"message": "No routes with GPS data found for this area"})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
+}
+
+// GetBatchAreaDryingStats calculates drying statistics for multiple areas in a single call
+// GET /api/climbs/location/:id/batch-area-drying-stats?area_ids=id1,id2,id3
+func (h *Handler) GetBatchAreaDryingStats(c *gin.Context) {
+	// Parse location ID from URL
+	locationIDStr := c.Param("id")
+	locationID, err := strconv.Atoi(locationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		return
+	}
+
+	// Parse area IDs from query parameter
+	areaIDsStr := c.Query("area_ids")
+	if areaIDsStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "area_ids query parameter is required"})
+		return
+	}
+
+	// Split comma-separated area IDs
+	areaIDs := []string{}
+	for _, id := range strings.Split(areaIDsStr, ",") {
+		trimmed := strings.TrimSpace(id)
+		if trimmed != "" {
+			areaIDs = append(areaIDs, trimmed)
+		}
+	}
+
+	if len(areaIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one area ID is required"})
+		return
+	}
+
+	// Limit batch size to prevent abuse
+	if len(areaIDs) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Maximum 100 area IDs allowed per batch request"})
+		return
+	}
+
+	// Calculate area drying stats in batch
+	stats, err := h.boulderDryingService.GetBatchAreaDryingStats(c.Request.Context(), areaIDs, locationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to calculate batch area drying stats", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
 }
 
