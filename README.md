@@ -20,9 +20,9 @@ Track comprehensive climbing conditions including weather, river crossings, pest
 - **Geographic Areas** - Pacific Northwest (9 locations) and Southern California (4 locations)
 - **Real-time Weather** - Temperature, precipitation, wind, humidity, cloud cover
 - **Intelligent Condition Analysis** - Multi-factor climbing suitability assessment
-- **16-Day Forecast** - Extended hourly forecasts with daily summaries
+- **6-Day Forecast** - Extended hourly forecasts with daily summaries
 - **Sunrise/Sunset Times** - Daily solar data for each location
-- **Historical Weather** - Past 14 days for trend analysis
+- **16-Day Historical Data** - Past weather for trend analysis
 
 ### Advanced Condition Monitoring
 
@@ -33,6 +33,15 @@ Track comprehensive climbing conditions including weather, river crossings, pest
 - **Time-Weighted Drying** - Realistic estimates based on actual conditions
 - **Confidence Scoring** - 0-100% confidence in predictions
 - **Critical Override** - Wet-sensitive rock status automatically sets "DO NOT CLIMB"
+
+#### Boulder-Specific Drying
+- **Individual Boulder Analysis** - Precise drying estimates for specific problems
+- **Aspect-Based Calculations** - North/South/East/West facing adjustments
+- **Sun Exposure Tracking** - Hours of direct sunlight over next 6 days
+- **Tree Coverage Impact** - Adjusts drying time based on canopy coverage
+- **6-Day Drying Forecast** - Visual timeline showing wet/drying/dry periods
+- **Recent Activity Tracking** - See recent ascents and climber feedback
+- **Batch API Endpoints** - Efficient fetching for multiple boulders
 
 #### River Crossing Safety
 - **Real-time Flow Data** - Live USGS stream gauge readings
@@ -157,6 +166,8 @@ npm run test:coverage   # Generate coverage report
 - `frontend/src/components/weather/__tests__/` - Weather display components
 - `frontend/src/services/__tests__/` - API client tests
 - `backend/internal/weather/rock_drying/*_test.go` - Rock drying tests
+- `backend/internal/weather/boulder_drying/*_test.go` - Boulder drying tests
+- `backend/internal/service/*_test.go` - Service layer tests
 - `backend/internal/pests/analyzer_test.go` - Pest analyzer tests
 - `backend/internal/weather/conditions_test.go` - Condition tests
 
@@ -192,6 +203,18 @@ curl http://localhost:8080/api/weather/1
 
 # River data for location
 curl http://localhost:8080/api/rivers/location/1
+
+# Boulder drying status for route
+curl http://localhost:8080/api/boulder-drying/123456789
+
+# Batch boulder drying status
+curl "http://localhost:8080/api/boulder-drying/batch?ids=123456789,987654321"
+
+# Area boulder statistics
+curl http://localhost:8080/api/boulder-drying/area/1/stats
+
+# Batch area statistics
+curl "http://localhost:8080/api/boulder-drying/batch-area-stats?location_ids=1,2,3"
 ```
 
 ---
@@ -246,6 +269,15 @@ curl http://localhost:8080/api/rivers/location/1
 | GET | `/api/rivers/location/:id` | River crossing data for location |
 | GET | `/api/rivers/:id` | Specific river crossing data |
 
+### Boulder Drying Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/boulder-drying/:mp_route_id` | Boulder drying status for specific route |
+| GET | `/api/boulder-drying/batch?ids=X,Y,Z` | Batch boulder drying status (efficient) |
+| GET | `/api/boulder-drying/area/:location_id/stats` | Area-wide boulder drying statistics |
+| GET | `/api/boulder-drying/batch-area-stats?location_ids=X,Y,Z` | Batch area statistics (efficient) |
+
 ---
 
 ## Project Structure
@@ -281,7 +313,13 @@ woulder/
 │   │   │   │   ├── confidence.go # Confidence scoring
 │   │   │   │   ├── snow_melt_test.go # Comprehensive tests
 │   │   │   │   └── README.md     # Module documentation
+│   │   │   ├── boulder_drying/   # Boulder-specific drying module
+│   │   │   │   ├── calculator.go # Boulder drying calculations
+│   │   │   │   └── calculator_test.go # Boulder tests
 │   │   │   └── conditions.go     # Climbing condition analysis
+│   │   ├── service/              # Business logic services
+│   │   │   ├── weather_service.go    # Weather orchestration
+│   │   │   └── boulder_drying_service.go # Boulder drying service
 │   │   ├── pests/                # Pest activity domain
 │   │   │   ├── analyzer.go       # Pest condition analyzer
 │   │   │   └── analyzer_test.go  # Pest analyzer tests
@@ -299,7 +337,9 @@ woulder/
 │   │   │   ├── AreaSelector.tsx  # Area filtering component
 │   │   │   ├── SettingsModal.tsx # User settings
 │   │   │   ├── RiverInfoModal.tsx    # River crossing details
-│   │   │   └── PestInfoModal.tsx     # Pest activity details
+│   │   │   ├── PestInfoModal.tsx     # Pest activity details
+│   │   │   ├── RouteListItem.tsx     # Boulder/route display item
+│   │   │   └── DryingForecastTimeline.tsx # 6-day drying forecast visualization
 │   │   ├── components/pests/     # Pest UI components
 │   │   │   ├── pestDisplay.ts    # Pest UI helpers
 │   │   │   └── __tests__/        # Pest display tests
@@ -514,11 +554,11 @@ VITE_API_URL=http://localhost:8080
 - [x] Auto-refresh with React Query
 
 ### Phase 2: Intelligence Features ✅
-- [x] 16-day hourly forecast view
+- [x] 6-day hourly forecast view
 - [x] River crossing safety (USGS data)
 - [x] Pest activity forecasts (mosquitoes, outdoor pests)
 - [x] Snow accumulation tracking (SWE model)
-- [x] Historical weather data (14 days)
+- [x] 16-day historical weather data
 - [x] Dark mode with persistence
 - [x] Comprehensive test suite (40+ frontend, comprehensive backend)
 - [x] Scientific documentation (58+ pages)
@@ -526,7 +566,17 @@ VITE_API_URL=http://localhost:8080
 - [x] Modular backend architecture (rock_drying module)
 - [x] Critical safety overrides for wet-sensitive rocks
 
-### Phase 3: Enhanced Experience 🚧
+### Phase 3: Boulder Intelligence ✅
+- [x] Individual boulder drying status API
+- [x] Aspect-based drying calculations (N/S/E/W facing)
+- [x] Sun exposure tracking (6-day forecast)
+- [x] Tree coverage impact on drying time
+- [x] 6-day boulder drying forecast timeline
+- [x] Recent activity tracking for routes
+- [x] Batch API endpoints for efficient boulder fetching
+- [x] Consolidated forecast periods (prevents UI clutter)
+
+### Phase 4: Enhanced Experience 🚧
 - [x] Geographic area filtering
 - [x] Comprehensive conditions modal (Today, Rock, Rivers, Pests)
 - [x] Mobile-optimized UI (no horizontal scrolling)
@@ -534,7 +584,7 @@ VITE_API_URL=http://localhost:8080
 - [ ] PWA with install prompt
 - [ ] Push notifications for alerts
 
-### Phase 4: Advanced Features 🔮
+### Phase 5: Advanced Features 🔮
 - [ ] Temperature/speed unit preferences (F/C, mph/km/h)
 - [ ] User-created custom areas
 - [ ] Location search with autocomplete
