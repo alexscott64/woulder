@@ -50,19 +50,6 @@ export const DryingForecastTimeline: React.FC<DryingForecastTimelineProps> = ({
     }
   };
 
-  const getStatusDotColor = (status: string): string => {
-    switch (status) {
-      case 'dry':
-        return 'bg-emerald-500';
-      case 'drying':
-        return 'bg-amber-500';
-      case 'wet':
-        return 'bg-rose-500';
-      default:
-        return 'bg-gray-400';
-    }
-  };
-
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'dry':
@@ -89,15 +76,6 @@ export const DryingForecastTimeline: React.FC<DryingForecastTimelineProps> = ({
     } else {
       return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     }
-  };
-
-  const formatDuration = (hours: number): string => {
-    if (hours < 24) {
-      return `${Math.round(hours)}h`;
-    }
-    const days = Math.floor(hours / 24);
-    const remainingHours = Math.round(hours % 24);
-    return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
   };
 
   // Find wet/drying periods for markers
