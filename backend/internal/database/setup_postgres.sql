@@ -247,6 +247,121 @@ COMMENT ON COLUMN woulder.location_sun_exposure.overhang_percent IS 'Percentage 
 COMMENT ON COLUMN woulder.location_sun_exposure.tree_coverage_percent IS 'Percentage of climbing area shaded by trees (reduces drying speed)';
 
 -- ============================================================================
+-- MOUNTAIN PROJECT TRACKING TABLES
+-- ============================================================================
+-- These tables support Mountain Project API integration for climb activity tracking
+-- Added via migrations 000007 and 000008
+
+-- Mountain Project Areas
+-- Stores hierarchical area data from Mountain Project (supports multiple root areas per location)
+CREATE TABLE IF NOT EXISTS woulder.mp_areas (
+    id SERIAL PRIMARY KEY,
+    mp_area_id VARCHAR(50) UNIQUE NOT NULL,           -- Mountain Project area ID
+    name VARCHAR(255) NOT NULL,
+    parent_mp_area_id VARCHAR(50),                    -- For hierarchy (null = root area)
+    area_type VARCHAR(50),                            -- "area" or terminal type
+    location_id INTEGER REFERENCES woulder.locations(id) ON DELETE SET NULL,
+    latitude DECIMAL(10, 7),                          -- GPS coordinates
+    longitude DECIMAL(10, 7),
+    last_synced_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for mp_areas
+CREATE INDEX IF NOT EXISTS idx_mp_areas_mp_area_id ON woulder.mp_areas(mp_area_id);
+CREATE INDEX IF NOT EXISTS idx_mp_areas_location_id ON woulder.mp_areas(location_id);
+CREATE INDEX IF NOT EXISTS idx_mp_areas_parent ON woulder.mp_areas(parent_mp_area_id);
+CREATE INDEX IF NOT EXISTS idx_mp_areas_lat_lon ON woulder.mp_areas(latitude, longitude);
+
+-- Mountain Project Routes (Boulders)
+-- Stores individual boulder problems from Mountain Project
+CREATE TABLE IF NOT EXISTS woulder.mp_routes (
+    id SERIAL PRIMARY KEY,
+    mp_route_id VARCHAR(50) UNIQUE NOT NULL,          -- Mountain Project route ID
+    mp_area_id VARCHAR(50) REFERENCES woulder.mp_areas(mp_area_id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    route_type VARCHAR(100),                          -- "Boulder", "Trad", etc.
+    rating VARCHAR(50),                               -- "V4", "5.10a", etc.
+    location_id INTEGER REFERENCES woulder.locations(id) ON DELETE SET NULL,
+    latitude DECIMAL(10, 7),                          -- GPS coordinates
+    longitude DECIMAL(10, 7),
+    aspect VARCHAR(20),                               -- Cardinal direction: N, NE, E, SE, S, SW, W, NW
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for mp_routes
+CREATE INDEX IF NOT EXISTS idx_mp_routes_mp_route_id ON woulder.mp_routes(mp_route_id);
+CREATE INDEX IF NOT EXISTS idx_mp_routes_location_id ON woulder.mp_routes(location_id);
+CREATE INDEX IF NOT EXISTS idx_mp_routes_area ON woulder.mp_routes(mp_area_id);
+CREATE INDEX IF NOT EXISTS idx_mp_routes_lat_lon ON woulder.mp_routes(latitude, longitude);
+
+-- Mountain Project Ticks (Climb Activity)
+-- Stores individual climb logs (ticks) from Mountain Project users
+CREATE TABLE IF NOT EXISTS woulder.mp_ticks (
+    id SERIAL PRIMARY KEY,
+    mp_route_id VARCHAR(50) REFERENCES woulder.mp_routes(mp_route_id) ON DELETE CASCADE,
+    user_name VARCHAR(255),
+    climbed_at TIMESTAMPTZ NOT NULL,
+    style VARCHAR(50),                                -- "Lead", "Flash", "Send", etc.
+    comment TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for mp_ticks
+CREATE INDEX IF NOT EXISTS idx_mp_ticks_route ON woulder.mp_ticks(mp_route_id);
+CREATE INDEX IF NOT EXISTS idx_mp_ticks_climbed_at ON woulder.mp_ticks(climbed_at DESC);
+-- Unique constraint to prevent duplicate ticks (same route, user, timestamp)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mp_ticks_unique ON woulder.mp_ticks(mp_route_id, user_name, climbed_at);
+
+-- Boulder Drying Profiles
+-- Stores boulder-specific drying metadata (tree cover, rock type overrides, cached sun data)
+CREATE TABLE IF NOT EXISTS woulder.boulder_drying_profiles (
+    id SERIAL PRIMARY KEY,
+    mp_route_id VARCHAR(50) UNIQUE NOT NULL REFERENCES woulder.mp_routes(mp_route_id) ON DELETE CASCADE,
+    tree_coverage_percent DECIMAL(5, 2) CHECK (tree_coverage_percent >= 0 AND tree_coverage_percent <= 100),
+    rock_type_override VARCHAR(100),                  -- Optional boulder-specific rock type
+    last_sun_calc_at TIMESTAMPTZ,                     -- Last time sun exposure was calculated
+    sun_exposure_hours_cache JSONB,                   -- Cache of sun hours by date
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for boulder_drying_profiles
+CREATE INDEX IF NOT EXISTS idx_boulder_drying_mp_route_id ON woulder.boulder_drying_profiles(mp_route_id);
+CREATE INDEX IF NOT EXISTS idx_boulder_drying_last_sun_calc ON woulder.boulder_drying_profiles(last_sun_calc_at);
+
+-- Add auto-update triggers for Mountain Project tables
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_mp_areas_updated_at') THEN
+        CREATE TRIGGER update_mp_areas_updated_at BEFORE UPDATE ON woulder.mp_areas
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_mp_routes_updated_at') THEN
+        CREATE TRIGGER update_mp_routes_updated_at BEFORE UPDATE ON woulder.mp_routes
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_mp_ticks_updated_at') THEN
+        CREATE TRIGGER update_mp_ticks_updated_at BEFORE UPDATE ON woulder.mp_ticks
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_boulder_drying_profiles_updated_at') THEN
+        CREATE TRIGGER update_boulder_drying_profiles_updated_at BEFORE UPDATE ON woulder.boulder_drying_profiles
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END $$;
+
+-- Comments on Mountain Project columns
+COMMENT ON COLUMN woulder.mp_areas.parent_mp_area_id IS 'Parent area ID for hierarchy. NULL means root area. Locations can have multiple root areas (e.g., Squamish has 5 boulder areas).';
+COMMENT ON COLUMN woulder.mp_routes.aspect IS 'Cardinal direction boulder faces (calculated from position in circular distribution): N, NE, E, SE, S, SW, W, NW';
+COMMENT ON TABLE woulder.mp_ticks IS 'Climb activity logs from Mountain Project. Filtered to exclude future-dated ticks (>24h ahead) and year-offset data quality issues.';
+
+-- ============================================================================
 -- SEED DATA
 -- ============================================================================
 
@@ -660,16 +775,23 @@ BEGIN
     RAISE NOTICE '========================================';
     RAISE NOTICE 'Woulder Database Setup Complete!';
     RAISE NOTICE '========================================';
-    RAISE NOTICE 'Areas created: %', area_count;
-    RAISE NOTICE 'Locations created: %', location_count;
-    RAISE NOTICE 'Rivers created: %', river_count;
-    RAISE NOTICE 'Rock type groups created: %', rock_group_count;
-    RAISE NOTICE 'Rock types created: %', rock_type_count;
-    RAISE NOTICE 'Location-rock type associations: %', location_rock_type_count;
-    RAISE NOTICE 'Sun exposure profiles: %', sun_exposure_count;
-    RAISE NOTICE 'Locations with seepage risk: %', seepage_locations;
+    RAISE NOTICE 'Core Data:';
+    RAISE NOTICE '  Areas created: %', area_count;
+    RAISE NOTICE '  Locations created: %', location_count;
+    RAISE NOTICE '  Rivers created: %', river_count;
+    RAISE NOTICE '  Rock type groups created: %', rock_group_count;
+    RAISE NOTICE '  Rock types created: %', rock_type_count;
+    RAISE NOTICE '  Location-rock type associations: %', location_rock_type_count;
+    RAISE NOTICE '  Sun exposure profiles: %', sun_exposure_count;
+    RAISE NOTICE '  Locations with seepage risk: %', seepage_locations;
     RAISE NOTICE '';
     RAISE NOTICE 'Schema: woulder';
-    RAISE NOTICE 'Tables: areas, locations, weather_data, rivers, rock_type_groups, rock_types, location_rock_types, location_sun_exposure';
+    RAISE NOTICE 'Core Tables: areas, locations, weather_data, rivers, rock_type_groups, rock_types, location_rock_types, location_sun_exposure';
+    RAISE NOTICE 'Mountain Project Tables: mp_areas, mp_routes, mp_ticks, boulder_drying_profiles';
+    RAISE NOTICE '';
+    RAISE NOTICE 'Next Steps:';
+    RAISE NOTICE '  1. Run Mountain Project sync: cd backend/cmd/sync_climbs && go run main.go';
+    RAISE NOTICE '  2. Areas will be populated with boulder problems and activity data';
+    RAISE NOTICE '  3. Multi-root area support enabled (e.g., Squamish has 5 separate boulder areas)';
     RAISE NOTICE '========================================';
 END $$;

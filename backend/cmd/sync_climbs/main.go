@@ -71,7 +71,13 @@ func main() {
 		{
 			LocationName: "Squamish",
 			LocationID:   6,
-			MPAreaIDs:    []string{"110937821", "105808584", "105805895", "121199811"},
+			// Stawamus Chief boulder areas (from within 105805895):
+			//   - Grand Wall Boulders (112842712)
+			//   - North Wall Boulders (108506197)
+			//   - Apron Boulders (106025685)
+			// Paradise Valley Boulders (110937821) - contains sub-areas
+			// Powerline Boulders (121199811)
+			MPAreaIDs:    []string{"112842712", "108506197", "106025685", "110937821", "121199811"},
 		},
 		{
 			LocationName: "Skykomish - Paradise",

@@ -26,17 +26,21 @@ func (db *Database) GetAreasOrderedByActivity(ctx context.Context, locationID in
 				t.climbed_at <= NOW() + INTERVAL '30 days'
 				AND t.climbed_at >= NOW() - INTERVAL '2 years'
 		),
-		root_area AS (
+		root_areas AS (
 			SELECT mp_area_id
 			FROM woulder.mp_areas
 			WHERE location_id = $1 AND parent_mp_area_id IS NULL
-			LIMIT 1
 		),
 		top_level_areas AS (
+			-- If there's a single root area, show its children
+			-- If there are multiple root areas, show them directly
 			SELECT mp_area_id, name, parent_mp_area_id
 			FROM woulder.mp_areas
 			WHERE location_id = $1
-			  AND parent_mp_area_id IN (SELECT mp_area_id FROM root_area)
+			  AND (
+				(parent_mp_area_id IN (SELECT mp_area_id FROM root_areas) AND (SELECT COUNT(*) FROM root_areas) = 1)
+				OR (parent_mp_area_id IS NULL AND (SELECT COUNT(*) FROM root_areas) > 1)
+			  )
 		),
 		area_tree AS (
 			-- Start with top-level areas
