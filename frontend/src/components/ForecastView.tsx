@@ -292,7 +292,11 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
   // Create a map of sun times by date for quick lookup
   const sunTimesByDate = new Map<string, DailySunTimes>();
   if (dailySunTimes) {
-    dailySunTimes.forEach(st => sunTimesByDate.set(st.date, st));
+    dailySunTimes.forEach(st => {
+      // Ensure consistent date format (YYYY-MM-DD) - strip any time component or timezone
+      const normalizedDate = st.date.split('T')[0];
+      sunTimesByDate.set(normalizedDate, st);
+    });
   }
 
   // Use Pacific timezone to get today's date (must match WeatherCard logic)
@@ -529,8 +533,9 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
     // Get snow depth for this day (end of day depth)
     const snowDepth = snowDepthByDay.get(dateKey) || 0;
 
-    // Get sun times for this day
-    const daySunTimes = sunTimesByDate.get(dateKey);
+    // Get sun times for this day (normalize dateKey to match map keys)
+    const normalizedDateKey = dateKey.split('T')[0];
+    const daySunTimes = sunTimesByDate.get(normalizedDateKey);
     const sunrise = daySunTimes?.sunrise;
     const sunset = daySunTimes?.sunset;
     const daylightHours = calculateDaylightHours(sunrise, sunset);

@@ -68,9 +68,13 @@ type openMeteoResponse struct {
 		PressureBM            []float64 `json:"surface_pressure_best_match"`
 	} `json:"hourly"`
 	Daily *struct {
-		Time    []string `json:"time"`
-		Sunrise []string `json:"sunrise"`
-		Sunset  []string `json:"sunset"`
+		Time              []string `json:"time"`
+		Sunrise           []string `json:"sunrise"`
+		Sunset            []string `json:"sunset"`
+		SunriseNAM        []string `json:"sunrise_ncep_nam_conus"`
+		SunsetNAM         []string `json:"sunset_ncep_nam_conus"`
+		SunriseBestMatch  []string `json:"sunrise_best_match"`
+		SunsetBestMatch   []string `json:"sunset_best_match"`
 	} `json:"daily"`
 }
 
@@ -279,19 +283,36 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 	temp, feelsLike, humidity, cloudCover, windDir, weatherCode, windSpeed, pressure := data.getHourlyData()
 
 	// Extract sunrise/sunset for all days
+	// Use best_match model for sun times (more reliable than NAM CONUS)
 	var sunTimes *SunTimes
-	if data.Daily != nil && len(data.Daily.Sunrise) > 0 && len(data.Daily.Sunset) > 0 {
-		sunTimes = &SunTimes{
-			Sunrise: data.Daily.Sunrise[0],
-			Sunset:  data.Daily.Sunset[0],
+	if data.Daily != nil {
+		var sunriseData, sunsetData []string
+
+		// Select which model's sun data to use (prefer best_match, fallback to NAM, then regular fields)
+		if len(data.Daily.SunriseBestMatch) > 0 && len(data.Daily.SunsetBestMatch) > 0 {
+			sunriseData = data.Daily.SunriseBestMatch
+			sunsetData = data.Daily.SunsetBestMatch
+		} else if len(data.Daily.SunriseNAM) > 0 && len(data.Daily.SunsetNAM) > 0 {
+			sunriseData = data.Daily.SunriseNAM
+			sunsetData = data.Daily.SunsetNAM
+		} else if len(data.Daily.Sunrise) > 0 && len(data.Daily.Sunset) > 0 {
+			sunriseData = data.Daily.Sunrise
+			sunsetData = data.Daily.Sunset
 		}
-		// Build daily sun times array
-		for i := 0; i < len(data.Daily.Time) && i < len(data.Daily.Sunrise) && i < len(data.Daily.Sunset); i++ {
-			sunTimes.Daily = append(sunTimes.Daily, DailySunTime{
-				Date:    data.Daily.Time[i],
-				Sunrise: data.Daily.Sunrise[i],
-				Sunset:  data.Daily.Sunset[i],
-			})
+
+		if len(sunriseData) > 0 && len(sunsetData) > 0 {
+			sunTimes = &SunTimes{
+				Sunrise: sunriseData[0],
+				Sunset:  sunsetData[0],
+			}
+			// Build daily sun times array
+			for i := 0; i < len(data.Daily.Time) && i < len(sunriseData) && i < len(sunsetData); i++ {
+				sunTimes.Daily = append(sunTimes.Daily, DailySunTime{
+					Date:    data.Daily.Time[i],
+					Sunrise: sunriseData[i],
+					Sunset:  sunsetData[i],
+				})
+			}
 		}
 	}
 
@@ -584,11 +605,32 @@ func isNightTime(timeStr, sunrise, sunset string) bool {
 
 // isNightTimeForForecast checks if a forecast hour is night time using the daily sunrise/sunset data
 func isNightTimeForForecast(timeStr string, daily *struct {
-	Time    []string `json:"time"`
-	Sunrise []string `json:"sunrise"`
-	Sunset  []string `json:"sunset"`
+	Time              []string `json:"time"`
+	Sunrise           []string `json:"sunrise"`
+	Sunset            []string `json:"sunset"`
+	SunriseNAM        []string `json:"sunrise_ncep_nam_conus"`
+	SunsetNAM         []string `json:"sunset_ncep_nam_conus"`
+	SunriseBestMatch  []string `json:"sunrise_best_match"`
+	SunsetBestMatch   []string `json:"sunset_best_match"`
 }) bool {
 	if daily == nil || len(daily.Time) == 0 {
+		return false
+	}
+
+	// Select which model's sun data to use (prefer best_match, fallback to NAM, then regular fields)
+	var sunriseData, sunsetData []string
+	if len(daily.SunriseBestMatch) > 0 && len(daily.SunsetBestMatch) > 0 {
+		sunriseData = daily.SunriseBestMatch
+		sunsetData = daily.SunsetBestMatch
+	} else if len(daily.SunriseNAM) > 0 && len(daily.SunsetNAM) > 0 {
+		sunriseData = daily.SunriseNAM
+		sunsetData = daily.SunsetNAM
+	} else if len(daily.Sunrise) > 0 && len(daily.Sunset) > 0 {
+		sunriseData = daily.Sunrise
+		sunsetData = daily.Sunset
+	}
+
+	if len(sunriseData) == 0 || len(sunsetData) == 0 {
 		return false
 	}
 
@@ -603,14 +645,14 @@ func isNightTimeForForecast(timeStr string, daily *struct {
 
 	// Find matching day in daily data
 	for i, day := range daily.Time {
-		if day == dateStr && i < len(daily.Sunrise) && i < len(daily.Sunset) {
-			return isNightTime(timeStr, daily.Sunrise[i], daily.Sunset[i])
+		if day == dateStr && i < len(sunriseData) && i < len(sunsetData) {
+			return isNightTime(timeStr, sunriseData[i], sunsetData[i])
 		}
 	}
 
 	// If no match found, use first day's sunrise/sunset as approximation
-	if len(daily.Sunrise) > 0 && len(daily.Sunset) > 0 {
-		return isNightTime(timeStr, daily.Sunrise[0], daily.Sunset[0])
+	if len(sunriseData) > 0 && len(sunsetData) > 0 {
+		return isNightTime(timeStr, sunriseData[0], sunsetData[0])
 	}
 
 	return false
