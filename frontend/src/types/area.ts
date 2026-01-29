@@ -4,6 +4,7 @@ export interface Area {
   description?: string;
   region?: string;
   display_order: number;
+  is_active: boolean;
   location_count: number;
   created_at: string;
   updated_at: string;

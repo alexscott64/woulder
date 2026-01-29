@@ -8,12 +8,13 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
-// GetAllAreas retrieves all areas ordered by display order and name
+// GetAllAreas retrieves all active areas ordered by display order and name
 func (db *Database) GetAllAreas(ctx context.Context) ([]models.Area, error) {
 	query := `
 		SELECT id, name, description, region,
-		       display_order, created_at, updated_at
+		       display_order, is_active, created_at, updated_at
 		FROM woulder.areas
+		WHERE is_active = TRUE
 		ORDER BY display_order, name
 	`
 
@@ -28,7 +29,7 @@ func (db *Database) GetAllAreas(ctx context.Context) ([]models.Area, error) {
 		var a models.Area
 		if err := rows.Scan(
 			&a.ID, &a.Name, &a.Description,
-			&a.Region, &a.DisplayOrder,
+			&a.Region, &a.DisplayOrder, &a.IsActive,
 			&a.CreatedAt, &a.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -39,14 +40,15 @@ func (db *Database) GetAllAreas(ctx context.Context) ([]models.Area, error) {
 	return areas, nil
 }
 
-// GetAreasWithLocationCounts retrieves all areas with their location counts
+// GetAreasWithLocationCounts retrieves all active areas with their location counts
 func (db *Database) GetAreasWithLocationCounts(ctx context.Context) ([]models.AreaWithLocationCount, error) {
 	query := `
 		SELECT a.id, a.name, a.description, a.region,
-		       a.display_order, a.created_at, a.updated_at,
+		       a.display_order, a.is_active, a.created_at, a.updated_at,
 		       COUNT(l.id) AS location_count
 		FROM woulder.areas a
 		LEFT JOIN woulder.locations l ON l.area_id = a.id
+		WHERE a.is_active = TRUE
 		GROUP BY a.id
 		ORDER BY a.display_order, a.name
 	`
@@ -62,7 +64,7 @@ func (db *Database) GetAreasWithLocationCounts(ctx context.Context) ([]models.Ar
 		var a models.AreaWithLocationCount
 		if err := rows.Scan(
 			&a.ID, &a.Name, &a.Description,
-			&a.Region, &a.DisplayOrder,
+			&a.Region, &a.DisplayOrder, &a.IsActive,
 			&a.CreatedAt, &a.UpdatedAt,
 			&a.LocationCount,
 		); err != nil {
@@ -74,19 +76,19 @@ func (db *Database) GetAreasWithLocationCounts(ctx context.Context) ([]models.Ar
 	return areas, nil
 }
 
-// GetAreaByID retrieves a specific area by ID
+// GetAreaByID retrieves a specific active area by ID
 func (db *Database) GetAreaByID(ctx context.Context, id int) (*models.Area, error) {
 	query := `
 		SELECT id, name, description, region,
-		       display_order, created_at, updated_at
+		       display_order, is_active, created_at, updated_at
 		FROM woulder.areas
-		WHERE id = $1
+		WHERE id = $1 AND is_active = TRUE
 	`
 
 	var a models.Area
 	err := db.conn.QueryRowContext(ctx, query, id).Scan(
 		&a.ID, &a.Name, &a.Description,
-		&a.Region, &a.DisplayOrder,
+		&a.Region, &a.DisplayOrder, &a.IsActive,
 		&a.CreatedAt, &a.UpdatedAt,
 	)
 
