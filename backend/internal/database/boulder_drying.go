@@ -9,7 +9,7 @@ import (
 )
 
 // GetBoulderDryingProfile retrieves the drying profile for a specific boulder
-func (db *Database) GetBoulderDryingProfile(ctx context.Context, mpRouteID string) (*models.BoulderDryingProfile, error) {
+func (db *Database) GetBoulderDryingProfile(ctx context.Context, mpRouteID int64) (*models.BoulderDryingProfile, error) {
 	query := `
 		SELECT id, mp_route_id, tree_coverage_percent, rock_type_override,
 		       last_sun_calc_at, sun_exposure_hours_cache, created_at, updated_at
@@ -42,9 +42,9 @@ func (db *Database) GetBoulderDryingProfile(ctx context.Context, mpRouteID strin
 
 // GetBoulderDryingProfilesByRouteIDs retrieves multiple boulder drying profiles by route IDs in a single query
 // This is significantly faster than calling GetBoulderDryingProfile in a loop (eliminates N+1 problem)
-func (db *Database) GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.BoulderDryingProfile, error) {
+func (db *Database) GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.BoulderDryingProfile, error) {
 	if len(mpRouteIDs) == 0 {
-		return make(map[string]*models.BoulderDryingProfile), nil
+		return make(map[int64]*models.BoulderDryingProfile), nil
 	}
 
 	query := `
@@ -60,7 +60,7 @@ func (db *Database) GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRo
 	}
 	defer rows.Close()
 
-	profiles := make(map[string]*models.BoulderDryingProfile)
+	profiles := make(map[int64]*models.BoulderDryingProfile)
 	for rows.Next() {
 		var profile models.BoulderDryingProfile
 		err := rows.Scan(
@@ -114,7 +114,7 @@ func (db *Database) SaveBoulderDryingProfile(ctx context.Context, profile *model
 }
 
 // GetMPRouteByID retrieves a Mountain Project route by ID
-func (db *Database) GetMPRouteByID(ctx context.Context, mpRouteID string) (*models.MPRoute, error) {
+func (db *Database) GetMPRouteByID(ctx context.Context, mpRouteID int64) (*models.MPRoute, error) {
 	query := `
 		SELECT id, mp_route_id, mp_area_id, name, route_type, rating,
 		       location_id, latitude, longitude, aspect, created_at, updated_at
@@ -151,9 +151,9 @@ func (db *Database) GetMPRouteByID(ctx context.Context, mpRouteID string) (*mode
 
 // GetMPRoutesByIDs retrieves multiple Mountain Project routes by IDs in a single query
 // This is significantly faster than calling GetMPRouteByID in a loop (eliminates N+1 problem)
-func (db *Database) GetMPRoutesByIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.MPRoute, error) {
+func (db *Database) GetMPRoutesByIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.MPRoute, error) {
 	if len(mpRouteIDs) == 0 {
-		return make(map[string]*models.MPRoute), nil
+		return make(map[int64]*models.MPRoute), nil
 	}
 
 	query := `
@@ -169,7 +169,7 @@ func (db *Database) GetMPRoutesByIDs(ctx context.Context, mpRouteIDs []string) (
 	}
 	defer rows.Close()
 
-	routes := make(map[string]*models.MPRoute)
+	routes := make(map[int64]*models.MPRoute)
 	for rows.Next() {
 		var route models.MPRoute
 		err := rows.Scan(
@@ -231,7 +231,7 @@ func (db *Database) GetLocationByID(ctx context.Context, locationID int) (*model
 
 // GetRoutesWithGPSByArea retrieves all routes in an area that have GPS coordinates
 // This is used for calculating area-level drying statistics
-func (db *Database) GetRoutesWithGPSByArea(ctx context.Context, mpAreaID string) ([]*models.MPRoute, error) {
+func (db *Database) GetRoutesWithGPSByArea(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error) {
 	query := `
 		WITH RECURSIVE area_tree AS (
 			-- Start with the given area

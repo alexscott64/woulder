@@ -20,6 +20,8 @@ import (
 type MPClientInterface interface {
 	GetRouteTicks(routeID string) ([]mountainproject.Tick, error)
 	GetArea(areaID string) (*mountainproject.AreaResponse, error)
+	GetAreaComments(areaID string) ([]mountainproject.Comment, error)
+	GetRouteComments(routeID string) ([]mountainproject.Comment, error)
 }
 
 // Ensure real Client implements the interface
@@ -138,14 +140,22 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 			continue
 		}
 
-		// Convert area ID to string
+		// Convert area ID to string for API interactions
 		areaIDStr := strconv.Itoa(areaData.ID)
+
+		// Convert parent ID string to int64 if exists
+		var parentIDInt64 *int64
+		if item.parentID != nil {
+			if parentID, err := strconv.ParseInt(*item.parentID, 10, 64); err == nil {
+				parentIDInt64 = &parentID
+			}
+		}
 
 		// Save area to database
 		area := &models.MPArea{
-			MPAreaID:       areaIDStr,
+			MPAreaID:       int64(areaData.ID),
 			Name:           areaData.Title,
-			ParentMPAreaID: item.parentID,
+			ParentMPAreaID: parentIDInt64,
 			AreaType:       areaData.Type,
 			LocationID:     item.locationID,
 		}
@@ -168,8 +178,14 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 		areaCount++
 		log.Printf("Saved area: %s (%s) - Total areas: %d", areaData.Title, areaIDStr, areaCount)
 
+		// Sync area comments
+		if err := s.syncAreaComments(ctx, areaIDStr); err != nil {
+			log.Printf("Warning: failed to sync comments for area %s: %v", areaIDStr, err)
+			// Continue processing even if comment sync fails
+		}
+
 		// Collect boulder routes for GPS distribution
-		var boulderRoutes []string // Store route IDs for GPS calculation
+		var boulderRoutes []int64 // Store route IDs for GPS calculation
 
 		// Process children
 		for _, child := range areaData.Children {
@@ -183,7 +199,7 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 					parentID:   &item.mpAreaID,
 				})
 			} else {
-				// It's a route - check if it's a boulder route
+				// It's a route - check if it's a boulder route (for GPS calculation only)
 				isBoulder := false
 				for _, rt := range child.RouteTypes {
 					if strings.ToLower(rt) == "boulder" {
@@ -192,14 +208,17 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 					}
 				}
 
-				if !isBoulder {
-					continue // Skip non-boulder routes
+				// Convert area ID string to int64
+				areaIDInt64, err := strconv.ParseInt(item.mpAreaID, 10, 64)
+				if err != nil {
+					log.Printf("Error parsing area ID %s: %v", item.mpAreaID, err)
+					continue
 				}
 
-				// Save route (without GPS for now - will calculate after all routes are collected)
+				// Save route (all types: boulder, sport, trad, etc.)
 				route := &models.MPRoute{
-					MPRouteID:  childIDStr,
-					MPAreaID:   item.mpAreaID,
+					MPRouteID:  int64(child.ID),
+					MPAreaID:   areaIDInt64,
 					Name:       child.Title,
 					RouteType:  strings.Join(child.RouteTypes, ", "),
 					Rating:     "", // Rating not in children response, could fetch separately if needed
@@ -211,8 +230,10 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 					continue
 				}
 
-				// Add to boulder routes list for GPS calculation
-				boulderRoutes = append(boulderRoutes, childIDStr)
+				// Add to boulder routes list for GPS calculation (only boulders need GPS distribution)
+				if isBoulder {
+					boulderRoutes = append(boulderRoutes, int64(child.ID))
+				}
 
 				routeCount++
 				log.Printf("Saved route: %s (%s) - Total routes: %d", child.Title, childIDStr, routeCount)
@@ -221,6 +242,12 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 				if err := s.syncRouteTicks(ctx, childIDStr); err != nil {
 					log.Printf("Error syncing ticks for route %s: %v", childIDStr, err)
 					// Continue processing other routes even if tick sync fails
+				}
+
+				// Fetch and save comments for this route
+				if err := s.syncRouteComments(ctx, childIDStr); err != nil {
+					log.Printf("Warning: failed to sync comments for route %s: %v", childIDStr, err)
+					// Continue processing other routes even if comment sync fails
 				}
 			}
 		}
@@ -240,9 +267,15 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 
 // syncRouteTicks fetches and saves all ticks for a given route
 func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID string) error {
-	ticks, err := s.mpClient.GetRouteTicks(routeID)
+	// Convert route ID string to int64
+	routeIDInt64, err := strconv.ParseInt(routeID, 10, 64)
 	if err != nil {
-		return fmt.Errorf("failed to fetch ticks: %w", err)
+		return fmt.Errorf("invalid route ID %s: %w", routeID, err)
+	}
+
+	ticks, tickErr := s.mpClient.GetRouteTicks(routeID)
+	if tickErr != nil {
+		return fmt.Errorf("failed to fetch ticks: %w", tickErr)
 	}
 
 	// Load Pacific timezone (America/Los_Angeles) for Mountain Project dates
@@ -281,7 +314,7 @@ func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID strin
 		}
 
 		tickModel := &models.MPTick{
-			MPRouteID: routeID,
+			MPRouteID: routeIDInt64,
 			UserName:  tick.GetUserName(),
 			ClimbedAt: climbedAt,
 			Style:     tick.Style,
@@ -306,6 +339,70 @@ func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID strin
 
 	if tickCount > 0 {
 		log.Printf("Saved %d ticks for route %s", tickCount, routeID)
+	}
+
+	return nil
+}
+
+// syncAreaComments fetches and saves all comments for a given area
+func (s *ClimbTrackingService) syncAreaComments(ctx context.Context, areaID string) error {
+	comments, err := s.mpClient.GetAreaComments(areaID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch comments: %w", err)
+	}
+
+	// Convert area ID string to int64
+	areaIDInt64, err := strconv.ParseInt(areaID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid area ID %s: %w", areaID, err)
+	}
+
+	commentCount := 0
+	for _, comment := range comments {
+		commentedAt := time.Unix(comment.Created, 0)
+		userName := comment.GetUserInfo()
+
+		if err := s.repo.SaveAreaComment(ctx, int64(comment.ID), areaIDInt64, userName, comment.Message, commentedAt); err != nil {
+			log.Printf("Error saving area comment: %v", err)
+			continue
+		}
+		commentCount++
+	}
+
+	if commentCount > 0 {
+		log.Printf("Saved %d comments for area %s", commentCount, areaID)
+	}
+
+	return nil
+}
+
+// syncRouteComments fetches and saves all comments for a given route
+func (s *ClimbTrackingService) syncRouteComments(ctx context.Context, routeID string) error {
+	comments, err := s.mpClient.GetRouteComments(routeID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch comments: %w", err)
+	}
+
+	// Convert route ID string to int64
+	routeIDInt64, err := strconv.ParseInt(routeID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid route ID %s: %w", routeID, err)
+	}
+
+	commentCount := 0
+	for _, comment := range comments {
+		commentedAt := time.Unix(comment.Created, 0)
+		userName := comment.GetUserInfo()
+
+		if err := s.repo.SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, comment.Message, commentedAt); err != nil {
+			log.Printf("Error saving route comment: %v", err)
+			continue
+		}
+		commentCount++
+	}
+
+	if commentCount > 0 {
+		log.Printf("Saved %d comments for route %s", commentCount, routeID)
 	}
 
 	return nil
@@ -340,7 +437,7 @@ func (s *ClimbTrackingService) GetAreasOrderedByActivity(
 // GetSubareasOrderedByActivity retrieves subareas of a parent area ordered by recent climb activity
 func (s *ClimbTrackingService) GetSubareasOrderedByActivity(
 	ctx context.Context,
-	parentAreaID string,
+	parentAreaID int64,
 	locationID int,
 ) ([]models.AreaActivitySummary, error) {
 	return s.repo.GetSubareasOrderedByActivity(ctx, parentAreaID, locationID)
@@ -349,7 +446,7 @@ func (s *ClimbTrackingService) GetSubareasOrderedByActivity(
 // GetRoutesOrderedByActivity retrieves routes in an area ordered by recent climb activity
 func (s *ClimbTrackingService) GetRoutesOrderedByActivity(
 	ctx context.Context,
-	areaID string,
+	areaID int64,
 	locationID int,
 	limit int,
 ) ([]models.RouteActivitySummary, error) {
@@ -359,7 +456,7 @@ func (s *ClimbTrackingService) GetRoutesOrderedByActivity(
 // GetRecentTicksForRoute retrieves recent ticks for a specific route
 func (s *ClimbTrackingService) GetRecentTicksForRoute(
 	ctx context.Context,
-	routeID string,
+	routeID int64,
 	limit int,
 ) ([]models.ClimbHistoryEntry, error) {
 	return s.repo.GetRecentTicksForRoute(ctx, routeID, limit)
@@ -444,14 +541,15 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 		// Get the timestamp of the last tick we have for this route
 		lastTickTime, err := s.repo.GetLastTickTimestampForRoute(ctx, routeID)
 		if err != nil {
-			log.Printf("Error getting last tick for route %s: %v", routeID, err)
+			log.Printf("Error getting last tick for route %d: %v", routeID, err)
 			continue
 		}
 
-		// Fetch ticks from Mountain Project
-		ticks, err := s.mpClient.GetRouteTicks(routeID)
+		// Fetch ticks from Mountain Project (API requires string)
+		routeIDStr := strconv.FormatInt(routeID, 10)
+		ticks, err := s.mpClient.GetRouteTicks(routeIDStr)
 		if err != nil {
-			log.Printf("Error fetching ticks for route %s: %v", routeID, err)
+			log.Printf("Error fetching ticks for route %d: %v", routeID, err)
 			continue
 		}
 
@@ -553,7 +651,7 @@ func (s *ClimbTrackingService) SyncNewTicksForAllLocations(ctx context.Context) 
 // and updates the database with calculated coordinates and aspects
 func (s *ClimbTrackingService) calculateBoulderGPS(
 	ctx context.Context,
-	routeIDs []string,
+	routeIDs []int64,
 	centerLat, centerLon float64,
 ) error {
 	if len(routeIDs) == 0 {
@@ -575,7 +673,7 @@ func (s *ClimbTrackingService) calculateBoulderGPS(
 
 		err := s.repo.UpdateRouteGPS(ctx, routeID, pos.Latitude, pos.Longitude, pos.Aspect)
 		if err != nil {
-			log.Printf("Error updating GPS for route %s: %v", routeID, err)
+			log.Printf("Error updating GPS for route %d: %v", routeID, err)
 			continue
 		}
 		updateCount++

@@ -5,9 +5,9 @@ import "time"
 // MPArea represents a Mountain Project area (hierarchical region containing routes/subareas)
 type MPArea struct {
 	ID             int        `json:"id" db:"id"`
-	MPAreaID       string     `json:"mp_area_id" db:"mp_area_id"`
+	MPAreaID       int64      `json:"mp_area_id" db:"mp_area_id"`
 	Name           string     `json:"name" db:"name"`
-	ParentMPAreaID *string    `json:"parent_mp_area_id,omitempty" db:"parent_mp_area_id"`
+	ParentMPAreaID *int64     `json:"parent_mp_area_id,omitempty" db:"parent_mp_area_id"`
 	AreaType       string     `json:"area_type" db:"area_type"`
 	LocationID     *int       `json:"location_id,omitempty" db:"location_id"`
 	Latitude       *float64   `json:"latitude,omitempty" db:"latitude"`
@@ -20,8 +20,8 @@ type MPArea struct {
 // MPRoute represents a Mountain Project route (boulder problem or climbing route)
 type MPRoute struct {
 	ID         int       `json:"id" db:"id"`
-	MPRouteID  string    `json:"mp_route_id" db:"mp_route_id"`
-	MPAreaID   string    `json:"mp_area_id" db:"mp_area_id"`
+	MPRouteID  int64     `json:"mp_route_id" db:"mp_route_id"`
+	MPAreaID   int64     `json:"mp_area_id" db:"mp_area_id"`
 	Name       string    `json:"name" db:"name"`
 	RouteType  string    `json:"route_type" db:"route_type"`
 	Rating     string    `json:"rating" db:"rating"`
@@ -36,7 +36,7 @@ type MPRoute struct {
 // MPTick represents a single climb log (tick) from a Mountain Project user
 type MPTick struct {
 	ID        int       `json:"id" db:"id"`
-	MPRouteID string    `json:"mp_route_id" db:"mp_route_id"`
+	MPRouteID int64     `json:"mp_route_id" db:"mp_route_id"`
 	UserName  string    `json:"user_name" db:"user_name"`
 	ClimbedAt time.Time `json:"climbed_at" db:"climbed_at"`
 	Style     string    `json:"style" db:"style"`
@@ -48,7 +48,7 @@ type MPTick struct {
 // BoulderDryingProfile stores boulder-specific drying metadata
 type BoulderDryingProfile struct {
 	ID                    int        `json:"id" db:"id"`
-	MPRouteID             string     `json:"mp_route_id" db:"mp_route_id"`
+	MPRouteID             int64      `json:"mp_route_id" db:"mp_route_id"`
 	TreeCoveragePercent   *float64   `json:"tree_coverage_percent,omitempty" db:"tree_coverage_percent"`
 	RockTypeOverride      *string    `json:"rock_type_override,omitempty" db:"rock_type_override"`
 	LastSunCalcAt         *time.Time `json:"last_sun_calc_at,omitempty" db:"last_sun_calc_at"`
@@ -60,10 +60,10 @@ type BoulderDryingProfile struct {
 // ClimbHistoryEntry represents a single climb from the location's history
 // Used for API responses to show recent climbs at a location
 type ClimbHistoryEntry struct {
-	MPRouteID      string    `json:"mp_route_id"`       // Mountain Project route ID for linking
+	MPRouteID      int64     `json:"mp_route_id"`       // Mountain Project route ID for linking
 	RouteName      string    `json:"route_name"`
 	RouteRating    string    `json:"route_rating"`
-	MPAreaID       string    `json:"mp_area_id"`        // Mountain Project area ID for linking
+	MPAreaID       int64     `json:"mp_area_id"`        // Mountain Project area ID for linking
 	AreaName       string    `json:"area_name"`         // e.g., "Xyz Boulders"
 	ClimbedAt      time.Time `json:"climbed_at"`
 	ClimbedBy      string    `json:"climbed_by"`
@@ -101,9 +101,9 @@ type AreaDryingStats struct {
 // AreaActivitySummary represents an area with recent activity metadata
 // Used for API responses to show areas ordered by recent climbing activity
 type AreaActivitySummary struct {
-	MPAreaID       string            `json:"mp_area_id"`               // Mountain Project area ID
+	MPAreaID       int64             `json:"mp_area_id"`               // Mountain Project area ID
 	Name           string            `json:"name"`                     // Area name
-	ParentMPAreaID *string           `json:"parent_mp_area_id,omitempty"` // Parent area ID (null for root)
+	ParentMPAreaID *int64            `json:"parent_mp_area_id,omitempty"` // Parent area ID (null for root)
 	LastClimbAt    time.Time         `json:"last_climb_at"`            // Most recent climb timestamp
 	TotalTicks     int               `json:"total_ticks"`              // Total number of climbs
 	UniqueRoutes   int               `json:"unique_routes"`            // Number of distinct routes with activity
@@ -116,10 +116,10 @@ type AreaActivitySummary struct {
 // RouteActivitySummary represents a boulder with recent activity
 // Used for API responses to show routes ordered by recent climbing activity
 type RouteActivitySummary struct {
-	MPRouteID      string            `json:"mp_route_id"`         // Mountain Project route ID
+	MPRouteID      int64             `json:"mp_route_id"`         // Mountain Project route ID
 	Name           string            `json:"name"`                // Route name
 	Rating         string            `json:"rating"`              // Grade (V4, 5.10a, etc.)
-	MPAreaID       string            `json:"mp_area_id"`          // Parent area ID
+	MPAreaID       int64             `json:"mp_area_id"`          // Parent area ID
 	LastClimbAt    time.Time         `json:"last_climb_at"`       // Most recent climb timestamp
 	MostRecentTick *ClimbHistoryEntry `json:"most_recent_tick,omitempty"` // Latest tick details (null if no ticks)
 	RecentTicks    []ClimbHistoryEntry `json:"recent_ticks,omitempty"` // Additional recent ticks (optional)
@@ -130,10 +130,10 @@ type RouteActivitySummary struct {
 // Used for API responses when searching across both areas and routes
 type SearchResult struct {
 	ResultType     string             `json:"result_type"`         // "area" or "route"
-	ID             string             `json:"id"`                  // Area or route ID
+	ID             int64              `json:"id"`                  // Area or route ID
 	Name           string             `json:"name"`                // Area or route name
 	Rating         *string            `json:"rating,omitempty"`    // Grade (only for routes)
-	MPAreaID       string             `json:"mp_area_id"`          // Area ID (self for areas, parent for routes)
+	MPAreaID       int64              `json:"mp_area_id"`          // Area ID (self for areas, parent for routes)
 	AreaName       *string            `json:"area_name,omitempty"` // Parent area name (only for routes)
 	LastClimbAt    time.Time          `json:"last_climb_at"`       // Most recent climb timestamp
 	DaysSinceClimb int                `json:"days_since_climb"`    // Days since last climb

@@ -42,27 +42,29 @@ type Repository interface {
 	SaveMPArea(ctx context.Context, area *models.MPArea) error
 	SaveMPRoute(ctx context.Context, route *models.MPRoute) error
 	SaveMPTick(ctx context.Context, tick *models.MPTick) error
-	UpdateRouteGPS(ctx context.Context, routeID string, latitude, longitude float64, aspect string) error
+	SaveAreaComment(ctx context.Context, mpCommentID, mpAreaID int64, userName, commentText string, commentedAt time.Time) error
+	SaveRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName, commentText string, commentedAt time.Time) error
+	UpdateRouteGPS(ctx context.Context, routeID int64, latitude, longitude float64, aspect string) error
 	GetLastClimbedForLocation(ctx context.Context, locationID int) (*models.LastClimbedInfo, error) // DEPRECATED: Use GetClimbHistoryForLocation
 	GetClimbHistoryForLocation(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
-	GetMPAreaByID(ctx context.Context, mpAreaID string) (*models.MPArea, error)
-	GetMPRouteByID(ctx context.Context, mpRouteID string) (*models.MPRoute, error)
-	GetLastTickTimestampForRoute(ctx context.Context, routeID string) (*time.Time, error)
-	GetAllRouteIDsForLocation(ctx context.Context, locationID int) ([]string, error)
+	GetMPAreaByID(ctx context.Context, mpAreaID int64) (*models.MPArea, error)
+	GetMPRouteByID(ctx context.Context, mpRouteID int64) (*models.MPRoute, error)
+	GetLastTickTimestampForRoute(ctx context.Context, routeID int64) (*time.Time, error)
+	GetAllRouteIDsForLocation(ctx context.Context, locationID int) ([]int64, error)
 	GetAreasOrderedByActivity(ctx context.Context, locationID int) ([]models.AreaActivitySummary, error)
-	GetSubareasOrderedByActivity(ctx context.Context, parentAreaID string, locationID int) ([]models.AreaActivitySummary, error)
-	GetRoutesOrderedByActivity(ctx context.Context, areaID string, locationID int, limit int) ([]models.RouteActivitySummary, error)
-	GetRecentTicksForRoute(ctx context.Context, routeID string, limit int) ([]models.ClimbHistoryEntry, error)
+	GetSubareasOrderedByActivity(ctx context.Context, parentAreaID int64, locationID int) ([]models.AreaActivitySummary, error)
+	GetRoutesOrderedByActivity(ctx context.Context, areaID int64, locationID int, limit int) ([]models.RouteActivitySummary, error)
+	GetRecentTicksForRoute(ctx context.Context, routeID int64, limit int) ([]models.ClimbHistoryEntry, error)
 	SearchInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.SearchResult, error)
 	SearchRoutesInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error)
 
 	// Boulder drying operations
-	GetBoulderDryingProfile(ctx context.Context, mpRouteID string) (*models.BoulderDryingProfile, error)
-	GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.BoulderDryingProfile, error)
+	GetBoulderDryingProfile(ctx context.Context, mpRouteID int64) (*models.BoulderDryingProfile, error)
+	GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.BoulderDryingProfile, error)
 	SaveBoulderDryingProfile(ctx context.Context, profile *models.BoulderDryingProfile) error
 	GetLocationByID(ctx context.Context, locationID int) (*models.Location, error)
-	GetRoutesWithGPSByArea(ctx context.Context, mpAreaID string) ([]*models.MPRoute, error)
-	GetMPRoutesByIDs(ctx context.Context, mpRouteIDs []string) (map[string]*models.MPRoute, error)
+	GetRoutesWithGPSByArea(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error)
+	GetMPRoutesByIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.MPRoute, error)
 
 	// Health check
 	Ping(ctx context.Context) error

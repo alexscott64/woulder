@@ -42,17 +42,17 @@ func NewBoulderDryingService(repo database.Repository, weatherClient WeatherClie
 // GetBatchBoulderDryingStatus calculates the drying status for multiple boulders efficiently
 func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 	ctx context.Context,
-	mpRouteIDs []string,
-) (map[string]*boulder_drying.BoulderDryingStatus, error) {
+	mpRouteIDs []int64,
+) (map[int64]*boulder_drying.BoulderDryingStatus, error) {
 	batchStart := time.Now()
 	log.Printf("[PERF] GetBatchBoulderDryingStatus: Starting batch request for %d routes", len(mpRouteIDs))
 
 	if len(mpRouteIDs) == 0 {
-		return make(map[string]*boulder_drying.BoulderDryingStatus), nil
+		return make(map[int64]*boulder_drying.BoulderDryingStatus), nil
 	}
 
-	results := make(map[string]*boulder_drying.BoulderDryingStatus)
-	failedRoutes := make(map[string]string) // Track routes that failed
+	results := make(map[int64]*boulder_drying.BoulderDryingStatus)
+	failedRoutes := make(map[int64]string) // Track routes that failed
 
 	// Fetch ALL routes in a single query (eliminates N+1 problem)
 	routeFetchStart := time.Now()
@@ -67,7 +67,7 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 	profilesMap, err := s.repo.GetBoulderDryingProfilesByRouteIDs(ctx, mpRouteIDs)
 	if err != nil {
 		log.Printf("Warning: Failed to fetch boulder drying profiles: %v", err)
-		profilesMap = make(map[string]*models.BoulderDryingProfile) // Continue with empty profiles
+		profilesMap = make(map[int64]*models.BoulderDryingProfile) // Continue with empty profiles
 	}
 	log.Printf("[PERF] Profile batch fetching took %v for %d routes (%d profiles found)", time.Since(profileFetchStart), len(mpRouteIDs), len(profilesMap))
 
@@ -76,12 +76,12 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 	for _, routeID := range mpRouteIDs {
 		route, found := routesMap[routeID]
 		if !found {
-			log.Printf("Warning: Route %s not found", routeID)
+			log.Printf("Warning: Route %d not found", routeID)
 			failedRoutes[routeID] = "Route not found"
 			continue
 		}
 		if route.LocationID == nil {
-			log.Printf("Warning: Route %s has no location", routeID)
+			log.Printf("Warning: Route %d has no location", routeID)
 			failedRoutes[routeID] = "Route has no location"
 			continue
 		}
@@ -181,7 +181,7 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 // GetBoulderDryingStatus calculates the drying status for a specific boulder
 func (s *BoulderDryingService) GetBoulderDryingStatus(
 	ctx context.Context,
-	mpRouteID string,
+	mpRouteID int64,
 ) (*boulder_drying.BoulderDryingStatus, error) {
 	// Get the route
 	route, err := s.repo.GetMPRouteByID(ctx, mpRouteID)
@@ -189,7 +189,7 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 		return nil, fmt.Errorf("failed to get route: %w", err)
 	}
 	if route == nil {
-		return nil, fmt.Errorf("route not found: %s", mpRouteID)
+		return nil, fmt.Errorf("route not found: %d", mpRouteID)
 	}
 
 	// Get the location ID
@@ -206,7 +206,7 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 	// Get boulder drying profile (if exists)
 	profile, err := s.repo.GetBoulderDryingProfile(ctx, mpRouteID)
 	if err != nil {
-		log.Printf("Warning: Failed to get boulder drying profile for %s: %v", mpRouteID, err)
+		log.Printf("Warning: Failed to get boulder drying profile for %d: %v", mpRouteID, err)
 		profile = nil // Continue without profile
 	}
 
@@ -335,7 +335,7 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 // area stats and individual route statuses use the EXACT same weather data
 func (s *BoulderDryingService) GetAreaDryingStats(
 	ctx context.Context,
-	mpAreaID string,
+	mpAreaID int64,
 	locationID int,
 ) (*models.AreaDryingStats, error) {
 	// Get all routes with GPS in this area (including subareas)
@@ -350,7 +350,7 @@ func (s *BoulderDryingService) GetAreaDryingStats(
 	}
 
 	// Extract route IDs
-	routeIDs := make([]string, len(routes))
+	routeIDs := make([]int64, len(routes))
 	for i, route := range routes {
 		routeIDs[i] = route.MPRouteID
 	}
@@ -439,14 +439,14 @@ func (s *BoulderDryingService) GetAreaDryingStats(
 // OPTIMIZED: Calculates location-level weather ONCE and reuses for all areas (massive speedup)
 func (s *BoulderDryingService) GetBatchAreaDryingStats(
 	ctx context.Context,
-	areaIDs []string,
+	areaIDs []int64,
 	locationID int,
-) (map[string]*models.AreaDryingStats, error) {
+) (map[int64]*models.AreaDryingStats, error) {
 	batchStart := time.Now()
 	log.Printf("[PERF] GetBatchAreaDryingStats: Starting OPTIMIZED batch request for %d areas in location %d", len(areaIDs), locationID)
 
 	if len(areaIDs) == 0 {
-		return make(map[string]*models.AreaDryingStats), nil
+		return make(map[int64]*models.AreaDryingStats), nil
 	}
 
 	// OPTIMIZATION: Calculate location-level rock drying status ONCE for all areas
@@ -475,11 +475,11 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 	log.Printf("[PERF] Using fresh forecast from API (%d hours)", len(hourlyForecast))
 
 	// Fetch ALL routes for ALL areas in a single batch
-	allRouteIDs := []string{}
+	allRouteIDs := []int64{}
 	for _, areaID := range areaIDs {
 		routes, err := s.repo.GetRoutesWithGPSByArea(ctx, areaID)
 		if err != nil {
-			log.Printf("Warning: Failed to get routes for area %s: %v", areaID, err)
+			log.Printf("Warning: Failed to get routes for area %d: %v", areaID, err)
 			continue
 		}
 		for _, route := range routes {
@@ -498,12 +498,12 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 	profilesMap, err := s.repo.GetBoulderDryingProfilesByRouteIDs(ctx, allRouteIDs)
 	if err != nil {
 		log.Printf("Warning: Failed to fetch boulder drying profiles: %v", err)
-		profilesMap = make(map[string]*models.BoulderDryingProfile)
+		profilesMap = make(map[int64]*models.BoulderDryingProfile)
 	}
 
 	// Calculate boulder drying status for ALL routes using the SHARED location data
 	calcStart := time.Now()
-	statusMap := make(map[string]*boulder_drying.BoulderDryingStatus)
+	statusMap := make(map[int64]*boulder_drying.BoulderDryingStatus)
 	for _, routeID := range allRouteIDs {
 		route, found := routesMap[routeID]
 		if !found {
@@ -529,7 +529,7 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 		len(statusMap), time.Since(calcStart))
 
 	// Group routes by area and compute stats
-	results := make(map[string]*models.AreaDryingStats)
+	results := make(map[int64]*models.AreaDryingStats)
 	for _, areaID := range areaIDs {
 		routes, err := s.repo.GetRoutesWithGPSByArea(ctx, areaID)
 		if err != nil || len(routes) == 0 {

@@ -96,6 +96,33 @@ func (t *Tick) GetUserName() string {
 	return ""
 }
 
+// CommentResponse represents the response from the Mountain Project comments endpoint
+type CommentResponse struct {
+	Data []Comment `json:"data"`
+}
+
+// Comment represents a single comment on an area or route
+type Comment struct {
+	ID      int         `json:"id"`
+	Message string      `json:"message"` // HTML content of the comment
+	Created int64       `json:"created"` // Unix timestamp
+	Author  CommentUser `json:"author"`  // User who posted
+}
+
+// CommentUser represents the user who posted a comment
+type CommentUser struct {
+	Name      string `json:"name"`       // Mountain Project username
+	AvatarURL string `json:"avatar_url"` // URL to user's avatar
+}
+
+// GetUserInfo extracts user info from the comment
+func (c *Comment) GetUserInfo() string {
+	if c.Author.Name != "" {
+		return c.Author.Name
+	}
+	return "Anonymous"
+}
+
 // GetArea fetches area data including children (subareas and routes)
 func (c *Client) GetArea(areaID string) (*AreaResponse, error) {
 	c.rateLimit()
@@ -168,4 +195,92 @@ func (c *Client) GetRouteTicks(routeID string) ([]Tick, error) {
 	}
 
 	return tickResp.Data, nil
+}
+
+// GetAreaComments fetches all comments for a specific area
+func (c *Client) GetAreaComments(areaID string) ([]Comment, error) {
+	c.rateLimit()
+
+	url := fmt.Sprintf("%s/areas/%s/comments", baseURL, areaID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Woulder/1.0 (https://woulder.com)")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch comments for area %s: %w", areaID, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d for area %s: %s", resp.StatusCode, areaID, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Try parsing as direct array first (API v2 format)
+	var comments []Comment
+	if err := json.Unmarshal(body, &comments); err == nil {
+		return comments, nil
+	}
+
+	// Fall back to wrapped response format
+	var commentResp CommentResponse
+	if err := json.Unmarshal(body, &commentResp); err != nil {
+		return nil, fmt.Errorf("failed to parse comment response for area %s: %w", areaID, err)
+	}
+
+	return commentResp.Data, nil
+}
+
+// GetRouteComments fetches all comments for a specific route
+func (c *Client) GetRouteComments(routeID string) ([]Comment, error) {
+	c.rateLimit()
+
+	url := fmt.Sprintf("%s/routes/%s/comments", baseURL, routeID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Woulder/1.0 (https://woulder.com)")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch comments for route %s: %w", routeID, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d for route %s: %s", resp.StatusCode, routeID, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Try parsing as direct array first (API v2 format)
+	var comments []Comment
+	if err := json.Unmarshal(body, &comments); err == nil {
+		return comments, nil
+	}
+
+	// Fall back to wrapped response format
+	var commentResp CommentResponse
+	if err := json.Unmarshal(body, &commentResp); err != nil {
+		return nil, fmt.Errorf("failed to parse comment response for route %s: %w", routeID, err)
+	}
+
+	return commentResp.Data, nil
 }
