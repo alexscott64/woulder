@@ -96,7 +96,7 @@ func (db *Database) SaveMPTick(ctx context.Context, tick *models.MPTick) error {
 }
 
 // SaveAreaComment saves a Mountain Project area comment
-func (db *Database) SaveAreaComment(ctx context.Context, mpCommentID, mpAreaID, userName, commentText string, commentedAt time.Time) error {
+func (db *Database) SaveAreaComment(ctx context.Context, mpCommentID, mpAreaID int64, userName, commentText string, commentedAt time.Time) error {
 	query := `
 		INSERT INTO woulder.mp_comments (
 			mp_comment_id, comment_type, mp_area_id, mp_route_id,
@@ -123,7 +123,7 @@ func (db *Database) SaveAreaComment(ctx context.Context, mpCommentID, mpAreaID, 
 }
 
 // SaveRouteComment saves a Mountain Project route comment
-func (db *Database) SaveRouteComment(ctx context.Context, mpCommentID, mpRouteID, userName, commentText string, commentedAt time.Time) error {
+func (db *Database) SaveRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName, commentText string, commentedAt time.Time) error {
 	query := `
 		INSERT INTO woulder.mp_comments (
 			mp_comment_id, comment_type, mp_area_id, mp_route_id,
@@ -150,7 +150,7 @@ func (db *Database) SaveRouteComment(ctx context.Context, mpCommentID, mpRouteID
 }
 
 // GetMPAreaByID retrieves a Mountain Project area by ID
-func (db *Database) GetMPAreaByID(ctx context.Context, mpAreaID string) (*models.MPArea, error) {
+func (db *Database) GetMPAreaByID(ctx context.Context, mpAreaID int64) (*models.MPArea, error) {
 	query := `
 		SELECT id, mp_area_id, name, parent_mp_area_id, area_type,
 		       location_id, latitude, longitude, last_synced_at, created_at, updated_at
@@ -185,7 +185,7 @@ func (db *Database) GetMPAreaByID(ctx context.Context, mpAreaID string) (*models
 }
 
 // GetLastTickTimestampForRoute returns the timestamp of the most recent tick for a route
-func (db *Database) GetLastTickTimestampForRoute(ctx context.Context, routeID string) (*time.Time, error) {
+func (db *Database) GetLastTickTimestampForRoute(ctx context.Context, routeID int64) (*time.Time, error) {
 	query := `
 		SELECT MAX(climbed_at) AS last_tick
 		FROM woulder.mp_ticks
@@ -207,7 +207,7 @@ func (db *Database) GetLastTickTimestampForRoute(ctx context.Context, routeID st
 }
 
 // GetAllRouteIDsForLocation returns all route IDs associated with a location
-func (db *Database) GetAllRouteIDsForLocation(ctx context.Context, locationID int) ([]string, error) {
+func (db *Database) GetAllRouteIDsForLocation(ctx context.Context, locationID int) ([]int64, error) {
 	query := `
 		SELECT mp_route_id
 		FROM woulder.mp_routes
@@ -220,9 +220,9 @@ func (db *Database) GetAllRouteIDsForLocation(ctx context.Context, locationID in
 	}
 	defer rows.Close()
 
-	var routeIDs []string
+	var routeIDs []int64
 	for rows.Next() {
-		var routeID string
+		var routeID int64
 		if err := rows.Scan(&routeID); err != nil {
 			return nil, err
 		}
@@ -237,7 +237,7 @@ func (db *Database) GetAllRouteIDsForLocation(ctx context.Context, locationID in
 }
 
 // UpdateRouteGPS updates only the GPS coordinates and aspect for a route
-func (db *Database) UpdateRouteGPS(ctx context.Context, routeID string, latitude, longitude float64, aspect string) error {
+func (db *Database) UpdateRouteGPS(ctx context.Context, routeID int64, latitude, longitude float64, aspect string) error {
 	query := `
 		UPDATE woulder.mp_routes
 		SET latitude = $1, longitude = $2, aspect = $3, updated_at = NOW()

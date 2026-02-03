@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -320,12 +321,17 @@ func (h *Handler) GetBatchBoulderDryingStatus(c *gin.Context) {
 		return
 	}
 
-	// Split comma-separated route IDs
-	routeIDs := []string{}
+	// Split comma-separated route IDs and convert to int64
+	routeIDs := []int64{}
 	for _, id := range strings.Split(routeIDsStr, ",") {
 		trimmed := strings.TrimSpace(id)
 		if trimmed != "" {
-			routeIDs = append(routeIDs, trimmed)
+			routeID, err := strconv.ParseInt(trimmed, 10, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid route ID: %s", trimmed)})
+				return
+			}
+			routeIDs = append(routeIDs, routeID)
 		}
 	}
 
@@ -354,9 +360,15 @@ func (h *Handler) GetBatchBoulderDryingStatus(c *gin.Context) {
 // GET /api/climbs/routes/:route_id/drying-status
 func (h *Handler) GetBoulderDryingStatus(c *gin.Context) {
 	// Parse route ID from URL
-	routeID := c.Param("route_id")
-	if routeID == "" {
+	routeIDStr := c.Param("route_id")
+	if routeIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Route ID is required"})
+		return
+	}
+
+	routeID, err := strconv.ParseInt(routeIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid route ID"})
 		return
 	}
 
@@ -382,9 +394,15 @@ func (h *Handler) GetAreaDryingStats(c *gin.Context) {
 	}
 
 	// Parse area ID from URL
-	areaID := c.Param("area_id")
-	if areaID == "" {
+	areaIDStr := c.Param("area_id")
+	if areaIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Area ID is required"})
+		return
+	}
+
+	areaID, err := strconv.ParseInt(areaIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area ID"})
 		return
 	}
 

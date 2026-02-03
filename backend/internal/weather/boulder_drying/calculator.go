@@ -23,7 +23,7 @@ type DryingForecastPeriod struct {
 
 // BoulderDryingStatus represents the drying status for a specific boulder
 type BoulderDryingStatus struct {
-	MPRouteID           string                  `json:"mp_route_id"`
+	MPRouteID           int64                   `json:"mp_route_id"`
 	IsWet               bool                    `json:"is_wet"`
 	IsSafe              bool                    `json:"is_safe"`
 	HoursUntilDry       float64                 `json:"hours_until_dry"`

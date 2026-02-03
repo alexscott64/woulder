@@ -140,14 +140,22 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 			continue
 		}
 
-		// Convert area ID to string
+		// Convert area ID to string for API interactions
 		areaIDStr := strconv.Itoa(areaData.ID)
+
+		// Convert parent ID string to int64 if exists
+		var parentIDInt64 *int64
+		if item.parentID != nil {
+			if parentID, err := strconv.ParseInt(*item.parentID, 10, 64); err == nil {
+				parentIDInt64 = &parentID
+			}
+		}
 
 		// Save area to database
 		area := &models.MPArea{
-			MPAreaID:       areaIDStr,
+			MPAreaID:       int64(areaData.ID),
 			Name:           areaData.Title,
-			ParentMPAreaID: item.parentID,
+			ParentMPAreaID: parentIDInt64,
 			AreaType:       areaData.Type,
 			LocationID:     item.locationID,
 		}
@@ -200,10 +208,17 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 					}
 				}
 
+				// Convert area ID string to int64
+				areaIDInt64, err := strconv.ParseInt(item.mpAreaID, 10, 64)
+				if err != nil {
+					log.Printf("Error parsing area ID %s: %v", item.mpAreaID, err)
+					continue
+				}
+
 				// Save route (all types: boulder, sport, trad, etc.)
 				route := &models.MPRoute{
-					MPRouteID:  childIDStr,
-					MPAreaID:   item.mpAreaID,
+					MPRouteID:  int64(child.ID),
+					MPAreaID:   areaIDInt64,
 					Name:       child.Title,
 					RouteType:  strings.Join(child.RouteTypes, ", "),
 					Rating:     "", // Rating not in children response, could fetch separately if needed
@@ -252,9 +267,15 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 
 // syncRouteTicks fetches and saves all ticks for a given route
 func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID string) error {
-	ticks, err := s.mpClient.GetRouteTicks(routeID)
+	// Convert route ID string to int64
+	routeIDInt64, err := strconv.ParseInt(routeID, 10, 64)
 	if err != nil {
-		return fmt.Errorf("failed to fetch ticks: %w", err)
+		return fmt.Errorf("invalid route ID %s: %w", routeID, err)
+	}
+
+	ticks, tickErr := s.mpClient.GetRouteTicks(routeID)
+	if tickErr != nil {
+		return fmt.Errorf("failed to fetch ticks: %w", tickErr)
 	}
 
 	// Load Pacific timezone (America/Los_Angeles) for Mountain Project dates
@@ -293,7 +314,7 @@ func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID strin
 		}
 
 		tickModel := &models.MPTick{
-			MPRouteID: routeID,
+			MPRouteID: routeIDInt64,
 			UserName:  tick.GetUserName(),
 			ClimbedAt: climbedAt,
 			Style:     tick.Style,
@@ -330,12 +351,18 @@ func (s *ClimbTrackingService) syncAreaComments(ctx context.Context, areaID stri
 		return fmt.Errorf("failed to fetch comments: %w", err)
 	}
 
+	// Convert area ID string to int64
+	areaIDInt64, err := strconv.ParseInt(areaID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid area ID %s: %w", areaID, err)
+	}
+
 	commentCount := 0
 	for _, comment := range comments {
 		commentedAt := time.Unix(comment.Created, 0)
 		userName := comment.GetUserInfo()
 
-		if err := s.repo.SaveAreaComment(ctx, strconv.Itoa(comment.ID), areaID, userName, comment.Message, commentedAt); err != nil {
+		if err := s.repo.SaveAreaComment(ctx, int64(comment.ID), areaIDInt64, userName, comment.Message, commentedAt); err != nil {
 			log.Printf("Error saving area comment: %v", err)
 			continue
 		}
@@ -356,12 +383,18 @@ func (s *ClimbTrackingService) syncRouteComments(ctx context.Context, routeID st
 		return fmt.Errorf("failed to fetch comments: %w", err)
 	}
 
+	// Convert route ID string to int64
+	routeIDInt64, err := strconv.ParseInt(routeID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid route ID %s: %w", routeID, err)
+	}
+
 	commentCount := 0
 	for _, comment := range comments {
 		commentedAt := time.Unix(comment.Created, 0)
 		userName := comment.GetUserInfo()
 
-		if err := s.repo.SaveRouteComment(ctx, strconv.Itoa(comment.ID), routeID, userName, comment.Message, commentedAt); err != nil {
+		if err := s.repo.SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, comment.Message, commentedAt); err != nil {
 			log.Printf("Error saving route comment: %v", err)
 			continue
 		}

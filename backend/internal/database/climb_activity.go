@@ -110,7 +110,7 @@ func (db *Database) GetAreasOrderedByActivity(ctx context.Context, locationID in
 // GetSubareasOrderedByActivity retrieves subareas of a parent area ordered by most recent climb activity
 // Recursively aggregates activity from all descendant areas
 // Uses the same smart date filtering as GetClimbHistoryForLocation
-func (db *Database) GetSubareasOrderedByActivity(ctx context.Context, parentAreaID string, locationID int) ([]models.AreaActivitySummary, error) {
+func (db *Database) GetSubareasOrderedByActivity(ctx context.Context, parentAreaID int64, locationID int) ([]models.AreaActivitySummary, error) {
 	query := `
 		WITH RECURSIVE adjusted_ticks AS (
 			SELECT
@@ -200,7 +200,7 @@ func (db *Database) GetSubareasOrderedByActivity(ctx context.Context, parentArea
 // Shows routes with ticks first (ordered by recency), then routes without ticks (alphabetically)
 // Includes the most recent tick for each route if it has any
 // Uses the same smart date filtering as GetClimbHistoryForLocation
-func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID string, locationID int, limit int) ([]models.RouteActivitySummary, error) {
+func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID int64, locationID int, limit int) ([]models.RouteActivitySummary, error) {
 	query := `
 		WITH adjusted_ticks AS (
 			SELECT
@@ -310,7 +310,7 @@ func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID strin
 }
 
 // GetRecentTicksForRoute retrieves the most recent ticks for a specific route
-func (db *Database) GetRecentTicksForRoute(ctx context.Context, routeID string, limit int) ([]models.ClimbHistoryEntry, error) {
+func (db *Database) GetRecentTicksForRoute(ctx context.Context, routeID int64, limit int) ([]models.ClimbHistoryEntry, error) {
 	query := `
 		WITH adjusted_ticks AS (
 			SELECT
