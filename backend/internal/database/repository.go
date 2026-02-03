@@ -42,6 +42,8 @@ type Repository interface {
 	SaveMPArea(ctx context.Context, area *models.MPArea) error
 	SaveMPRoute(ctx context.Context, route *models.MPRoute) error
 	SaveMPTick(ctx context.Context, tick *models.MPTick) error
+	SaveAreaComment(ctx context.Context, mpCommentID, mpAreaID, userName, commentText string, commentedAt time.Time) error
+	SaveRouteComment(ctx context.Context, mpCommentID, mpRouteID, userName, commentText string, commentedAt time.Time) error
 	UpdateRouteGPS(ctx context.Context, routeID string, latitude, longitude float64, aspect string) error
 	GetLastClimbedForLocation(ctx context.Context, locationID int) (*models.LastClimbedInfo, error) // DEPRECATED: Use GetClimbHistoryForLocation
 	GetClimbHistoryForLocation(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)

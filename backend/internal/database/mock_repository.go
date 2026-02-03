@@ -40,6 +40,8 @@ type MockRepository struct {
 	SaveMPAreaFn                       func(ctx context.Context, area *models.MPArea) error
 	SaveMPRouteFn                      func(ctx context.Context, route *models.MPRoute) error
 	SaveMPTickFn                       func(ctx context.Context, tick *models.MPTick) error
+	SaveAreaCommentFn                  func(ctx context.Context, mpCommentID, mpAreaID, userName, commentText string, commentedAt time.Time) error
+	SaveRouteCommentFn                 func(ctx context.Context, mpCommentID, mpRouteID, userName, commentText string, commentedAt time.Time) error
 	UpdateRouteGPSFn                   func(ctx context.Context, routeID string, latitude, longitude float64, aspect string) error
 	GetLastClimbedForLocationFn        func(ctx context.Context, locationID int) (*models.LastClimbedInfo, error)
 	GetClimbHistoryForLocationFn       func(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
@@ -238,6 +240,22 @@ func (m *MockRepository) SaveMPRoute(ctx context.Context, route *models.MPRoute)
 func (m *MockRepository) SaveMPTick(ctx context.Context, tick *models.MPTick) error {
 	if m.SaveMPTickFn != nil {
 		return m.SaveMPTickFn(ctx, tick)
+	}
+	return nil
+}
+
+// SaveAreaComment mock
+func (m *MockRepository) SaveAreaComment(ctx context.Context, mpCommentID, mpAreaID, userName, commentText string, commentedAt time.Time) error {
+	if m.SaveAreaCommentFn != nil {
+		return m.SaveAreaCommentFn(ctx, mpCommentID, mpAreaID, userName, commentText, commentedAt)
+	}
+	return nil
+}
+
+// SaveRouteComment mock
+func (m *MockRepository) SaveRouteComment(ctx context.Context, mpCommentID, mpRouteID, userName, commentText string, commentedAt time.Time) error {
+	if m.SaveRouteCommentFn != nil {
+		return m.SaveRouteCommentFn(ctx, mpCommentID, mpRouteID, userName, commentText, commentedAt)
 	}
 	return nil
 }

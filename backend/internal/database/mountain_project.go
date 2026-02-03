@@ -95,6 +95,60 @@ func (db *Database) SaveMPTick(ctx context.Context, tick *models.MPTick) error {
 	return err
 }
 
+// SaveAreaComment saves a Mountain Project area comment
+func (db *Database) SaveAreaComment(ctx context.Context, mpCommentID, mpAreaID, userName, commentText string, commentedAt time.Time) error {
+	query := `
+		INSERT INTO woulder.mp_comments (
+			mp_comment_id, comment_type, mp_area_id, mp_route_id,
+			user_name, user_id, comment_text, commented_at
+		)
+		VALUES ($1, 'area', $2, NULL, $3, NULL, $4, $5)
+		ON CONFLICT (mp_comment_id)
+		DO UPDATE SET
+			user_name = EXCLUDED.user_name,
+			comment_text = EXCLUDED.comment_text,
+			commented_at = EXCLUDED.commented_at,
+			updated_at = CURRENT_TIMESTAMP
+	`
+
+	_, err := db.conn.ExecContext(ctx, query,
+		mpCommentID,
+		mpAreaID,
+		userName,
+		commentText,
+		commentedAt,
+	)
+
+	return err
+}
+
+// SaveRouteComment saves a Mountain Project route comment
+func (db *Database) SaveRouteComment(ctx context.Context, mpCommentID, mpRouteID, userName, commentText string, commentedAt time.Time) error {
+	query := `
+		INSERT INTO woulder.mp_comments (
+			mp_comment_id, comment_type, mp_area_id, mp_route_id,
+			user_name, user_id, comment_text, commented_at
+		)
+		VALUES ($1, 'route', NULL, $2, $3, NULL, $4, $5)
+		ON CONFLICT (mp_comment_id)
+		DO UPDATE SET
+			user_name = EXCLUDED.user_name,
+			comment_text = EXCLUDED.comment_text,
+			commented_at = EXCLUDED.commented_at,
+			updated_at = CURRENT_TIMESTAMP
+	`
+
+	_, err := db.conn.ExecContext(ctx, query,
+		mpCommentID,
+		mpRouteID,
+		userName,
+		commentText,
+		commentedAt,
+	)
+
+	return err
+}
+
 // GetMPAreaByID retrieves a Mountain Project area by ID
 func (db *Database) GetMPAreaByID(ctx context.Context, mpAreaID string) (*models.MPArea, error) {
 	query := `

@@ -20,6 +20,8 @@ import (
 type MPClientInterface interface {
 	GetRouteTicks(routeID string) ([]mountainproject.Tick, error)
 	GetArea(areaID string) (*mountainproject.AreaResponse, error)
+	GetAreaComments(areaID string) ([]mountainproject.Comment, error)
+	GetRouteComments(routeID string) ([]mountainproject.Comment, error)
 }
 
 // Ensure real Client implements the interface
@@ -168,6 +170,12 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 		areaCount++
 		log.Printf("Saved area: %s (%s) - Total areas: %d", areaData.Title, areaIDStr, areaCount)
 
+		// Sync area comments
+		if err := s.syncAreaComments(ctx, areaIDStr); err != nil {
+			log.Printf("Warning: failed to sync comments for area %s: %v", areaIDStr, err)
+			// Continue processing even if comment sync fails
+		}
+
 		// Collect boulder routes for GPS distribution
 		var boulderRoutes []string // Store route IDs for GPS calculation
 
@@ -183,7 +191,7 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 					parentID:   &item.mpAreaID,
 				})
 			} else {
-				// It's a route - check if it's a boulder route
+				// It's a route - check if it's a boulder route (for GPS calculation only)
 				isBoulder := false
 				for _, rt := range child.RouteTypes {
 					if strings.ToLower(rt) == "boulder" {
@@ -192,11 +200,7 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 					}
 				}
 
-				if !isBoulder {
-					continue // Skip non-boulder routes
-				}
-
-				// Save route (without GPS for now - will calculate after all routes are collected)
+				// Save route (all types: boulder, sport, trad, etc.)
 				route := &models.MPRoute{
 					MPRouteID:  childIDStr,
 					MPAreaID:   item.mpAreaID,
@@ -211,8 +215,10 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 					continue
 				}
 
-				// Add to boulder routes list for GPS calculation
-				boulderRoutes = append(boulderRoutes, childIDStr)
+				// Add to boulder routes list for GPS calculation (only boulders need GPS distribution)
+				if isBoulder {
+					boulderRoutes = append(boulderRoutes, childIDStr)
+				}
 
 				routeCount++
 				log.Printf("Saved route: %s (%s) - Total routes: %d", child.Title, childIDStr, routeCount)
@@ -221,6 +227,12 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 				if err := s.syncRouteTicks(ctx, childIDStr); err != nil {
 					log.Printf("Error syncing ticks for route %s: %v", childIDStr, err)
 					// Continue processing other routes even if tick sync fails
+				}
+
+				// Fetch and save comments for this route
+				if err := s.syncRouteComments(ctx, childIDStr); err != nil {
+					log.Printf("Warning: failed to sync comments for route %s: %v", childIDStr, err)
+					// Continue processing other routes even if comment sync fails
 				}
 			}
 		}
@@ -306,6 +318,58 @@ func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID strin
 
 	if tickCount > 0 {
 		log.Printf("Saved %d ticks for route %s", tickCount, routeID)
+	}
+
+	return nil
+}
+
+// syncAreaComments fetches and saves all comments for a given area
+func (s *ClimbTrackingService) syncAreaComments(ctx context.Context, areaID string) error {
+	comments, err := s.mpClient.GetAreaComments(areaID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch comments: %w", err)
+	}
+
+	commentCount := 0
+	for _, comment := range comments {
+		commentedAt := time.Unix(comment.Created, 0)
+		userName := comment.GetUserInfo()
+
+		if err := s.repo.SaveAreaComment(ctx, strconv.Itoa(comment.ID), areaID, userName, comment.Message, commentedAt); err != nil {
+			log.Printf("Error saving area comment: %v", err)
+			continue
+		}
+		commentCount++
+	}
+
+	if commentCount > 0 {
+		log.Printf("Saved %d comments for area %s", commentCount, areaID)
+	}
+
+	return nil
+}
+
+// syncRouteComments fetches and saves all comments for a given route
+func (s *ClimbTrackingService) syncRouteComments(ctx context.Context, routeID string) error {
+	comments, err := s.mpClient.GetRouteComments(routeID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch comments: %w", err)
+	}
+
+	commentCount := 0
+	for _, comment := range comments {
+		commentedAt := time.Unix(comment.Created, 0)
+		userName := comment.GetUserInfo()
+
+		if err := s.repo.SaveRouteComment(ctx, strconv.Itoa(comment.ID), routeID, userName, comment.Message, commentedAt); err != nil {
+			log.Printf("Error saving route comment: %v", err)
+			continue
+		}
+		commentCount++
+	}
+
+	if commentCount > 0 {
+		log.Printf("Saved %d comments for route %s", commentCount, routeID)
 	}
 
 	return nil
