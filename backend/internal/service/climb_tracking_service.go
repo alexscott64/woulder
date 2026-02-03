@@ -185,7 +185,7 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 		}
 
 		// Collect boulder routes for GPS distribution
-		var boulderRoutes []string // Store route IDs for GPS calculation
+		var boulderRoutes []int64 // Store route IDs for GPS calculation
 
 		// Process children
 		for _, child := range areaData.Children {
@@ -232,7 +232,7 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 
 				// Add to boulder routes list for GPS calculation (only boulders need GPS distribution)
 				if isBoulder {
-					boulderRoutes = append(boulderRoutes, childIDStr)
+					boulderRoutes = append(boulderRoutes, int64(child.ID))
 				}
 
 				routeCount++
@@ -437,7 +437,7 @@ func (s *ClimbTrackingService) GetAreasOrderedByActivity(
 // GetSubareasOrderedByActivity retrieves subareas of a parent area ordered by recent climb activity
 func (s *ClimbTrackingService) GetSubareasOrderedByActivity(
 	ctx context.Context,
-	parentAreaID string,
+	parentAreaID int64,
 	locationID int,
 ) ([]models.AreaActivitySummary, error) {
 	return s.repo.GetSubareasOrderedByActivity(ctx, parentAreaID, locationID)
@@ -446,7 +446,7 @@ func (s *ClimbTrackingService) GetSubareasOrderedByActivity(
 // GetRoutesOrderedByActivity retrieves routes in an area ordered by recent climb activity
 func (s *ClimbTrackingService) GetRoutesOrderedByActivity(
 	ctx context.Context,
-	areaID string,
+	areaID int64,
 	locationID int,
 	limit int,
 ) ([]models.RouteActivitySummary, error) {
@@ -456,7 +456,7 @@ func (s *ClimbTrackingService) GetRoutesOrderedByActivity(
 // GetRecentTicksForRoute retrieves recent ticks for a specific route
 func (s *ClimbTrackingService) GetRecentTicksForRoute(
 	ctx context.Context,
-	routeID string,
+	routeID int64,
 	limit int,
 ) ([]models.ClimbHistoryEntry, error) {
 	return s.repo.GetRecentTicksForRoute(ctx, routeID, limit)
@@ -541,14 +541,15 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 		// Get the timestamp of the last tick we have for this route
 		lastTickTime, err := s.repo.GetLastTickTimestampForRoute(ctx, routeID)
 		if err != nil {
-			log.Printf("Error getting last tick for route %s: %v", routeID, err)
+			log.Printf("Error getting last tick for route %d: %v", routeID, err)
 			continue
 		}
 
-		// Fetch ticks from Mountain Project
-		ticks, err := s.mpClient.GetRouteTicks(routeID)
+		// Fetch ticks from Mountain Project (API requires string)
+		routeIDStr := strconv.FormatInt(routeID, 10)
+		ticks, err := s.mpClient.GetRouteTicks(routeIDStr)
 		if err != nil {
-			log.Printf("Error fetching ticks for route %s: %v", routeID, err)
+			log.Printf("Error fetching ticks for route %d: %v", routeID, err)
 			continue
 		}
 
@@ -650,7 +651,7 @@ func (s *ClimbTrackingService) SyncNewTicksForAllLocations(ctx context.Context) 
 // and updates the database with calculated coordinates and aspects
 func (s *ClimbTrackingService) calculateBoulderGPS(
 	ctx context.Context,
-	routeIDs []string,
+	routeIDs []int64,
 	centerLat, centerLon float64,
 ) error {
 	if len(routeIDs) == 0 {
@@ -672,7 +673,7 @@ func (s *ClimbTrackingService) calculateBoulderGPS(
 
 		err := s.repo.UpdateRouteGPS(ctx, routeID, pos.Latitude, pos.Longitude, pos.Aspect)
 		if err != nil {
-			log.Printf("Error updating GPS for route %s: %v", routeID, err)
+			log.Printf("Error updating GPS for route %d: %v", routeID, err)
 			continue
 		}
 		updateCount++

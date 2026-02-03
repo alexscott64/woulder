@@ -256,9 +256,9 @@ COMMENT ON COLUMN woulder.location_sun_exposure.tree_coverage_percent IS 'Percen
 -- Stores hierarchical area data from Mountain Project (supports multiple root areas per location)
 CREATE TABLE IF NOT EXISTS woulder.mp_areas (
     id SERIAL PRIMARY KEY,
-    mp_area_id VARCHAR(50) UNIQUE NOT NULL,           -- Mountain Project area ID
+    mp_area_id BIGINT UNIQUE NOT NULL,                -- Mountain Project area ID (integer)
     name VARCHAR(255) NOT NULL,
-    parent_mp_area_id VARCHAR(50),                    -- For hierarchy (null = root area)
+    parent_mp_area_id BIGINT,                         -- For hierarchy (null = root area)
     area_type VARCHAR(50),                            -- "area" or terminal type
     location_id INTEGER REFERENCES woulder.locations(id) ON DELETE SET NULL,
     latitude DECIMAL(10, 7),                          -- GPS coordinates
@@ -278,8 +278,8 @@ CREATE INDEX IF NOT EXISTS idx_mp_areas_lat_lon ON woulder.mp_areas(latitude, lo
 -- Stores individual boulder problems from Mountain Project
 CREATE TABLE IF NOT EXISTS woulder.mp_routes (
     id SERIAL PRIMARY KEY,
-    mp_route_id VARCHAR(50) UNIQUE NOT NULL,          -- Mountain Project route ID
-    mp_area_id VARCHAR(50) REFERENCES woulder.mp_areas(mp_area_id) ON DELETE CASCADE,
+    mp_route_id BIGINT UNIQUE NOT NULL,               -- Mountain Project route ID (integer)
+    mp_area_id BIGINT REFERENCES woulder.mp_areas(mp_area_id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     route_type VARCHAR(100),                          -- "Boulder", "Trad", etc.
     rating VARCHAR(50),                               -- "V4", "5.10a", etc.
@@ -301,7 +301,7 @@ CREATE INDEX IF NOT EXISTS idx_mp_routes_lat_lon ON woulder.mp_routes(latitude, 
 -- Stores individual climb logs (ticks) from Mountain Project users
 CREATE TABLE IF NOT EXISTS woulder.mp_ticks (
     id SERIAL PRIMARY KEY,
-    mp_route_id VARCHAR(50) REFERENCES woulder.mp_routes(mp_route_id) ON DELETE CASCADE,
+    mp_route_id BIGINT REFERENCES woulder.mp_routes(mp_route_id) ON DELETE CASCADE,
     user_name VARCHAR(255),
     climbed_at TIMESTAMPTZ NOT NULL,
     style VARCHAR(50),                                -- "Lead", "Flash", "Send", etc.
@@ -320,7 +320,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_mp_ticks_unique ON woulder.mp_ticks(mp_rou
 -- Stores boulder-specific drying metadata (tree cover, rock type overrides, cached sun data)
 CREATE TABLE IF NOT EXISTS woulder.boulder_drying_profiles (
     id SERIAL PRIMARY KEY,
-    mp_route_id VARCHAR(50) UNIQUE NOT NULL REFERENCES woulder.mp_routes(mp_route_id) ON DELETE CASCADE,
+    mp_route_id BIGINT UNIQUE NOT NULL REFERENCES woulder.mp_routes(mp_route_id) ON DELETE CASCADE,
     tree_coverage_percent DECIMAL(5, 2) CHECK (tree_coverage_percent >= 0 AND tree_coverage_percent <= 100),
     rock_type_override VARCHAR(100),                  -- Optional boulder-specific rock type
     last_sun_calc_at TIMESTAMPTZ,                     -- Last time sun exposure was calculated

@@ -1,6 +1,12 @@
 -- Migration 000016: Convert Mountain Project ID columns from VARCHAR to BIGINT
 -- This improves performance and reduces storage for MP IDs
 
+-- Step 0: Clean up any empty strings (convert to NULL where appropriate)
+-- For nullable foreign key columns
+UPDATE woulder.mp_areas SET parent_mp_area_id = NULL WHERE parent_mp_area_id = '';
+UPDATE woulder.mp_comments SET mp_area_id = NULL WHERE mp_area_id = '' AND comment_type != 'area';
+UPDATE woulder.mp_comments SET mp_route_id = NULL WHERE mp_route_id = '' AND comment_type != 'route';
+
 -- Step 1: Drop foreign key constraints (will be recreated after conversion)
 ALTER TABLE woulder.mp_routes DROP CONSTRAINT IF EXISTS mp_routes_mp_area_id_fkey;
 ALTER TABLE woulder.mp_ticks DROP CONSTRAINT IF EXISTS mp_ticks_mp_route_id_fkey;
@@ -11,9 +17,10 @@ ALTER TABLE woulder.boulder_drying_profiles DROP CONSTRAINT IF EXISTS boulder_dr
 ALTER TABLE woulder.mp_areas
     ALTER COLUMN mp_area_id TYPE BIGINT USING mp_area_id::BIGINT;
 
--- Convert parent_mp_area_id
+-- Convert parent_mp_area_id (nullable)
 ALTER TABLE woulder.mp_areas
-    ALTER COLUMN parent_mp_area_id TYPE BIGINT USING parent_mp_area_id::BIGINT;
+    ALTER COLUMN parent_mp_area_id TYPE BIGINT
+    USING CASE WHEN parent_mp_area_id IS NULL OR parent_mp_area_id = '' THEN NULL ELSE parent_mp_area_id::BIGINT END;
 
 -- Step 3: Convert mp_routes columns
 -- Convert mp_route_id first
@@ -33,10 +40,12 @@ ALTER TABLE woulder.mp_comments
     ALTER COLUMN mp_comment_id TYPE BIGINT USING mp_comment_id::BIGINT;
 
 ALTER TABLE woulder.mp_comments
-    ALTER COLUMN mp_area_id TYPE BIGINT USING mp_area_id::BIGINT;
+    ALTER COLUMN mp_area_id TYPE BIGINT
+    USING CASE WHEN mp_area_id IS NULL OR mp_area_id = '' THEN NULL ELSE mp_area_id::BIGINT END;
 
 ALTER TABLE woulder.mp_comments
-    ALTER COLUMN mp_route_id TYPE BIGINT USING mp_route_id::BIGINT;
+    ALTER COLUMN mp_route_id TYPE BIGINT
+    USING CASE WHEN mp_route_id IS NULL OR mp_route_id = '' THEN NULL ELSE mp_route_id::BIGINT END;
 
 -- Step 6: Convert boulder_drying_profiles.mp_route_id
 ALTER TABLE woulder.boulder_drying_profiles

@@ -529,7 +529,7 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 		len(statusMap), time.Since(calcStart))
 
 	// Group routes by area and compute stats
-	results := make(map[string]*models.AreaDryingStats)
+	results := make(map[int64]*models.AreaDryingStats)
 	for _, areaID := range areaIDs {
 		routes, err := s.repo.GetRoutesWithGPSByArea(ctx, areaID)
 		if err != nil || len(routes) == 0 {
