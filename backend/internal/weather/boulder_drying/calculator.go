@@ -312,6 +312,7 @@ func (c *Calculator) Calculate6DayForecast(
 	baseDryingHours float64, // Base drying time for location
 ) []DryingForecastPeriod {
 	if len(hourlyForecast) == 0 {
+		log.Printf("Warning: Calculate6DayForecast called with empty hourlyForecast")
 		return nil
 	}
 
@@ -361,7 +362,9 @@ func (c *Calculator) Calculate6DayForecast(
 		if !currentlyWet && hasRain {
 			// Transition: dry -> wet
 			// Close previous dry period
-			forecast[len(forecast)-1].EndTime = hour.Timestamp
+			if len(forecast) > 0 {
+				forecast[len(forecast)-1].EndTime = hour.Timestamp
+			}
 
 			// Start new wet period
 			currentlyWet = true
@@ -374,6 +377,11 @@ func (c *Calculator) Calculate6DayForecast(
 			})
 		} else if currentlyWet {
 			// Currently wet - check if more rain or drying
+			if len(forecast) == 0 {
+				// Safety check - forecast should never be empty here, but if it is, skip this iteration
+				continue
+			}
+
 			if hasRain {
 				// More rain - accumulate and reset drying clock
 				forecast[len(forecast)-1].RainAmount += hour.Precipitation

@@ -90,7 +90,8 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
   const areaDryingStatsMap = new Map();
   if (areaDryingStatsBatch) {
     Object.entries(areaDryingStatsBatch).forEach(([areaId, stats]) => {
-      areaDryingStatsMap.set(areaId, stats);
+      // Convert string keys to numbers for consistent lookups
+      areaDryingStatsMap.set(Number(areaId), stats);
     });
   }
 

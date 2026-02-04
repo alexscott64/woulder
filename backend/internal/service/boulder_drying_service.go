@@ -251,23 +251,20 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	}
 	log.Printf("[PERF]   GetLocation took %v", time.Since(locStart))
 
-	// CRITICAL: Fetch FRESH weather from API, not database cache
-	// Database cache is stale and missing accurate snow/precipitation data
-	// This is slower but accuracy is more important than speed for rock drying
+	// Use cached weather data from database (updated hourly)
+	// This is much faster than fetching from API and accurate enough for drying calculations
 	weatherStart := time.Now()
-	currentWeather, hourlyForecast, _, err := s.weatherClient.GetCurrentAndForecast(
-		location.Latitude, location.Longitude,
-	)
+	currentWeather, err := s.repo.GetCurrentWeather(ctx, locationID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to fetch current weather from API: %w", err)
+		return nil, nil, fmt.Errorf("failed to get current weather from database: %w", err)
 	}
-	log.Printf("[PERF]   GetCurrentAndForecast (API) took %v", time.Since(weatherStart))
 
-	// Set location ID on weather data
-	currentWeather.LocationID = locationID
-	for i := range hourlyForecast {
-		hourlyForecast[i].LocationID = locationID
+	// Get hourly forecast from database (next 7 days)
+	hourlyForecast, err := s.repo.GetForecastWeather(ctx, locationID, 168) // 7 days = 168 hours
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get forecast weather from database: %w", err)
 	}
+	log.Printf("[PERF]   Got weather from database cache took %v", time.Since(weatherStart))
 
 	// Get historical weather (last 7 days) from database
 	histStart := time.Now()
