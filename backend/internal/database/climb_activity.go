@@ -206,7 +206,15 @@ func (db *Database) GetSubareasOrderedByActivity(ctx context.Context, parentArea
 // Uses the same smart date filtering as GetClimbHistoryForLocation
 func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID int64, locationID int, limit int) ([]models.RouteActivitySummary, error) {
 	query := `
-		WITH adjusted_ticks AS (
+		WITH area_routes AS (
+			-- Filter routes by area and location first
+			SELECT r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name AS area_name
+			FROM woulder.mp_routes r
+			INNER JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
+			WHERE r.mp_area_id = $1
+			  AND r.location_id = $2
+		),
+		adjusted_ticks AS (
 			SELECT
 				t.mp_route_id,
 				t.user_name,
@@ -226,30 +234,29 @@ func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID int64
 						ELSE t.climbed_at
 					END DESC) AS tick_rank
 			FROM woulder.mp_ticks t
+			-- Only process ticks for routes in this area
+			INNER JOIN area_routes ar ON t.mp_route_id = ar.mp_route_id
 			WHERE
 				t.climbed_at <= NOW() + INTERVAL '30 days'
 				AND t.climbed_at >= NOW() - INTERVAL '2 years'
 		)
 		SELECT
-			r.mp_route_id,
-			r.name,
-			r.rating,
-			r.mp_area_id,
+			ar.mp_route_id,
+			ar.name,
+			ar.rating,
+			ar.mp_area_id,
 			COALESCE(MAX(at.adjusted_climbed_at), NOW() - INTERVAL '100 years') AS last_climb_at,
 			COALESCE(EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int, 36500) AS days_since_climb,
 			at.user_name,
 			at.adjusted_climbed_at,
 			at.style,
 			at.comment,
-			a.name AS area_name,
+			ar.area_name,
 			CASE WHEN MAX(at.adjusted_climbed_at) IS NULL THEN 1 ELSE 0 END AS no_ticks
-		FROM woulder.mp_routes r
-		LEFT JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id AND at.tick_rank = 1
-		INNER JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
-		WHERE r.mp_area_id = $1
-		  AND r.location_id = $2
-		GROUP BY r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name, at.user_name, at.adjusted_climbed_at, at.style, at.comment
-		ORDER BY no_ticks ASC, MAX(at.adjusted_climbed_at) DESC NULLS LAST, r.name ASC
+		FROM area_routes ar
+		LEFT JOIN adjusted_ticks at ON ar.mp_route_id = at.mp_route_id AND at.tick_rank = 1
+		GROUP BY ar.mp_route_id, ar.name, ar.rating, ar.mp_area_id, ar.area_name, at.user_name, at.adjusted_climbed_at, at.style, at.comment
+		ORDER BY no_ticks ASC, MAX(at.adjusted_climbed_at) DESC NULLS LAST, ar.name ASC
 		LIMIT $3
 	`
 
@@ -360,6 +367,7 @@ func (db *Database) GetRecentTicksForRoute(ctx context.Context, routeID int64, l
 	var ticks []models.ClimbHistoryEntry
 	for rows.Next() {
 		var tick models.ClimbHistoryEntry
+		var climbedBy, style sql.NullString
 		var comment sql.NullString
 
 		err := rows.Scan(
@@ -369,8 +377,8 @@ func (db *Database) GetRecentTicksForRoute(ctx context.Context, routeID int64, l
 			&tick.MPAreaID,
 			&tick.AreaName,
 			&tick.ClimbedAt,
-			&tick.ClimbedBy,
-			&tick.Style,
+			&climbedBy,
+			&style,
 			&comment,
 			&tick.DaysSinceClimb,
 		)
@@ -378,6 +386,9 @@ func (db *Database) GetRecentTicksForRoute(ctx context.Context, routeID int64, l
 			return nil, err
 		}
 
+		// Handle nullable fields
+		tick.ClimbedBy = climbedBy.String // Will be empty string if NULL
+		tick.Style = style.String         // Will be empty string if NULL
 		if comment.Valid {
 			tick.Comment = &comment.String
 		}
