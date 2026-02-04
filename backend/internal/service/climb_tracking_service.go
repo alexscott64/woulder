@@ -301,7 +301,7 @@ func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID strin
 				// Format 3: "2006-01-02" - Date only, use noon Pacific as default time
 				climbedAt, err = time.ParseInLocation("2006-01-02", tick.Date, pacificTZ)
 				if err != nil {
-					log.Printf("Warning: invalid date format for tick on route %d: %s", routeID, tick.Date)
+					log.Printf("Warning: invalid date format for tick on route %s: %s", routeID, tick.Date)
 					continue
 				}
 			}
@@ -309,7 +309,7 @@ func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID strin
 
 		// Skip ticks with future dates (data quality issue)
 		if !isTickDateValid(climbedAt) {
-			log.Printf("Warning: skipping tick with future date on route %d: %s", routeID, tick.Date)
+			log.Printf("Warning: skipping tick with future date on route %s: %s", routeID, tick.Date)
 			continue
 		}
 
@@ -563,7 +563,7 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 				if err != nil {
 					climbedAt, err = time.ParseInLocation("2006-01-02", tick.Date, pacificTZ)
 					if err != nil {
-						log.Printf("Warning: invalid date format for tick on route %d: %s", routeID, tick.Date)
+						log.Printf("Warning: invalid date format for tick on route %s: %s", routeID, tick.Date)
 						continue
 					}
 				}
@@ -571,7 +571,7 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 
 			// Skip ticks with future dates (data quality issue)
 			if !isTickDateValid(climbedAt) {
-				log.Printf("Warning: skipping tick with future date on route %d: %s", routeID, tick.Date)
+				log.Printf("Warning: skipping tick with future date on route %s: %s", routeID, tick.Date)
 				continue
 			}
 
@@ -605,7 +605,8 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 
 		if newTickCount > 0 {
 			totalNewTicks += newTickCount
-			log.Printf("Route %d: %d new ticks", routeID, newTickCount)
+			// Verbose per-route logging disabled - see summary log below
+			// log.Printf("Route %d: %d new ticks", routeID, newTickCount)
 		}
 
 		routesProcessed++

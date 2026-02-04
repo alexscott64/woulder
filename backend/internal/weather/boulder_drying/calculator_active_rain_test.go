@@ -23,7 +23,7 @@ func TestActiveRainShowsWet(t *testing.T) {
 	}
 
 	route := &models.MPRoute{
-		MPRouteID: "test-route-1",
+		MPRouteID: 10001,
 		Name:      "Test Boulder",
 		Latitude:  ptrFloat64(37.7),
 		Longitude: ptrFloat64(-119.6),
@@ -79,7 +79,7 @@ func TestLocationDryTimeZeroMeansDry(t *testing.T) {
 	}
 
 	route := &models.MPRoute{
-		MPRouteID: "test-route-2",
+		MPRouteID: 10002,
 		Name:      "Test Boulder",
 		Latitude:  ptrFloat64(37.7),
 		Longitude: ptrFloat64(-119.6),
@@ -131,7 +131,7 @@ func TestHeavySnowShowsWet(t *testing.T) {
 	}
 
 	route := &models.MPRoute{
-		MPRouteID: "test-route-3",
+		MPRouteID: 10003,
 		Name:      "Snowy Boulder",
 		Latitude:  ptrFloat64(33.8),
 		Longitude: ptrFloat64(-116.6),

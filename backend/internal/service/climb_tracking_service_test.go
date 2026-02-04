@@ -31,8 +31,10 @@ func createTickWithUser(date, userName, style string) mountainproject.Tick {
 
 // Mock Mountain Project Client
 type MockMPClient struct {
-	GetRouteTicksFn func(routeID string) ([]mountainproject.Tick, error)
-	GetAreaFn       func(areaID string) (*mountainproject.AreaResponse, error)
+	GetRouteTicksFn     func(routeID string) ([]mountainproject.Tick, error)
+	GetAreaFn           func(areaID string) (*mountainproject.AreaResponse, error)
+	GetAreaCommentsFn   func(areaID string) ([]mountainproject.Comment, error)
+	GetRouteCommentsFn  func(routeID string) ([]mountainproject.Comment, error)
 }
 
 func (m *MockMPClient) GetRouteTicks(routeID string) ([]mountainproject.Tick, error) {
@@ -45,6 +47,20 @@ func (m *MockMPClient) GetRouteTicks(routeID string) ([]mountainproject.Tick, er
 func (m *MockMPClient) GetArea(areaID string) (*mountainproject.AreaResponse, error) {
 	if m.GetAreaFn != nil {
 		return m.GetAreaFn(areaID)
+	}
+	return nil, nil
+}
+
+func (m *MockMPClient) GetAreaComments(areaID string) ([]mountainproject.Comment, error) {
+	if m.GetAreaCommentsFn != nil {
+		return m.GetAreaCommentsFn(areaID)
+	}
+	return nil, nil
+}
+
+func (m *MockMPClient) GetRouteComments(routeID string) ([]mountainproject.Comment, error) {
+	if m.GetRouteCommentsFn != nil {
+		return m.GetRouteCommentsFn(routeID)
 	}
 	return nil, nil
 }
@@ -64,10 +80,10 @@ func TestClimbTrackingService_GetClimbHistoryForLocation(t *testing.T) {
 			mockFn: func(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error) {
 				return []models.ClimbHistoryEntry{
 					{
-						MPRouteID:      "123",
+						MPRouteID:      123,
 						RouteName:      "Test Route",
 						RouteRating:    "V5",
-						MPAreaID:       "456",
+						MPAreaID:       456,
 						AreaName:       "Test Area",
 						ClimbedAt:      now,
 						ClimbedBy:      "Test User",
@@ -130,11 +146,11 @@ func TestClimbTrackingService_SyncNewTicksForLocation(t *testing.T) {
 	tests := []struct {
 		name           string
 		locationID     int
-		mockRouteIDs   []string
+		mockRouteIDs   []int64
 		mockLastTick   *time.Time
 		mockMPTicks    []mountainproject.Tick
-		mockGetRoutes  func(ctx context.Context, locationID int) ([]string, error)
-		mockGetLastFn  func(ctx context.Context, routeID string) (*time.Time, error)
+		mockGetRoutes  func(ctx context.Context, locationID int) ([]int64, error)
+		mockGetLastFn  func(ctx context.Context, routeID int64) (*time.Time, error)
 		mockSaveTickFn func(ctx context.Context, tick *models.MPTick) error
 		wantErr        bool
 		expectedSaved  int
@@ -142,15 +158,15 @@ func TestClimbTrackingService_SyncNewTicksForLocation(t *testing.T) {
 		{
 			name:         "success - new ticks only",
 			locationID:   1,
-			mockRouteIDs: []string{"123"},
+			mockRouteIDs: []int64{123},
 			mockLastTick: &oldTick,
 			mockMPTicks: []mountainproject.Tick{
 				createTickWithUser(newTick.Format("Jan 2, 2006, 3:04 pm"), "TestUser", "Flash"),
 			},
-			mockGetRoutes: func(ctx context.Context, locationID int) ([]string, error) {
-				return []string{"123"}, nil
+			mockGetRoutes: func(ctx context.Context, locationID int) ([]int64, error) {
+				return []int64{123}, nil
 			},
-			mockGetLastFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+			mockGetLastFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
 				return &oldTick, nil
 			},
 			mockSaveTickFn: func(ctx context.Context, tick *models.MPTick) error {
@@ -162,15 +178,15 @@ func TestClimbTrackingService_SyncNewTicksForLocation(t *testing.T) {
 		{
 			name:         "skip old ticks",
 			locationID:   1,
-			mockRouteIDs: []string{"123"},
+			mockRouteIDs: []int64{123},
 			mockLastTick: &newTick,
 			mockMPTicks: []mountainproject.Tick{
 				createTickWithUser(oldTick.Format("Jan 2, 2006, 3:04 pm"), "TestUser", "Send"),
 			},
-			mockGetRoutes: func(ctx context.Context, locationID int) ([]string, error) {
-				return []string{"123"}, nil
+			mockGetRoutes: func(ctx context.Context, locationID int) ([]int64, error) {
+				return []int64{123}, nil
 			},
-			mockGetLastFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+			mockGetLastFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
 				return &newTick, nil
 			},
 			mockSaveTickFn: func(ctx context.Context, tick *models.MPTick) error {
@@ -183,9 +199,9 @@ func TestClimbTrackingService_SyncNewTicksForLocation(t *testing.T) {
 		{
 			name:         "no routes for location",
 			locationID:   999,
-			mockRouteIDs: []string{},
-			mockGetRoutes: func(ctx context.Context, locationID int) ([]string, error) {
-				return []string{}, nil
+			mockRouteIDs: []int64{},
+			mockGetRoutes: func(ctx context.Context, locationID int) ([]int64, error) {
+				return []int64{}, nil
 			},
 			wantErr:       false,
 			expectedSaved: 0,
@@ -193,7 +209,7 @@ func TestClimbTrackingService_SyncNewTicksForLocation(t *testing.T) {
 		{
 			name:       "error getting routes",
 			locationID: 1,
-			mockGetRoutes: func(ctx context.Context, locationID int) ([]string, error) {
+			mockGetRoutes: func(ctx context.Context, locationID int) ([]int64, error) {
 				return nil, errors.New("database error")
 			},
 			wantErr:       true,
@@ -268,10 +284,10 @@ func TestClimbTrackingService_GetSyncStatus(t *testing.T) {
 
 func TestClimbTrackingService_ConcurrentSyncPrevention(t *testing.T) {
 	mockRepo := &database.MockRepository{
-		GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
+		GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
 			// Simulate slow operation
 			time.Sleep(100 * time.Millisecond)
-			return []string{}, nil
+			return []int64{}, nil
 		},
 	}
 	mockMPClient := &MockMPClient{}
@@ -321,10 +337,10 @@ func TestClimbTrackingService_DateParsing(t *testing.T) {
 			testTime := time.Now().Add(-1 * time.Hour)
 
 			mockRepo := &database.MockRepository{
-				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
-					return []string{"123"}, nil
+				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
+					return []int64{123}, nil
 				},
-				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
 					oldTime := testTime.Add(-48 * time.Hour)
 					return &oldTime, nil
 				},
@@ -392,10 +408,10 @@ func TestDateParsingWithTimezone(t *testing.T) {
 			savedTicks := []*models.MPTick{}
 
 			mockRepo := &database.MockRepository{
-				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
-					return []string{"test-route-123"}, nil
+				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
+					return []int64{123456789}, nil
 				},
-				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
 					return nil, nil // No previous ticks
 				},
 				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
@@ -488,10 +504,10 @@ func TestTimezoneConsistencyBetweenSyncs(t *testing.T) {
 			savedTicks := []*models.MPTick{}
 
 			mockRepo := &database.MockRepository{
-				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
-					return []string{"route-1"}, nil
+				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
+					return []int64{100001}, nil
 				},
-				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
 					return &referenceTime, nil
 				},
 				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
@@ -574,10 +590,10 @@ func TestFutureDateFiltering(t *testing.T) {
 			savedTicks := []*models.MPTick{}
 
 			mockRepo := &database.MockRepository{
-				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
-					return []string{"test-route-123"}, nil
+				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
+					return []int64{123456789}, nil
 				},
-				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
 					return nil, nil // No previous ticks
 				},
 				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
@@ -665,10 +681,10 @@ func TestCommentCleaning(t *testing.T) {
 			savedTicks := []*models.MPTick{}
 
 			mockRepo := &database.MockRepository{
-				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
-					return []string{"test-route-123"}, nil
+				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
+					return []int64{123456789}, nil
 				},
-				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
 					return nil, nil
 				},
 				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
@@ -734,10 +750,10 @@ func TestJamieZeldaRailsScenario(t *testing.T) {
 	savedTicks := []*models.MPTick{}
 
 	mockRepo := &database.MockRepository{
-		GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]string, error) {
-			return []string{"zelda-rails-route"}, nil
+		GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
+			return []int64{999888777}, nil
 		},
-		GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID string) (*time.Time, error) {
+		GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
 			return nil, nil // No previous ticks
 		},
 		SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {

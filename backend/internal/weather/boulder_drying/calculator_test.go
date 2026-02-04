@@ -179,7 +179,7 @@ func TestCalculateBoulderDryingStatus(t *testing.T) {
 	ctx := context.Background()
 
 	route := &models.MPRoute{
-		MPRouteID: "123456",
+		MPRouteID: 123456,
 		Name:      "Test Boulder",
 		Latitude:  func() *float64 { v := 47.8172; return &v }(),
 		Longitude: func() *float64 { v := -121.6019; return &v }(),
@@ -205,8 +205,8 @@ func TestCalculateBoulderDryingStatus(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	if status.MPRouteID != "123456" {
-		t.Errorf("Expected route ID 123456, got %s", status.MPRouteID)
+	if status.MPRouteID != 123456 {
+		t.Errorf("Expected route ID 123456, got %d", status.MPRouteID)
 	}
 
 	if status.Latitude != 47.8172 {

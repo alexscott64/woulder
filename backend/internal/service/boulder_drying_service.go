@@ -139,7 +139,7 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 				hourlyForecast,
 			)
 			if err != nil {
-				log.Printf("Warning: Failed to calculate boulder drying status for %s: %v", route.MPRouteID, err)
+				log.Printf("Warning: Failed to calculate boulder drying status for %d: %v", route.MPRouteID, err)
 				failedRoutes[route.MPRouteID] = fmt.Sprintf("Calculation failed: %v", err)
 				continue
 			}
@@ -150,7 +150,7 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 			// Saving profiles during user requests adds significant latency
 
 			results[route.MPRouteID] = status
-			log.Printf("[PERF] Route %s: calc=%v total=%v", route.MPRouteID, calcTime, time.Since(routeStart))
+			log.Printf("[PERF] Route %d: calc=%v total=%v", route.MPRouteID, calcTime, time.Since(routeStart))
 		}
 
 		log.Printf("[PERF] Location %d processing took %v", locationID, time.Since(locationStart))
@@ -375,7 +375,7 @@ func (s *BoulderDryingService) GetAreaDryingStats(
 		// Get status from batch results
 		status, ok := routeStatuses[route.MPRouteID]
 		if !ok {
-			log.Printf("Warning: No drying status found for route %s", route.MPRouteID)
+			log.Printf("Warning: No drying status found for route %d", route.MPRouteID)
 			continue
 		}
 
@@ -517,7 +517,7 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 			hourlyForecast,       // REUSED for all routes
 		)
 		if err != nil {
-			log.Printf("Warning: Failed to calculate status for route %s: %v", routeID, err)
+			log.Printf("Warning: Failed to calculate status for route %d: %v", routeID, err)
 			continue
 		}
 		statusMap[routeID] = status

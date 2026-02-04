@@ -151,14 +151,14 @@ describe('useClimbActivity hooks', () => {
       expect(api.climbActivityApi.getRoutesOrderedByActivity).toHaveBeenCalledWith(1, '123', 50);
     });
 
-    it('should use default limit of 50', async () => {
+    it('should use default limit of 200', async () => {
       vi.spyOn(api.climbActivityApi, 'getRoutesOrderedByActivity').mockResolvedValue([]);
 
       const { result } = renderHook(() => useRoutesOrderedByActivity(1, '123'), { wrapper });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-      expect(api.climbActivityApi.getRoutesOrderedByActivity).toHaveBeenCalledWith(1, '123', 50);
+      expect(api.climbActivityApi.getRoutesOrderedByActivity).toHaveBeenCalledWith(1, '123', 200);
     });
 
     it('should not fetch when areaId is null', () => {

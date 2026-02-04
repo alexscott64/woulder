@@ -82,7 +82,7 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 	} else {
 		// Missing GPS coordinates - reduce confidence
 		status.ConfidenceScore -= 30
-		log.Printf("Warning: Route %s missing GPS coordinates", route.MPRouteID)
+		log.Printf("Warning: Route %d missing GPS coordinates", route.MPRouteID)
 	}
 
 	// Extract aspect
@@ -92,7 +92,7 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 		// Missing aspect - reduce confidence, default to South (most sun)
 		status.Aspect = "S"
 		status.ConfidenceScore -= 20
-		log.Printf("Warning: Route %s missing aspect, defaulting to South", route.MPRouteID)
+		log.Printf("Warning: Route %d missing aspect, defaulting to South", route.MPRouteID)
 	}
 
 	// Get tree coverage (from profile cache ONLY - never fetch during request)
@@ -114,7 +114,7 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 	if status.Latitude != 0 && status.Longitude != 0 {
 		sunHours, err := c.calculateSunExposure(ctx, status.Latitude, status.Longitude, status.Aspect, status.TreeCoveragePercent, profile)
 		if err != nil {
-			log.Printf("Warning: Failed to calculate sun exposure for %s: %v", route.MPRouteID, err)
+			log.Printf("Warning: Failed to calculate sun exposure for %d: %v", route.MPRouteID, err)
 			// Fall back to location-level sun exposure estimate
 			status.SunExposureHours = c.estimateSunExposureFromAspect(status.Aspect)
 			status.ConfidenceScore -= 25
