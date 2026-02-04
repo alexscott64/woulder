@@ -14,7 +14,7 @@ interface AreaDrillDownViewProps {
 
 interface BreadcrumbItem {
   name: string;
-  areaId: string | null; // null for root
+  areaId: number | null; // null for root
 }
 
 type FilterStatus = 'all' | 'dry' | 'drying' | 'wet';
@@ -24,7 +24,7 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([
     { name: locationName, areaId: null }
   ]);
-  const [expandedRoutes, setExpandedRoutes] = useState<Set<string>>(new Set());
+  const [expandedRoutes, setExpandedRoutes] = useState<Set<number>>(new Set());
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [sortBy, setSortBy] = useState<SortOption>('activity');
 
@@ -164,7 +164,7 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
 
   const handleAreaClick = (area: AreaActivitySummary | SearchResult) => {
     // Handle both AreaActivitySummary and SearchResult types
-    let areaId: string;
+    let areaId: number;
     if ('result_type' in area) {
       // SearchResult type - use id for areas, mp_area_id for routes
       areaId = area.result_type === 'area' ? area.id : area.mp_area_id;
@@ -181,7 +181,7 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
     setExpandedRoutes(new Set()); // Reset expanded routes when navigating
   };
 
-  const toggleRouteExpansion = (routeId: string) => {
+  const toggleRouteExpansion = (routeId: number) => {
     const newExpanded = new Set(expandedRoutes);
     if (newExpanded.has(routeId)) {
       newExpanded.delete(routeId);

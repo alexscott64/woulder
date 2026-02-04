@@ -32,7 +32,7 @@ describe('useClimbActivity hooks', () => {
     it('should fetch areas for a location', async () => {
       const mockAreas: AreaActivitySummary[] = [
         {
-          mp_area_id: '123',
+          mp_area_id: 123,
           name: 'Test Area',
           last_climb_at: '2025-01-15T10:00:00Z',
           total_ticks: 10,
@@ -77,9 +77,9 @@ describe('useClimbActivity hooks', () => {
     it('should fetch subareas for a location and area', async () => {
       const mockSubareas: AreaActivitySummary[] = [
         {
-          mp_area_id: '456',
+          mp_area_id: 456,
           name: 'Test Subarea',
-          parent_mp_area_id: '123',
+          parent_mp_area_id: 123,
           last_climb_at: '2025-01-15T10:00:00Z',
           total_ticks: 5,
           unique_routes: 3,
@@ -91,12 +91,12 @@ describe('useClimbActivity hooks', () => {
 
       vi.spyOn(api.climbActivityApi, 'getSubareasOrderedByActivity').mockResolvedValue(mockSubareas);
 
-      const { result } = renderHook(() => useSubareasOrderedByActivity(1, '123'), { wrapper });
+      const { result } = renderHook(() => useSubareasOrderedByActivity(1, 123), { wrapper });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
       expect(result.current.data).toEqual(mockSubareas);
-      expect(api.climbActivityApi.getSubareasOrderedByActivity).toHaveBeenCalledWith(1, '123');
+      expect(api.climbActivityApi.getSubareasOrderedByActivity).toHaveBeenCalledWith(1, 123);
     });
 
     it('should not fetch when areaId is null', () => {
@@ -108,7 +108,7 @@ describe('useClimbActivity hooks', () => {
     });
 
     it('should not fetch when locationId is falsy', () => {
-      const { result } = renderHook(() => useSubareasOrderedByActivity(0, '123'), { wrapper });
+      const { result } = renderHook(() => useSubareasOrderedByActivity(0, 123), { wrapper });
 
       expect(result.current.isPending).toBe(true);
       expect(result.current.fetchStatus).toBe('idle');
@@ -120,16 +120,16 @@ describe('useClimbActivity hooks', () => {
     it('should fetch routes for a location and area', async () => {
       const mockRoutes: RouteActivitySummary[] = [
         {
-          mp_route_id: '789',
+          mp_route_id: 789,
           name: 'Test Route',
           rating: 'V4',
-          mp_area_id: '123',
+          mp_area_id: 123,
           last_climb_at: '2025-01-15T10:00:00Z',
           most_recent_tick: {
-            mp_route_id: '789',
+            mp_route_id: 789,
             route_name: 'Test Route',
             route_rating: 'V4',
-            mp_area_id: '123',
+            mp_area_id: 123,
             area_name: 'Test Area',
             climbed_at: '2025-01-15T10:00:00Z',
             climbed_by: 'John Doe',
@@ -143,22 +143,22 @@ describe('useClimbActivity hooks', () => {
 
       vi.spyOn(api.climbActivityApi, 'getRoutesOrderedByActivity').mockResolvedValue(mockRoutes);
 
-      const { result } = renderHook(() => useRoutesOrderedByActivity(1, '123', 50), { wrapper });
+      const { result } = renderHook(() => useRoutesOrderedByActivity(1, 123, 50), { wrapper });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
       expect(result.current.data).toEqual(mockRoutes);
-      expect(api.climbActivityApi.getRoutesOrderedByActivity).toHaveBeenCalledWith(1, '123', 50);
+      expect(api.climbActivityApi.getRoutesOrderedByActivity).toHaveBeenCalledWith(1, 123, 50);
     });
 
     it('should use default limit of 200', async () => {
       vi.spyOn(api.climbActivityApi, 'getRoutesOrderedByActivity').mockResolvedValue([]);
 
-      const { result } = renderHook(() => useRoutesOrderedByActivity(1, '123'), { wrapper });
+      const { result } = renderHook(() => useRoutesOrderedByActivity(1, 123), { wrapper });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-      expect(api.climbActivityApi.getRoutesOrderedByActivity).toHaveBeenCalledWith(1, '123', 200);
+      expect(api.climbActivityApi.getRoutesOrderedByActivity).toHaveBeenCalledWith(1, 123, 200);
     });
 
     it('should not fetch when areaId is null', () => {

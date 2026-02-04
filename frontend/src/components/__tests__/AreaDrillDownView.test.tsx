@@ -29,13 +29,13 @@ describe('AreaDrillDownView - Drying Stats Type Handling', () => {
   );
 
   it('should correctly map area drying stats with number keys', async () => {
-    // Mock areas data with numeric mp_area_id (as returned by backend)
+    // Mock areas data with numeric mp_area_id (matching backend int64 types)
     const mockAreas: AreaActivitySummary[] = [
       {
-        mp_area_id: 108123672, // NUMBER type
+        mp_area_id: 108123672,
         name: 'Lower Wall',
         parent_mp_area_id: 108123669,
-        last_climb_at: new Date('2026-01-25T08:00:00Z'),
+        last_climb_at: '2026-01-25T08:00:00Z',
         total_ticks: 10,
         unique_routes: 5,
         days_since_climb: 2,
@@ -43,10 +43,10 @@ describe('AreaDrillDownView - Drying Stats Type Handling', () => {
         subarea_count: 0,
       },
       {
-        mp_area_id: 108127553, // NUMBER type
+        mp_area_id: 108127553,
         name: 'River Boulders',
         parent_mp_area_id: 108123669,
-        last_climb_at: new Date('2026-01-24T08:00:00Z'),
+        last_climb_at: '2026-01-24T08:00:00Z',
         total_ticks: 70,
         unique_routes: 20,
         days_since_climb: 3,
@@ -134,9 +134,7 @@ describe('AreaDrillDownView - Drying Stats Type Handling', () => {
     render(
       <AreaDrillDownView
         locationId={2}
-        onNavigateToArea={() => {}}
-        onNavigateBack={() => {}}
-        currentPath={[]}
+        locationName="Test Location"
       />,
       { wrapper }
     );
@@ -163,14 +161,14 @@ describe('AreaDrillDownView - Drying Stats Type Handling', () => {
   });
 
   it.skip('should correctly map route drying statuses with number keys', async () => {
-    // Mock route data with numeric mp_route_id (as returned by backend)
+    // Mock route data with numeric mp_route_id (matching backend int64 types)
     const mockRoutes = [
       {
-        mp_route_id: 114417549, // NUMBER type
+        mp_route_id: 114417549,
         name: 'Test Boulder',
         rating: 'V3',
         mp_area_id: 108123672,
-        last_climb_at: new Date('2026-01-25T08:00:00Z'),
+        last_climb_at: '2026-01-25T08:00:00Z',
         days_since_climb: 2,
         most_recent_tick: null,
       },
@@ -179,13 +177,20 @@ describe('AreaDrillDownView - Drying Stats Type Handling', () => {
     // Mock batch boulder drying status with STRING keys (as returned by Object.entries)
     const mockBoulderDryingStatus: Record<string, BoulderDryingStatus> = {
       '114417549': {
-        is_dry: false,
-        status: 'drying',
+        mp_route_id: 114417549,
+        is_wet: true,
+        is_safe: false,
+        status: 'poor',
+        message: 'Drying - wait 4.5 hours',
         hours_until_dry: 4.5,
-        last_rain_timestamp: new Date('2026-02-03T06:00:00Z'),
+        last_rain_timestamp: '2026-02-03T06:00:00Z',
         confidence_score: 100,
+        sun_exposure_hours: 6.5,
         tree_coverage_percent: 45.0,
+        rock_type: 'Granite',
         aspect: 'N',
+        latitude: 47.8,
+        longitude: -121.6,
       },
     };
 
@@ -239,13 +244,11 @@ describe('AreaDrillDownView - Drying Stats Type Handling', () => {
       error: null,
     } as any);
 
-    // Render component in route view (currentAreaId set to trigger route display)
+    // Render component in route view
     render(
       <AreaDrillDownView
         locationId={2}
-        onNavigateToArea={() => {}}
-        onNavigateBack={() => {}}
-        currentPath={[{ id: '108123672', name: 'Lower Wall' }]}
+        locationName="Test Location"
       />,
       { wrapper }
     );
@@ -272,7 +275,7 @@ describe('AreaDrillDownView - Drying Stats Type Handling', () => {
         mp_area_id: 108123672,
         name: 'Area Without Stats',
         parent_mp_area_id: 108123669,
-        last_climb_at: new Date('2026-01-25T08:00:00Z'),
+        last_climb_at: '2026-01-25T08:00:00Z',
         total_ticks: 10,
         unique_routes: 5,
         days_since_climb: 2,
@@ -334,9 +337,7 @@ describe('AreaDrillDownView - Drying Stats Type Handling', () => {
     render(
       <AreaDrillDownView
         locationId={2}
-        onNavigateToArea={() => {}}
-        onNavigateBack={() => {}}
-        currentPath={[]}
+        locationName="Test Location"
       />,
       { wrapper }
     );

@@ -55,10 +55,10 @@ export interface RockDryingStatus {
 }
 
 export interface ClimbHistoryEntry {
-  mp_route_id: string;       // Mountain Project route ID for linking
+  mp_route_id: number;       // Mountain Project route ID for linking
   route_name: string;
   route_rating: string;
-  mp_area_id: string;        // Mountain Project area ID for linking
+  mp_area_id: number;        // Mountain Project area ID for linking
   area_name: string;         // e.g., "Xyz Boulders"
   climbed_at: string;        // ISO 8601 timestamp
   climbed_by: string;
@@ -68,9 +68,9 @@ export interface ClimbHistoryEntry {
 }
 
 export interface AreaActivitySummary {
-  mp_area_id: string;
+  mp_area_id: number;
   name: string;
-  parent_mp_area_id?: string;
+  parent_mp_area_id?: number;
   last_climb_at: string;     // ISO 8601 timestamp
   total_ticks: number;
   unique_routes: number;
@@ -81,10 +81,10 @@ export interface AreaActivitySummary {
 }
 
 export interface RouteActivitySummary {
-  mp_route_id: string;
+  mp_route_id: number;
   name: string;
   rating: string;
-  mp_area_id: string;
+  mp_area_id: number;
   last_climb_at: string;     // ISO 8601 timestamp
   most_recent_tick?: ClimbHistoryEntry; // Null if no ascents
   recent_ticks?: ClimbHistoryEntry[];
@@ -93,10 +93,10 @@ export interface RouteActivitySummary {
 
 export interface SearchResult {
   result_type: 'area' | 'route';
-  id: string;
+  id: number;
   name: string;
   rating?: string;           // Only for routes
-  mp_area_id: string;
+  mp_area_id: number;
   area_name?: string;        // Only for routes (parent area name)
   last_climb_at: string;     // ISO 8601 timestamp
   days_since_climb: number;
@@ -168,7 +168,7 @@ export interface DryingForecastPeriod {
 }
 
 export interface BoulderDryingStatus {
-  mp_route_id: string;
+  mp_route_id: number;
   is_wet: boolean;
   is_safe: boolean;
   hours_until_dry: number;

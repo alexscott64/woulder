@@ -65,13 +65,13 @@ export const climbActivityApi = {
   },
 
   // Get subareas of a parent area ordered by recent activity
-  getSubareasOrderedByActivity: async (locationId: number, areaId: string): Promise<AreaActivitySummary[]> => {
+  getSubareasOrderedByActivity: async (locationId: number, areaId: number): Promise<AreaActivitySummary[]> => {
     const response = await api.get(`/climbs/location/${locationId}/areas/${areaId}/subareas`);
     return response.data;
   },
 
   // Get routes in an area ordered by recent activity
-  getRoutesOrderedByActivity: async (locationId: number, areaId: string, limit = 200): Promise<RouteActivitySummary[]> => {
+  getRoutesOrderedByActivity: async (locationId: number, areaId: number, limit = 200): Promise<RouteActivitySummary[]> => {
     const response = await api.get(`/climbs/location/${locationId}/areas/${areaId}/routes`, {
       params: { limit }
     });
@@ -79,7 +79,7 @@ export const climbActivityApi = {
   },
 
   // Get recent ticks for a specific route
-  getRecentTicksForRoute: async (routeId: string, limit = 5): Promise<ClimbHistoryEntry[]> => {
+  getRecentTicksForRoute: async (routeId: number, limit = 5): Promise<ClimbHistoryEntry[]> => {
     const response = await api.get(`/climbs/routes/${routeId}/ticks`, {
       params: { limit }
     });
@@ -103,13 +103,13 @@ export const climbActivityApi = {
   },
 
   // Get boulder-specific drying status for a route
-  getBoulderDryingStatus: async (routeId: string): Promise<BoulderDryingStatus> => {
+  getBoulderDryingStatus: async (routeId: number): Promise<BoulderDryingStatus> => {
     const response = await api.get(`/climbs/routes/${routeId}/drying-status`);
     return response.data;
   },
 
   // Get boulder-specific drying status for multiple routes in batch
-  getBatchBoulderDryingStatus: async (routeIds: string[]): Promise<Record<string, BoulderDryingStatus>> => {
+  getBatchBoulderDryingStatus: async (routeIds: number[]): Promise<Record<number, BoulderDryingStatus>> => {
     if (routeIds.length === 0) {
       return {};
     }
@@ -121,13 +121,13 @@ export const climbActivityApi = {
   },
 
   // Get area-level drying statistics
-  getAreaDryingStats: async (locationId: number, areaId: string): Promise<AreaDryingStats> => {
+  getAreaDryingStats: async (locationId: number, areaId: number): Promise<AreaDryingStats> => {
     const response = await api.get(`/climbs/location/${locationId}/areas/${areaId}/drying-stats`);
     return response.data;
   },
 
   // Get area-level drying statistics for multiple areas in batch
-  getBatchAreaDryingStats: async (locationId: number, areaIds: string[]): Promise<Record<string, AreaDryingStats>> => {
+  getBatchAreaDryingStats: async (locationId: number, areaIds: number[]): Promise<Record<number, AreaDryingStats>> => {
     if (areaIds.length === 0) {
       return {};
     }
