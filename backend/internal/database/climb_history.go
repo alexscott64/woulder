@@ -103,6 +103,9 @@ func (db *Database) GetClimbHistoryForLocation(ctx context.Context, locationID i
 	var history []models.ClimbHistoryEntry
 	for rows.Next() {
 		var entry models.ClimbHistoryEntry
+		var climbedBy, style sql.NullString
+		var comment sql.NullString
+
 		err := rows.Scan(
 			&entry.MPRouteID,
 			&entry.RouteName,
@@ -110,14 +113,22 @@ func (db *Database) GetClimbHistoryForLocation(ctx context.Context, locationID i
 			&entry.MPAreaID,
 			&entry.AreaName,
 			&entry.ClimbedAt,
-			&entry.ClimbedBy,
-			&entry.Style,
-			&entry.Comment,
+			&climbedBy,
+			&style,
+			&comment,
 			&entry.DaysSinceClimb,
 		)
 		if err != nil {
 			return nil, err
 		}
+
+		// Handle nullable fields
+		entry.ClimbedBy = climbedBy.String // Will be empty string if NULL
+		entry.Style = style.String         // Will be empty string if NULL
+		if comment.Valid {
+			entry.Comment = &comment.String
+		}
+
 		history = append(history, entry)
 	}
 

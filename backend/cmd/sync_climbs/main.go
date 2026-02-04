@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -16,7 +17,7 @@ import (
 type AreaConfig struct {
 	LocationName string
 	LocationID   int
-	MPAreaIDs    []string
+	MPAreaIDs    []int64
 }
 
 func main() {
@@ -46,27 +47,27 @@ func main() {
 		{
 			LocationName: "Skykomish - Money Creek",
 			LocationID:   1,
-			MPAreaIDs:    []string{"120714486"},
+			MPAreaIDs:    []int64{120714486},
 		},
 		{
 			LocationName: "Index",
 			LocationID:   2,
-			MPAreaIDs:    []string{"108123669"},
+			MPAreaIDs:    []int64{108123669},
 		},
 		{
 			LocationName: "Gold Bar",
 			LocationID:   3,
-			MPAreaIDs:    []string{"105805788"},
+			MPAreaIDs:    []int64{105805788},
 		},
 		{
 			LocationName: "Bellingham",
 			LocationID:   4,
-			MPAreaIDs:    []string{"107627792", "125093900", "108045031", "118561215"},
+			MPAreaIDs:    []int64{107627792,125093900,108045031,118561215},
 		},
 		{
 			LocationName: "Icicle Creek (Leavenworth)",
 			LocationID:   5,
-			MPAreaIDs:    []string{"105790237", "105794001", "105790727"},
+			MPAreaIDs:    []int64{105790237,105794001,105790727},
 		},
 		{
 			LocationName: "Squamish",
@@ -77,52 +78,52 @@ func main() {
 			//   - Apron Boulders (106025685)
 			// Paradise Valley Boulders (110937821) - contains sub-areas
 			// Powerline Boulders (121199811)
-			MPAreaIDs:    []string{"112842712", "108506197", "106025685", "110937821", "121199811"},
+			MPAreaIDs:    []int64{112842712,108506197,106025685,110937821,121199811},
 		},
 		{
 			LocationName: "Skykomish - Paradise",
 			LocationID:   7,
-			MPAreaIDs:    []string{"120379690"},
+			MPAreaIDs:    []int64{120379690},
 		},
 		{
 			LocationName: "Treasury",
 			LocationID:   8,
-			MPAreaIDs:    []string{"119589316"},
+			MPAreaIDs:    []int64{119589316},
 		},
 		{
 			LocationName: "Calendar Butte",
 			LocationID:   9,
-			MPAreaIDs:    []string{"127029858"},
+			MPAreaIDs:    []int64{127029858},
 		},
 		{
 			LocationName: "Joshua Tree",
 			LocationID:   10,
-			MPAreaIDs:    []string{"106098051"},
+			MPAreaIDs:    []int64{106098051},
 		},
 		{
 			LocationName: "Black Mountain",
 			LocationID:   11,
-			MPAreaIDs:    []string{"105991127"},
+			MPAreaIDs:    []int64{105991127},
 		},
 		{
 			LocationName: "Buttermilks",
 			LocationID:   12,
-			MPAreaIDs:    []string{"106132808"},
+			MPAreaIDs:    []int64{106132808},
 		},
 		{
 			LocationName: "Happy / Sad Boulders",
 			LocationID:   13,
-			MPAreaIDs:    []string{"105799640", "106068462"},
+			MPAreaIDs:    []int64{105799640,106068462},
 		},
 		{
 			LocationName: "Yosemite",
 			LocationID:   14,
-			MPAreaIDs:    []string{"107457415"},
+			MPAreaIDs:    []int64{107457415},
 		},
 		{
 			LocationName: "Tramway",
 			LocationID:   15,
-			MPAreaIDs:    []string{"105991060"},
+			MPAreaIDs:    []int64{105991060},
 		},
 	}
 
@@ -141,11 +142,13 @@ func main() {
 
 		for _, areaID := range config.MPAreaIDs {
 			totalAreas++
-			log.Printf("\nSyncing area ID: %s for %s...", areaID, config.LocationName)
+			log.Printf("\nSyncing area ID: %d for %s...", areaID, config.LocationName)
 
-			err := climbService.SyncAreaRecursive(ctx, areaID, &config.LocationID)
+			// Convert int64 to string for API call
+			areaIDStr := fmt.Sprintf("%d", areaID)
+			err := climbService.SyncAreaRecursive(ctx, areaIDStr, &config.LocationID)
 			if err != nil {
-				log.Printf("ERROR syncing area %s: %v", areaID, err)
+				log.Printf("ERROR syncing area %d: %v", areaID, err)
 				failCount++
 				continue
 			}
