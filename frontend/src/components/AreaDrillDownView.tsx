@@ -118,7 +118,8 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
   const dryingStatusMap = new Map();
   if (dryingStatusBatch) {
     Object.entries(dryingStatusBatch).forEach(([routeId, status]) => {
-      dryingStatusMap.set(routeId, status);
+      // Convert string keys to numbers for consistent lookups
+      dryingStatusMap.set(Number(routeId), status);
     });
   }
 
