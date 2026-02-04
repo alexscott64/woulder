@@ -396,7 +396,13 @@ func (db *Database) GetRecentTicksForRoute(ctx context.Context, routeID int64, l
 // Returns unified search results (both areas and routes) ordered by most recent climb activity
 func (db *Database) SearchInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.SearchResult, error) {
 	query := `
-		WITH adjusted_ticks AS (
+		WITH location_routes AS (
+			-- Filter routes by location first
+			SELECT r.mp_route_id, r.name, r.rating, r.mp_area_id
+			FROM woulder.mp_routes r
+			WHERE r.location_id = $1
+		),
+		adjusted_ticks AS (
 			SELECT
 				t.mp_route_id,
 				t.user_name,
@@ -416,6 +422,8 @@ func (db *Database) SearchInLocation(ctx context.Context, locationID int, search
 						ELSE t.climbed_at
 					END DESC) AS tick_rank
 			FROM woulder.mp_ticks t
+			-- Only process ticks for routes in this location
+			INNER JOIN location_routes lr ON t.mp_route_id = lr.mp_route_id
 			WHERE
 				t.climbed_at <= NOW() + INTERVAL '30 days'
 				AND t.climbed_at >= NOW() - INTERVAL '2 years'
@@ -431,28 +439,27 @@ func (db *Database) SearchInLocation(ctx context.Context, locationID int, search
 				NULL::text AS area_name,
 				COALESCE(MAX(at.adjusted_climbed_at), NOW() - INTERVAL '100 years') AS last_climb_at,
 				COALESCE(EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int, 36500) AS days_since_climb,
-				COUNT(DISTINCT r.mp_route_id)::int AS total_ticks,
-				COUNT(DISTINCT r.mp_route_id)::int AS unique_routes,
+				COUNT(DISTINCT lr.mp_route_id)::int AS total_ticks,
+				COUNT(DISTINCT lr.mp_route_id)::int AS unique_routes,
 				NULL::text AS user_name,
 				NULL::timestamp AS tick_climbed_at,
 				NULL::text AS style,
 				NULL::text AS comment,
 				CASE WHEN MAX(at.adjusted_climbed_at) IS NULL THEN 1 ELSE 0 END AS no_ticks
 			FROM woulder.mp_areas a
-			INNER JOIN woulder.mp_routes r ON a.mp_area_id = r.mp_area_id
-			LEFT JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id
-			WHERE r.location_id = $1
-			  AND LOWER(a.name) LIKE LOWER($2)
+			INNER JOIN location_routes lr ON a.mp_area_id = lr.mp_area_id
+			LEFT JOIN adjusted_ticks at ON lr.mp_route_id = at.mp_route_id
+			WHERE LOWER(a.name) LIKE LOWER($2)
 			GROUP BY a.mp_area_id, a.name
 		),
 		-- Routes with activity
 		route_results AS (
 			SELECT
 				'route' AS result_type,
-				r.mp_route_id AS id,
-				r.name,
-				r.rating,
-				r.mp_area_id,
+				lr.mp_route_id AS id,
+				lr.name,
+				lr.rating,
+				lr.mp_area_id,
 				a.name AS area_name,
 				COALESCE(MAX(at.adjusted_climbed_at), NOW() - INTERVAL '100 years') AS last_climb_at,
 				COALESCE(EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int, 36500) AS days_since_climb,
@@ -463,12 +470,11 @@ func (db *Database) SearchInLocation(ctx context.Context, locationID int, search
 				at.style,
 				at.comment,
 				CASE WHEN MAX(at.adjusted_climbed_at) IS NULL THEN 1 ELSE 0 END AS no_ticks
-			FROM woulder.mp_routes r
-			LEFT JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id AND at.tick_rank = 1
-			INNER JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
-			WHERE r.location_id = $1
-			  AND (LOWER(r.name) LIKE LOWER($2) OR LOWER(r.rating) LIKE LOWER($2) OR LOWER(a.name) LIKE LOWER($2))
-			GROUP BY r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name, at.user_name, at.adjusted_climbed_at, at.style, at.comment
+			FROM location_routes lr
+			LEFT JOIN adjusted_ticks at ON lr.mp_route_id = at.mp_route_id AND at.tick_rank = 1
+			INNER JOIN woulder.mp_areas a ON lr.mp_area_id = a.mp_area_id
+			WHERE (LOWER(lr.name) LIKE LOWER($2) OR LOWER(lr.rating) LIKE LOWER($2) OR LOWER(a.name) LIKE LOWER($2))
+			GROUP BY lr.mp_route_id, lr.name, lr.rating, lr.mp_area_id, a.name, at.user_name, at.adjusted_climbed_at, at.style, at.comment
 		)
 		-- Combine results
 		SELECT * FROM area_results
@@ -563,7 +569,15 @@ func (db *Database) SearchInLocation(ctx context.Context, locationID int, search
 // Returns routes ordered by most recent climb activity
 func (db *Database) SearchRoutesInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error) {
 	query := `
-		WITH adjusted_ticks AS (
+		WITH location_routes AS (
+			-- Filter routes by location and search query first
+			SELECT r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name AS area_name
+			FROM woulder.mp_routes r
+			INNER JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
+			WHERE r.location_id = $1
+			  AND (LOWER(r.name) LIKE LOWER($2) OR LOWER(r.rating) LIKE LOWER($2) OR LOWER(a.name) LIKE LOWER($2))
+		),
+		adjusted_ticks AS (
 			SELECT
 				t.mp_route_id,
 				t.user_name,
@@ -583,30 +597,29 @@ func (db *Database) SearchRoutesInLocation(ctx context.Context, locationID int, 
 						ELSE t.climbed_at
 					END DESC) AS tick_rank
 			FROM woulder.mp_ticks t
+			-- Only process ticks for routes in this location
+			INNER JOIN location_routes lr ON t.mp_route_id = lr.mp_route_id
 			WHERE
 				t.climbed_at <= NOW() + INTERVAL '30 days'
 				AND t.climbed_at >= NOW() - INTERVAL '2 years'
 		)
 		SELECT
-			r.mp_route_id,
-			r.name,
-			r.rating,
-			r.mp_area_id,
+			lr.mp_route_id,
+			lr.name,
+			lr.rating,
+			lr.mp_area_id,
 			COALESCE(MAX(at.adjusted_climbed_at), NOW() - INTERVAL '100 years') AS last_climb_at,
 			COALESCE(EXTRACT(DAY FROM (NOW() - MAX(at.adjusted_climbed_at)))::int, 36500) AS days_since_climb,
 			at.user_name,
 			at.adjusted_climbed_at,
 			at.style,
 			at.comment,
-			a.name AS area_name,
+			lr.area_name,
 			CASE WHEN MAX(at.adjusted_climbed_at) IS NULL THEN 1 ELSE 0 END AS no_ticks
-		FROM woulder.mp_routes r
-		LEFT JOIN adjusted_ticks at ON r.mp_route_id = at.mp_route_id AND at.tick_rank = 1
-		INNER JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
-		WHERE r.location_id = $1
-		  AND (LOWER(r.name) LIKE LOWER($2) OR LOWER(r.rating) LIKE LOWER($2) OR LOWER(a.name) LIKE LOWER($2))
-		GROUP BY r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name, at.user_name, at.adjusted_climbed_at, at.style, at.comment
-		ORDER BY no_ticks ASC, MAX(at.adjusted_climbed_at) DESC NULLS LAST, r.name ASC
+		FROM location_routes lr
+		LEFT JOIN adjusted_ticks at ON lr.mp_route_id = at.mp_route_id AND at.tick_rank = 1
+		GROUP BY lr.mp_route_id, lr.name, lr.rating, lr.mp_area_id, lr.area_name, at.user_name, at.adjusted_climbed_at, at.style, at.comment
+		ORDER BY no_ticks ASC, MAX(at.adjusted_climbed_at) DESC NULLS LAST, lr.name ASC
 		LIMIT $3
 	`
 
