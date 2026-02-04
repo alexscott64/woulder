@@ -96,7 +96,8 @@ func (db *Database) GetForecastWeather(
 		       cloud_cover, pressure, description, icon, created_at
 		FROM woulder.weather_data
 		WHERE location_id = $1
-		  AND timestamp >= NOW() - ($2 * INTERVAL '1 hour')
+		  AND timestamp > NOW()
+		  AND timestamp <= NOW() + ($2 * INTERVAL '1 hour')
 		ORDER BY timestamp ASC
 	`
 
