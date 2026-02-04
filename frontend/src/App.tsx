@@ -53,7 +53,7 @@ function Dashboard() {
     refetchInterval: 10 * 60 * 1000, // Refetch every 10 minutes
   });
 
-  // Sort weather data: Skykomish locations first, then Index, then alphabetically
+  // Sort weather data: Skykomish locations first, then Index, then Nevada priority order, then alphabetically
   const sortedWeather = data?.forecasts.sort((a, b) => {
     // Skykomish - Money Creek first
     if (a.location.name === 'Skykomish - Money Creek') return -1;
@@ -66,6 +66,24 @@ function Dashboard() {
     // Index third
     if (a.location.name === 'Index') return -1;
     if (b.location.name === 'Index') return 1;
+
+    // Nevada locations in priority order
+    const nevadaPriority = [
+      'Kraft Boulders',
+      'Gateway Canyon',
+      'Black Velvet Canyon Boulders',
+      'First Creek Canyon Boulders',
+      'Red Spring Boulders'
+    ];
+
+    const aIndex = nevadaPriority.indexOf(a.location.name);
+    const bIndex = nevadaPriority.indexOf(b.location.name);
+
+    if (aIndex !== -1 && bIndex !== -1) {
+      return aIndex - bIndex;
+    }
+    if (aIndex !== -1) return -1;
+    if (bIndex !== -1) return 1;
 
     // Rest alphabetically
     return a.location.name.localeCompare(b.location.name);
