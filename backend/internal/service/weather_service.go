@@ -300,6 +300,22 @@ func (s *WeatherService) RefreshAllWeather(ctx context.Context) error {
 			log.Printf("Updated historical weather for location %d (%d hours)", loc.ID, len(historical))
 		}
 
+		// Fetch and save forecast data (next 7 days) to database
+		// This is CRITICAL for boulder drying 6-day forecasts to work
+		forecast, err := s.weatherClient.GetForecast(loc.Latitude, loc.Longitude)
+		if err != nil {
+			log.Printf("Failed to fetch forecast weather for location %d: %v", loc.ID, err)
+		} else {
+			// Save forecast data to database
+			for i := range forecast {
+				forecast[i].LocationID = loc.ID
+				if err := s.repo.SaveWeatherData(ctx, &forecast[i]); err != nil {
+					log.Printf("Failed to save forecast weather for location %d: %v", loc.ID, err)
+				}
+			}
+			log.Printf("Updated forecast weather for location %d (%d hours)", loc.ID, len(forecast))
+		}
+
 		// Fetch current/forecast weather (this also triggers calculations)
 		if _, err := s.GetLocationWeather(ctx, loc.ID); err != nil {
 			log.Printf("Failed to refresh location %d: %v", loc.ID, err)

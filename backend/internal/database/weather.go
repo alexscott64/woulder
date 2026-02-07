@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"log"
+	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
@@ -108,6 +110,8 @@ func (db *Database) GetForecastWeather(
 	defer rows.Close()
 
 	var result []models.WeatherData
+	pastCount := 0
+	futureCount := 0
 	for rows.Next() {
 		var d models.WeatherData
 		if err := rows.Scan(
@@ -128,8 +132,18 @@ func (db *Database) GetForecastWeather(
 		); err != nil {
 			return nil, err
 		}
+		// Track past vs future for debugging
+		if d.Timestamp.Before(time.Now()) {
+			pastCount++
+		} else {
+			futureCount++
+		}
 		result = append(result, d)
 	}
+
+	// Log query results for debugging
+	log.Printf("GetForecastWeather(location=%d, hours=%d): returned %d records (past=%d, future=%d)",
+		locationID, hours, len(result), pastCount, futureCount)
 
 	return result, nil
 }
