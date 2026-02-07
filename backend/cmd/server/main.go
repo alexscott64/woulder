@@ -46,15 +46,18 @@ func main() {
 	// Initialize API handler with services
 	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService)
 
-	// Run initial weather refresh to populate forecast data
-	log.Println("Running initial weather refresh...")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	if err := weatherServiceLayer.RefreshAllWeather(ctx); err != nil {
-		log.Printf("Warning: Initial weather refresh failed: %v", err)
-	} else {
-		log.Println("Initial weather refresh completed successfully")
-	}
-	cancel()
+	// Run initial weather refresh in background (non-blocking)
+	go func() {
+		log.Println("Starting initial weather refresh in background...")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+
+		if err := weatherServiceLayer.RefreshAllWeather(ctx); err != nil {
+			log.Printf("Warning: Initial weather refresh failed: %v", err)
+		} else {
+			log.Println("Initial weather refresh completed successfully")
+		}
+	}()
 
 	// Start background weather refresh (every 2 hours)
 	handler.StartBackgroundRefresh(2 * time.Hour)

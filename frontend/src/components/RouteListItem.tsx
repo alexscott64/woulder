@@ -47,6 +47,18 @@ export function RouteListItem({ route, isExpanded, onToggleExpand, dryingStatus:
   // Use prop data if in batch mode, otherwise fall back to individual fetch
   const dryingStatus = useBatchMode ? propDryingStatus : (propDryingStatus || fetchedDryingStatus);
 
+  // Check if rain is forecasted in the next 48 hours
+  const hasUpcomingRain = () => {
+    if (!dryingStatus?.forecast) return false;
+    const now = new Date();
+    const next48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+    return dryingStatus.forecast.some(period => {
+      const start = new Date(period.start_time);
+      return !period.is_dry && start <= next48h && (period.rain_amount || 0) > 0.01;
+    });
+  };
+
   // Get compact dry status badge with skeleton loader
   const getDryStatusBadge = () => {
     if (!dryingStatus) {
@@ -60,10 +72,15 @@ export function RouteListItem({ route, isExpanded, onToggleExpand, dryingStatus:
     }
 
     if (!dryingStatus.is_wet) {
+      const upcoming = hasUpcomingRain();
       return (
-        <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-xs font-medium">
+        <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+          upcoming
+            ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'
+            : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+        }`}>
           <Sun className="w-3 h-3" />
-          <span>Dry</span>
+          <span>{upcoming ? 'Dry (rain soon)' : 'Dry'}</span>
         </div>
       );
     }

@@ -300,7 +300,7 @@ func (c *Calculator) handleCurrentRain(
 
 // findLastRainEvent finds the most recent rain event and calculates its characteristics
 func findLastRainEvent(historical []models.WeatherData, current *models.WeatherData) *models.RainEvent {
-	if len(historical) == 0 {
+	if len(historical) == 0 && current == nil {
 		return nil
 	}
 
@@ -309,6 +309,19 @@ func findLastRainEvent(historical []models.WeatherData, current *models.WeatherD
 	var maxRate float64
 	var rainHours int
 	var startTime, endTime time.Time
+
+	// Check current weather first (if it's raining NOW)
+	if current != nil && current.Precipitation > 0.01 {
+		event = &models.RainEvent{
+			StartTime: current.Timestamp,
+			EndTime:   current.Timestamp,
+		}
+		endTime = current.Timestamp
+		startTime = current.Timestamp
+		totalRain = current.Precipitation
+		rainHours = 1
+		maxRate = current.Precipitation
+	}
 
 	// Check historical data (reversed to go from most recent to oldest)
 	for i := len(historical) - 1; i >= 0; i-- {
