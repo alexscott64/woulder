@@ -39,11 +39,26 @@ func (c *Client) rateLimit() {
 
 // AreaResponse represents the response from the Mountain Project area endpoint
 type AreaResponse struct {
-	ID          int            `json:"id"`
-	Title       string         `json:"title"`
-	Type        string         `json:"type"`        // "Area" typically
-	Children    []ChildElement `json:"children"`    // Can be subareas or routes
-	Coordinates []float64      `json:"coordinates"` // [longitude, latitude] GPS coordinates
+	ID              int              `json:"id"`
+	Title           string           `json:"title"`
+	Type            string           `json:"type"`        // "Area" typically
+	Children        []ChildElement   `json:"children"`    // Can be subareas or routes
+	Coordinates     []float64        `json:"coordinates"` // [longitude, latitude] GPS coordinates
+	RouteTypeCounts *RouteTypeCounts `json:"route_type_counts"` // Route statistics for this area and descendants
+}
+
+// RouteTypeCounts represents route statistics from the Mountain Project API
+type RouteTypeCounts struct {
+	Aid     int `json:"aid"`
+	Alpine  int `json:"alpine"`
+	Boulder int `json:"boulder"`
+	Ice     int `json:"ice"`
+	Mixed   int `json:"mixed"`
+	Snow    int `json:"snow"`
+	Sport   int `json:"sport"`
+	Trad    int `json:"trad"`
+	TR      int `json:"tr"`
+	Total   int `json:"total"` // Total count of all routes (key field for change detection)
 }
 
 // ChildElement represents either a subarea or a route within an area

@@ -56,6 +56,26 @@ type MockRepository struct {
 	SearchInLocationFn                 func(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.SearchResult, error)
 	SearchRoutesInLocationFn           func(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error)
 
+	// Route count tracking mocks
+	UpdateAreaRouteCountFn func(ctx context.Context, mpAreaID string, total int) error
+	GetAreaRouteCountFn    func(ctx context.Context, mpAreaID string) (int, error)
+	GetChildAreasFn        func(ctx context.Context, parentMPAreaID string) ([]struct {
+		MPAreaID string
+		Name     string
+	}, error)
+	GetRouteIDsForAreaFn   func(ctx context.Context, mpAreaID string) ([]string, error)
+	GetAllStateConfigsFn   func(ctx context.Context) ([]struct {
+		StateName string
+		MPAreaID  string
+		IsActive  bool
+	}, error)
+
+	// Upsert operations mocks
+	UpsertRouteFn        func(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error
+	UpsertTickFn         func(ctx context.Context, mpRouteID int64, userName string, climbedAt time.Time, style string, comment *string) error
+	UpsertAreaCommentFn  func(ctx context.Context, mpCommentID, mpAreaID int64, userName string, userID *string, commentText string, commentedAt time.Time) error
+	UpsertRouteCommentFn func(ctx context.Context, mpCommentID, mpRouteID int64, userName string, userID *string, commentText string, commentedAt time.Time) error
+
 	// Boulder drying mocks
 	GetBoulderDryingProfileFn          func(ctx context.Context, mpRouteID int64) (*models.BoulderDryingProfile, error)
 	GetBoulderDryingProfilesByRouteIDsFn func(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.BoulderDryingProfile, error)
@@ -410,4 +430,83 @@ func (m *MockRepository) GetRoutesWithGPSByArea(ctx context.Context, mpAreaID in
 		return m.GetRoutesWithGPSByAreaFn(ctx, mpAreaID)
 	}
 	return nil, nil
+}
+
+// UpdateAreaRouteCount mock
+func (m *MockRepository) UpdateAreaRouteCount(ctx context.Context, mpAreaID string, total int) error {
+	if m.UpdateAreaRouteCountFn != nil {
+		return m.UpdateAreaRouteCountFn(ctx, mpAreaID, total)
+	}
+	return nil
+}
+
+// GetAreaRouteCount mock
+func (m *MockRepository) GetAreaRouteCount(ctx context.Context, mpAreaID string) (int, error) {
+	if m.GetAreaRouteCountFn != nil {
+		return m.GetAreaRouteCountFn(ctx, mpAreaID)
+	}
+	return -1, nil
+}
+
+// GetChildAreas mock
+func (m *MockRepository) GetChildAreas(ctx context.Context, parentMPAreaID string) ([]struct {
+	MPAreaID string
+	Name     string
+}, error) {
+	if m.GetChildAreasFn != nil {
+		return m.GetChildAreasFn(ctx, parentMPAreaID)
+	}
+	return nil, nil
+}
+
+// GetRouteIDsForArea mock
+func (m *MockRepository) GetRouteIDsForArea(ctx context.Context, mpAreaID string) ([]string, error) {
+	if m.GetRouteIDsForAreaFn != nil {
+		return m.GetRouteIDsForAreaFn(ctx, mpAreaID)
+	}
+	return nil, nil
+}
+
+// GetAllStateConfigs mock
+func (m *MockRepository) GetAllStateConfigs(ctx context.Context) ([]struct {
+	StateName string
+	MPAreaID  string
+	IsActive  bool
+}, error) {
+	if m.GetAllStateConfigsFn != nil {
+		return m.GetAllStateConfigsFn(ctx)
+	}
+	return nil, nil
+}
+
+// UpsertRoute mock
+func (m *MockRepository) UpsertRoute(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error {
+	if m.UpsertRouteFn != nil {
+		return m.UpsertRouteFn(ctx, mpRouteID, mpAreaID, locationID, name, routeType, rating, lat, lon, aspect)
+	}
+	return nil
+}
+
+// UpsertTick mock
+func (m *MockRepository) UpsertTick(ctx context.Context, mpRouteID int64, userName string, climbedAt time.Time, style string, comment *string) error {
+	if m.UpsertTickFn != nil {
+		return m.UpsertTickFn(ctx, mpRouteID, userName, climbedAt, style, comment)
+	}
+	return nil
+}
+
+// UpsertAreaComment mock
+func (m *MockRepository) UpsertAreaComment(ctx context.Context, mpCommentID, mpAreaID int64, userName string, userID *string, commentText string, commentedAt time.Time) error {
+	if m.UpsertAreaCommentFn != nil {
+		return m.UpsertAreaCommentFn(ctx, mpCommentID, mpAreaID, userName, userID, commentText, commentedAt)
+	}
+	return nil
+}
+
+// UpsertRouteComment mock
+func (m *MockRepository) UpsertRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName string, userID *string, commentText string, commentedAt time.Time) error {
+	if m.UpsertRouteCommentFn != nil {
+		return m.UpsertRouteCommentFn(ctx, mpCommentID, mpRouteID, userName, userID, commentText, commentedAt)
+	}
+	return nil
 }

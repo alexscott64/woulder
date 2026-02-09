@@ -70,6 +70,34 @@ func (h *Handler) StartBackgroundTickSync(interval time.Duration) {
 	}()
 }
 
+// StartBackgroundRouteSync starts a goroutine that checks for and syncs new Mountain Project routes periodically
+func (h *Handler) StartBackgroundRouteSync(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		log.Printf("Starting background route sync scheduler (every %v)", interval)
+
+		// Run immediately on startup
+		log.Println("Running initial route sync...")
+		ctx := context.Background()
+		if err := h.climbTrackingService.SyncNewRoutesForAllStates(ctx); err != nil {
+			log.Printf("Error in initial route sync: %v", err)
+		}
+
+		// Then run on schedule
+		for range ticker.C {
+			log.Println("Starting scheduled route sync...")
+			ctx := context.Background()
+			if err := h.climbTrackingService.SyncNewRoutesForAllStates(ctx); err != nil {
+				log.Printf("Error in scheduled route sync: %v", err)
+			} else {
+				log.Println("Scheduled route sync completed successfully")
+			}
+		}
+	}()
+}
+
 // HealthCheck returns service health status
 func (h *Handler) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -192,6 +220,25 @@ func (h *Handler) RefreshWeather(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "Weather data refresh completed",
+		"updated_at": time.Now().Format(time.RFC3339),
+	})
+}
+
+// RefreshRoutes manually triggers a new route sync check
+func (h *Handler) RefreshRoutes(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	log.Println("Manual route sync triggered")
+
+	err := h.climbTrackingService.SyncNewRoutesForAllStates(ctx)
+	if err != nil {
+		log.Printf("Error during manual route sync: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Route sync completed",
 		"updated_at": time.Now().Format(time.RFC3339),
 	})
 }

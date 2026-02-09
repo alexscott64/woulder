@@ -563,7 +563,7 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 				if err != nil {
 					climbedAt, err = time.ParseInLocation("2006-01-02", tick.Date, pacificTZ)
 					if err != nil {
-						log.Printf("Warning: invalid date format for tick on route %s: %s", routeID, tick.Date)
+						log.Printf("Warning: invalid date format for tick on route %d: %s", routeID, tick.Date)
 						continue
 					}
 				}
@@ -571,7 +571,7 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 
 			// Skip ticks with future dates (data quality issue)
 			if !isTickDateValid(climbedAt) {
-				log.Printf("Warning: skipping tick with future date on route %s: %s", routeID, tick.Date)
+				log.Printf("Warning: skipping tick with future date on route %d: %s", routeID, tick.Date)
 				continue
 			}
 
@@ -682,4 +682,276 @@ func (s *ClimbTrackingService) calculateBoulderGPS(
 
 	log.Printf("Successfully updated GPS for %d/%d boulders", updateCount, len(routeIDs))
 	return nil
+}
+
+// SyncNewRoutesForAllStates checks all root areas for new routes and syncs them
+// Uses smart binary-search traversal to minimize API calls
+func (s *ClimbTrackingService) SyncNewRoutesForAllStates(ctx context.Context) error {
+	log.Println("Starting new route sync for all states...")
+
+	// Get all state configurations
+	states, err := s.repo.GetAllStateConfigs(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get state configs: %w", err)
+	}
+
+	successCount := 0
+	failCount := 0
+	totalNewRoutes := 0
+
+	for _, state := range states {
+		log.Printf("Checking state: %s (MP Area ID: %s)", state.StateName, state.MPAreaID)
+
+		newRoutes, err := s.checkAreaForNewRoutes(ctx, state.MPAreaID)
+		if err != nil {
+			log.Printf("Error checking %s: %v", state.StateName, err)
+			failCount++
+			continue
+		}
+
+		if newRoutes > 0 {
+			log.Printf("✓ %s: Found and synced %d new route(s)", state.StateName, newRoutes)
+			totalNewRoutes += newRoutes
+		}
+
+		successCount++
+	}
+
+	log.Printf("New route sync complete: %d states checked, %d new routes found, %d failures", successCount, totalNewRoutes, failCount)
+
+	if failCount > 0 {
+		return fmt.Errorf("sync completed with %d failures", failCount)
+	}
+
+	return nil
+}
+
+// checkAreaForNewRoutes recursively checks an area and its children for new routes
+// Returns the number of new routes found and synced
+func (s *ClimbTrackingService) checkAreaForNewRoutes(ctx context.Context, areaID string) (int, error) {
+	// Check context for cancellation
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	default:
+	}
+
+	// Fetch current area data from Mountain Project API
+	areaResp, err := s.mpClient.GetArea(areaID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch area %s: %w", areaID, err)
+	}
+
+	// Get cached route count from database
+	cachedCount, err := s.repo.GetAreaRouteCount(ctx, areaID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get cached count for area %s: %w", areaID, err)
+	}
+
+	// Get current count from API response
+	currentCount := 0
+	if areaResp.RouteTypeCounts != nil {
+		currentCount = areaResp.RouteTypeCounts.Total
+	}
+
+	// If first time checking or counts match, update cache and return
+	if cachedCount == -1 {
+		// First time checking this area - just cache the count
+		if err := s.repo.UpdateAreaRouteCount(ctx, areaID, currentCount); err != nil {
+			log.Printf("Warning: failed to cache count for area %s: %v", areaID, err)
+		}
+		return 0, nil
+	}
+
+	if cachedCount == currentCount {
+		// No change detected
+		if err := s.repo.UpdateAreaRouteCount(ctx, areaID, currentCount); err != nil {
+			log.Printf("Warning: failed to update check time for area %s: %v", areaID, err)
+		}
+		return 0, nil
+	}
+
+	// Change detected!
+	if currentCount < cachedCount {
+		// Route count decreased (route deleted) - just update cache
+		log.Printf("Area %s (%s): route count decreased from %d to %d (route deleted)", areaID, areaResp.Title, cachedCount, currentCount)
+		if err := s.repo.UpdateAreaRouteCount(ctx, areaID, currentCount); err != nil {
+			log.Printf("Warning: failed to update count for area %s: %v", areaID, err)
+		}
+		return 0, nil
+	}
+
+	// Route count increased - find and sync new routes
+	newRouteCount := currentCount - cachedCount
+	log.Printf("Area %s (%s): route count increased from %d to %d (+%d new route(s))", areaID, areaResp.Title, cachedCount, currentCount, newRouteCount)
+
+	// Update cached count
+	if err := s.repo.UpdateAreaRouteCount(ctx, areaID, currentCount); err != nil {
+		log.Printf("Warning: failed to update count for area %s: %v", areaID, err)
+	}
+
+	// Check if this area has children (subareas)
+	hasSubareas := false
+	hasRoutes := false
+	for _, child := range areaResp.Children {
+		if child.Type == "Area" {
+			hasSubareas = true
+		} else if child.Type == "Route" {
+			hasRoutes = true
+		}
+	}
+
+	// If this area has subareas, recursively check them to find which one changed
+	if hasSubareas {
+		totalNewRoutes := 0
+		for _, child := range areaResp.Children {
+			if child.Type == "Area" {
+				childID := strconv.Itoa(child.ID)
+				newRoutes, err := s.checkAreaForNewRoutes(ctx, childID)
+				if err != nil {
+					log.Printf("Error checking child area %s: %v", childID, err)
+					continue
+				}
+				totalNewRoutes += newRoutes
+			}
+		}
+		return totalNewRoutes, nil
+	}
+
+	// This is a leaf area with routes - sync the new ones
+	if hasRoutes {
+		return s.syncNewRoutesInArea(ctx, areaID, areaResp)
+	}
+
+	// No subareas and no routes - shouldn't happen but handle gracefully
+	return 0, nil
+}
+
+// syncNewRoutesInArea syncs new routes in a specific area
+func (s *ClimbTrackingService) syncNewRoutesInArea(ctx context.Context, areaID string, areaResp *mountainproject.AreaResponse) (int, error) {
+	// Get existing route IDs from database
+	existingRouteIDs, err := s.repo.GetRouteIDsForArea(ctx, areaID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get existing routes for area %s: %w", areaID, err)
+	}
+
+	// Create a map for quick lookup
+	existingRoutes := make(map[string]bool)
+	for _, routeID := range existingRouteIDs {
+		existingRoutes[routeID] = true
+	}
+
+	// Find new routes
+	var newRoutes []mountainproject.ChildElement
+	for _, child := range areaResp.Children {
+		if child.Type == "Route" {
+			routeID := strconv.Itoa(child.ID)
+			if !existingRoutes[routeID] {
+				newRoutes = append(newRoutes, child)
+			}
+		}
+	}
+
+	if len(newRoutes) == 0 {
+		log.Printf("No new routes found in area %s (expected based on count change)", areaID)
+		return 0, nil
+	}
+
+	log.Printf("Syncing %d new route(s) in area %s (%s)", len(newRoutes), areaID, areaResp.Title)
+
+	// Convert area ID to int64 for database operations
+	areaIDInt64, err := strconv.ParseInt(areaID, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse area ID %s: %w", areaID, err)
+	}
+
+	// Get GPS coordinates from area
+	var lat, lon *float64
+	if len(areaResp.Coordinates) >= 2 {
+		latitude := areaResp.Coordinates[1] // [longitude, latitude]
+		longitude := areaResp.Coordinates[0]
+		lat = &latitude
+		lon = &longitude
+	}
+
+	// Sync each new route
+	syncedCount := 0
+	for _, route := range newRoutes {
+		routeID := strconv.Itoa(route.ID)
+		routeIDInt64 := int64(route.ID)
+
+		// Determine route type
+		routeType := ""
+		if len(route.RouteTypes) > 0 {
+			routeType = route.RouteTypes[0]
+		}
+
+		// Insert route
+		err := s.repo.UpsertRoute(ctx, routeIDInt64, areaIDInt64, nil, route.Title, routeType, "", lat, lon, nil)
+		if err != nil {
+			log.Printf("Error syncing route %s: %v", routeID, err)
+			continue
+		}
+
+		// Fetch and sync ticks
+		ticks, err := s.mpClient.GetRouteTicks(routeID)
+		if err != nil {
+			log.Printf("Warning: failed to fetch ticks for route %s: %v", routeID, err)
+		} else {
+			for _, tick := range ticks {
+				// Parse tick date
+				tickDate, err := time.Parse("Jan 2, 2006, 3:04 pm", tick.Date)
+				if err != nil {
+					log.Printf("Warning: failed to parse tick date '%s': %v", tick.Date, err)
+					continue
+				}
+
+				// Skip invalid dates
+				if !isTickDateValid(tickDate) {
+					continue
+				}
+
+				// Get user name
+				userName := tick.GetUserName()
+				if userName == "" {
+					userName = "Anonymous"
+				}
+
+				// Get comment
+				var comment *string
+				commentText := tick.GetTextString()
+				if commentText != "" {
+					cleaned := cleanCommentText(commentText)
+					comment = &cleaned
+				}
+
+				// Insert tick
+				if err := s.repo.UpsertTick(ctx, routeIDInt64, userName, tickDate, tick.Style, comment); err != nil {
+					log.Printf("Warning: failed to insert tick for route %s: %v", routeID, err)
+				}
+			}
+		}
+
+		// Fetch and sync comments
+		comments, err := s.mpClient.GetRouteComments(routeID)
+		if err != nil {
+			log.Printf("Warning: failed to fetch comments for route %s: %v", routeID, err)
+		} else {
+			for _, comment := range comments {
+				commentTime := time.Unix(comment.Created, 0)
+				userName := comment.GetUserInfo()
+				cleanedText := cleanCommentText(comment.Message)
+
+				commentID := int64(comment.ID)
+				if err := s.repo.UpsertRouteComment(ctx, commentID, routeIDInt64, userName, nil, cleanedText, commentTime); err != nil {
+					log.Printf("Warning: failed to insert comment for route %s: %v", routeID, err)
+				}
+			}
+		}
+
+		syncedCount++
+	}
+
+	log.Printf("Successfully synced %d/%d new routes in area %s", syncedCount, len(newRoutes), areaID)
+	return syncedCount, nil
 }

@@ -154,7 +154,7 @@ func main() {
 			}
 
 			successCount++
-			log.Printf("✓ Successfully synced area %s", areaID)
+			log.Printf("✓ Successfully synced area %d", areaID)
 		}
 	}
 

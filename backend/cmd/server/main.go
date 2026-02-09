@@ -65,6 +65,9 @@ func main() {
 	// Start background tick sync (every 24 hours)
 	handler.StartBackgroundTickSync(24 * time.Hour)
 
+	// Start background route sync (every 24 hours)
+	handler.StartBackgroundRouteSync(24 * time.Hour)
+
 	// Set Gin mode
 	gin.SetMode(cfg.Server.GinMode)
 
@@ -92,6 +95,7 @@ func main() {
 		apiGroup.GET("/weather/:id", handler.GetWeatherForLocation)
 		apiGroup.GET("/weather/coordinates", handler.GetWeatherByCoordinates)
 		apiGroup.POST("/weather/refresh", handler.RefreshWeather)
+		apiGroup.POST("/routes/refresh", handler.RefreshRoutes)
 		apiGroup.GET("/rivers/location/:id", handler.GetRiverDataForLocation)
 		apiGroup.GET("/rivers/:id", handler.GetRiverDataByID)
 		apiGroup.POST("/climbs/refresh", handler.RefreshClimbData)

@@ -247,3 +247,204 @@ func (db *Database) UpdateRouteGPS(ctx context.Context, routeID int64, latitude,
 	_, err := db.conn.ExecContext(ctx, query, latitude, longitude, aspect, routeID)
 	return err
 }
+
+// UpdateAreaRouteCount updates the cached route count for an area
+func (db *Database) UpdateAreaRouteCount(ctx context.Context, mpAreaID string, total int) error {
+	query := `
+		UPDATE woulder.mp_areas
+		SET route_count_total = $1,
+		    route_count_last_checked = NOW(),
+		    updated_at = NOW()
+		WHERE mp_area_id = $2
+	`
+	_, err := db.conn.ExecContext(ctx, query, total, mpAreaID)
+	return err
+}
+
+// GetAreaRouteCount retrieves the cached route count for an area
+// Returns -1 if the area doesn't exist or hasn't been checked yet
+func (db *Database) GetAreaRouteCount(ctx context.Context, mpAreaID string) (int, error) {
+	var count sql.NullInt64
+	query := `SELECT route_count_total FROM woulder.mp_areas WHERE mp_area_id = $1`
+	err := db.conn.QueryRowContext(ctx, query, mpAreaID).Scan(&count)
+	if err == sql.ErrNoRows {
+		return -1, nil
+	}
+	if err != nil {
+		return -1, err
+	}
+	if !count.Valid {
+		return -1, nil // Count not yet set
+	}
+	return int(count.Int64), nil
+}
+
+// GetChildAreas retrieves all direct children of an area
+func (db *Database) GetChildAreas(ctx context.Context, parentMPAreaID string) ([]struct {
+	MPAreaID string
+	Name     string
+}, error) {
+	query := `
+		SELECT mp_area_id, name
+		FROM woulder.mp_areas
+		WHERE parent_mp_area_id = $1
+		ORDER BY name
+	`
+	rows, err := db.conn.QueryContext(ctx, query, parentMPAreaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var areas []struct {
+		MPAreaID string
+		Name     string
+	}
+	for rows.Next() {
+		var area struct {
+			MPAreaID string
+			Name     string
+		}
+		if err := rows.Scan(&area.MPAreaID, &area.Name); err != nil {
+			return nil, err
+		}
+		areas = append(areas, area)
+	}
+	return areas, rows.Err()
+}
+
+// GetRouteIDsForArea retrieves all route IDs currently in an area
+func (db *Database) GetRouteIDsForArea(ctx context.Context, mpAreaID string) ([]string, error) {
+	query := `
+		SELECT mp_route_id::text
+		FROM woulder.mp_routes
+		WHERE mp_area_id = $1
+		ORDER BY mp_route_id
+	`
+	rows, err := db.conn.QueryContext(ctx, query, mpAreaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var routeIDs []string
+	for rows.Next() {
+		var routeID string
+		if err := rows.Scan(&routeID); err != nil {
+			return nil, err
+		}
+		routeIDs = append(routeIDs, routeID)
+	}
+	return routeIDs, rows.Err()
+}
+
+// GetAllStateConfigs retrieves all state configurations
+func (db *Database) GetAllStateConfigs(ctx context.Context) ([]struct {
+	StateName string
+	MPAreaID  string
+	IsActive  bool
+}, error) {
+	query := `
+		SELECT state_name, mp_area_id, is_active
+		FROM woulder.mp_state_configs
+		ORDER BY display_order, state_name
+	`
+	rows, err := db.conn.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var configs []struct {
+		StateName string
+		MPAreaID  string
+		IsActive  bool
+	}
+	for rows.Next() {
+		var config struct {
+			StateName string
+			MPAreaID  string
+			IsActive  bool
+		}
+		if err := rows.Scan(&config.StateName, &config.MPAreaID, &config.IsActive); err != nil {
+			return nil, err
+		}
+		configs = append(configs, config)
+	}
+	return configs, rows.Err()
+}
+
+// UpsertRoute inserts or updates a route (compatibility with mountainprojectsync)
+func (db *Database) UpsertRoute(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error {
+	query := `
+		INSERT INTO woulder.mp_routes (
+			mp_route_id, mp_area_id, location_id, name, route_type, rating,
+			latitude, longitude, aspect
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (mp_route_id) DO UPDATE SET
+			mp_area_id = EXCLUDED.mp_area_id,
+			name = EXCLUDED.name,
+			route_type = EXCLUDED.route_type,
+			rating = EXCLUDED.rating,
+			latitude = EXCLUDED.latitude,
+			longitude = EXCLUDED.longitude,
+			aspect = EXCLUDED.aspect,
+			updated_at = NOW()
+	`
+
+	_, err := db.conn.ExecContext(ctx, query, mpRouteID, mpAreaID, locationID, name, routeType, rating, lat, lon, aspect)
+	return err
+}
+
+// UpsertTick inserts or updates a tick (compatibility with mountainprojectsync)
+func (db *Database) UpsertTick(ctx context.Context, mpRouteID int64, userName string, climbedAt time.Time, style string, comment *string) error {
+	query := `
+		INSERT INTO woulder.mp_ticks (mp_route_id, user_name, climbed_at, style, comment)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (mp_route_id, user_name, climbed_at) DO NOTHING
+	`
+
+	_, err := db.conn.ExecContext(ctx, query, mpRouteID, userName, climbedAt, style, comment)
+	return err
+}
+
+// UpsertAreaComment inserts or updates an area comment (compatibility with mountainprojectsync)
+func (db *Database) UpsertAreaComment(ctx context.Context, mpCommentID, mpAreaID int64, userName string, userID *string, commentText string, commentedAt time.Time) error {
+	query := `
+		INSERT INTO woulder.mp_comments (
+			mp_comment_id, comment_type, mp_area_id, mp_route_id,
+			user_name, user_id, comment_text, commented_at
+		)
+		VALUES ($1, 'area', $2, NULL, $3, $4, $5, $6)
+		ON CONFLICT (mp_comment_id) DO UPDATE SET
+			user_name = EXCLUDED.user_name,
+			user_id = EXCLUDED.user_id,
+			comment_text = EXCLUDED.comment_text,
+			commented_at = EXCLUDED.commented_at,
+			updated_at = NOW()
+	`
+
+	_, err := db.conn.ExecContext(ctx, query, mpCommentID, mpAreaID, userName, userID, commentText, commentedAt)
+	return err
+}
+
+// UpsertRouteComment inserts or updates a route comment (compatibility with mountainprojectsync)
+func (db *Database) UpsertRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName string, userID *string, commentText string, commentedAt time.Time) error {
+	query := `
+		INSERT INTO woulder.mp_comments (
+			mp_comment_id, comment_type, mp_area_id, mp_route_id,
+			user_name, user_id, comment_text, commented_at
+		)
+		VALUES ($1, 'route', NULL, $2, $3, $4, $5, $6)
+		ON CONFLICT (mp_comment_id) DO UPDATE SET
+			user_name = EXCLUDED.user_name,
+			user_id = EXCLUDED.user_id,
+			comment_text = EXCLUDED.comment_text,
+			commented_at = EXCLUDED.commented_at,
+			updated_at = NOW()
+	`
+
+	_, err := db.conn.ExecContext(ctx, query, mpCommentID, mpRouteID, userName, userID, commentText, commentedAt)
+	return err
+}

@@ -58,6 +58,26 @@ type Repository interface {
 	SearchInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.SearchResult, error)
 	SearchRoutesInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error)
 
+	// Route count tracking for new route detection
+	UpdateAreaRouteCount(ctx context.Context, mpAreaID string, total int) error
+	GetAreaRouteCount(ctx context.Context, mpAreaID string) (int, error)
+	GetChildAreas(ctx context.Context, parentMPAreaID string) ([]struct {
+		MPAreaID string
+		Name     string
+	}, error)
+	GetRouteIDsForArea(ctx context.Context, mpAreaID string) ([]string, error)
+	GetAllStateConfigs(ctx context.Context) ([]struct {
+		StateName string
+		MPAreaID  string
+		IsActive  bool
+	}, error)
+
+	// Upsert operations (used by mountainprojectsync)
+	UpsertRoute(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error
+	UpsertTick(ctx context.Context, mpRouteID int64, userName string, climbedAt time.Time, style string, comment *string) error
+	UpsertAreaComment(ctx context.Context, mpCommentID, mpAreaID int64, userName string, userID *string, commentText string, commentedAt time.Time) error
+	UpsertRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName string, userID *string, commentText string, commentedAt time.Time) error
+
 	// Boulder drying operations
 	GetBoulderDryingProfile(ctx context.Context, mpRouteID int64) (*models.BoulderDryingProfile, error)
 	GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.BoulderDryingProfile, error)

@@ -206,6 +206,40 @@ func (m *mockRepository) SaveRouteComment(ctx context.Context, mpCommentID, mpRo
 func (m *mockRepository) Close() error {
 	return nil
 }
+func (m *mockRepository) UpdateAreaRouteCount(ctx context.Context, mpAreaID string, total int) error {
+	return nil
+}
+func (m *mockRepository) GetAreaRouteCount(ctx context.Context, mpAreaID string) (int, error) {
+	return 0, nil
+}
+func (m *mockRepository) GetChildAreas(ctx context.Context, parentMPAreaID string) ([]struct {
+	MPAreaID string
+	Name     string
+}, error) {
+	return nil, nil
+}
+func (m *mockRepository) GetRouteIDsForArea(ctx context.Context, mpAreaID string) ([]string, error) {
+	return nil, nil
+}
+func (m *mockRepository) GetAllStateConfigs(ctx context.Context) ([]struct {
+	StateName string
+	MPAreaID  string
+	IsActive  bool
+}, error) {
+	return nil, nil
+}
+func (m *mockRepository) UpsertRoute(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error {
+	return nil
+}
+func (m *mockRepository) UpsertTick(ctx context.Context, mpRouteID int64, userName string, climbedAt time.Time, style string, comment *string) error {
+	return nil
+}
+func (m *mockRepository) UpsertAreaComment(ctx context.Context, mpCommentID, mpAreaID int64, userName string, userID *string, commentText string, commentedAt time.Time) error {
+	return nil
+}
+func (m *mockRepository) UpsertRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName string, userID *string, commentText string, commentedAt time.Time) error {
+	return nil
+}
 
 // TestGetAreaDryingStats_AllDry tests area stats when all routes are dry
 func TestGetAreaDryingStats_AllDry(t *testing.T) {
