@@ -225,14 +225,14 @@ func TestCalculateBoulderDryingStatus(t *testing.T) {
 		t.Error("Expected boulder to be wet")
 	}
 
-	// South-facing should have good sun exposure
-	if status.SunExposureHours < 40.0 {
-		t.Errorf("Expected high sun exposure for south aspect, got %.1f hours", status.SunExposureHours)
+	// South-facing should have good sun exposure (realistic values with corrected sun calculations)
+	if status.SunExposureHours < 25.0 || status.SunExposureHours > 40.0 {
+		t.Errorf("Expected sun exposure 25-40 hours for south aspect, got %.1f hours", status.SunExposureHours)
 	}
 
-	// Confidence should be reduced for missing sun API data
-	if status.ConfidenceScore >= 100 {
-		t.Errorf("Expected confidence < 100 due to missing sun API, got %d", status.ConfidenceScore)
+	// Confidence should be high when all data is available
+	if status.ConfidenceScore < 90 {
+		t.Errorf("Expected high confidence with all data available, got %d", status.ConfidenceScore)
 	}
 }
 

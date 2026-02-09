@@ -55,8 +55,15 @@ func Calculate(lat, lon float64, t time.Time) Position {
 	// Declination
 	dec := math.Asin(math.Sin(epsilonRad) * math.Sin(lambdaRad))
 
-	// Greenwich mean sidereal time (GMST)
-	gmst := math.Mod(280.460+360.98564724*n, 360.0)
+	// Calculate Julian centuries from J2000.0
+	T := n / 36525.0
+
+	// Greenwich mean sidereal time (more accurate formula)
+	gmst := 280.46061837 + 360.98564736629*n + 0.000387933*T*T - T*T*T/38710000.0
+	gmst = math.Mod(gmst, 360.0)
+	if gmst < 0 {
+		gmst += 360.0
+	}
 	gmstRad := gmst * math.Pi / 180.0
 
 	// Local sidereal time
@@ -71,15 +78,15 @@ func Calculate(lat, lon float64, t time.Time) Position {
 			math.Cos(latRad)*math.Cos(dec)*math.Cos(ha),
 	)
 
-	// Calculate azimuth
-	azimuth := math.Atan2(
-		math.Sin(ha),
-		math.Cos(ha)*math.Sin(latRad)-math.Tan(dec)*math.Cos(latRad),
-	)
+	// Calculate azimuth (measured clockwise from north)
+	// Using standard astronomical formula
+	azimuthX := math.Sin(ha)
+	azimuthY := math.Cos(ha)*math.Sin(latRad) - math.Tan(dec)*math.Cos(latRad)
+	azimuth := math.Atan2(azimuthX, azimuthY)
 
-	// Convert to degrees
+	// Convert to degrees (0° = North, 90° = East, 180° = South, 270° = West)
 	elevationDeg := elevation * 180.0 / math.Pi
-	azimuthDeg := math.Mod((azimuth*180.0/math.Pi)+180.0, 360.0)
+	azimuthDeg := math.Mod(azimuth*180.0/math.Pi+180.0, 360.0)
 
 	return Position{
 		Azimuth:   azimuthDeg,
@@ -197,23 +204,49 @@ func (p Position) IsAboveHorizon() bool {
 
 // GetSunriseAndSunset estimates sunrise and sunset times for a given location and date
 func GetSunriseAndSunset(lat, lon float64, date time.Time) (sunrise, sunset time.Time) {
-	// Start at midnight local time
-	midnight := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	// Start at midnight UTC
+	midnight := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
 
-	// Search for sunrise (when elevation crosses 0° going up)
+	// Search every 30 minutes for 30 hours to handle cases where sunset crosses into next UTC day
+	// (e.g., Seattle on June 21: sunset is ~04:11 UTC on June 22)
+	var prevElevation float64
+	var prevTime time.Time
 	sunriseFound := false
-	for hour := 0; hour < 24; hour++ {
-		t := midnight.Add(time.Duration(hour) * time.Hour)
+
+	for i := 0; i < 60; i++ { // 60 intervals = 30 hours
+		t := midnight.Add(time.Duration(i*30) * time.Minute)
 		pos := Calculate(lat, lon, t)
-		if pos.Elevation > 0 && !sunriseFound {
-			sunrise = t
-			sunriseFound = true
+
+		if i > 0 {
+			// Sunrise: elevation crosses from negative to positive
+			if prevElevation <= 0 && pos.Elevation > 0 && !sunriseFound {
+				// Interpolate for better accuracy
+				sunrise = interpolateTime(prevTime, t, prevElevation, pos.Elevation, 0)
+				sunriseFound = true
+			}
+
+			// Sunset: elevation crosses from positive to negative
+			if prevElevation > 0 && pos.Elevation <= 0 && sunriseFound {
+				// Interpolate for better accuracy
+				sunset = interpolateTime(prevTime, t, prevElevation, pos.Elevation, 0)
+				break
+			}
 		}
-		if pos.Elevation <= 0 && sunriseFound {
-			sunset = t
-			break
-		}
+
+		prevElevation = pos.Elevation
+		prevTime = t
 	}
 
 	return sunrise, sunset
+}
+
+// interpolateTime linearly interpolates between two times to find when elevation crosses threshold
+func interpolateTime(t1, t2 time.Time, elev1, elev2, threshold float64) time.Time {
+	if elev1 == elev2 {
+		return t1
+	}
+	// Linear interpolation: t = t1 + (threshold - elev1) / (elev2 - elev1) * (t2 - t1)
+	fraction := (threshold - elev1) / (elev2 - elev1)
+	duration := t2.Sub(t1)
+	return t1.Add(time.Duration(float64(duration) * fraction))
 }

@@ -51,8 +51,9 @@ func CalculateSnowAccumulation(historicalData, futureData []models.WeatherData, 
 	sortWeatherDataByTime(allData)
 
 	for _, hour := range allData {
-		// Elevation-adjusted temperature (lapse rate: -3.5°F per 1000 ft)
-		temp := hour.Temperature - (elevationFt/1000.0)*3.5
+		// Use temperature as-is (Open-Meteo API already provides temps at location elevation)
+		// Note: elevationFt parameter is kept for potential future use but not currently applied
+		temp := hour.Temperature
 		precip := hour.Precipitation // This is HOURLY precipitation (not 3-hour)
 		windSpeed := hour.WindSpeed
 		humidity := float64(hour.Humidity)
@@ -82,14 +83,14 @@ func CalculateSnowAccumulation(historicalData, futureData []models.WeatherData, 
 			}
 		}
 
-		// --- Temperature-based melt (increased rates for PNW maritime conditions) ---
+		// --- Temperature-based melt ---
 		if temp > 34 && model.snowSWE > 0 {
 			melt := calculateSWEMelt(temp) // Hourly period
 			model.snowSWE = max(0, model.snowSWE-melt)
-		} else if temp > 28 && model.snowSWE > 0 {
-			// Slow melt even below 34°F in PNW maritime climate (sublimation + solar radiation)
-			// 0.0025 gave 10.8", 0.005 gave 0", trying 0.003 (closer to original)
-			baseMelt := (temp - 28) * 0.003
+		} else if temp > 30 && temp <= 34 && model.snowSWE > 0 {
+			// Very slow melt in transition zone (30-34°F) from solar radiation
+			// Reduced significantly to prevent excessive melt at freezing temps
+			baseMelt := (temp - 30) * 0.001
 			model.snowSWE = max(0, model.snowSWE-baseMelt)
 		}
 
@@ -211,10 +212,22 @@ func blendDensity(currentDensity, currentSWE, newSWE, newDensity float64) float6
 // calculateSWEMelt calculates temperature-driven SWE melt (PNW degree-day approximation)
 // Returns inches SWE per hour
 // Pacific Northwest maritime climate has moderate melt rates
+// Uses non-linear melt that accelerates at warmer temperatures
 func calculateSWEMelt(temp float64) float64 {
-	// Tuned for PNW maritime melt to achieve 3-5" range
-	// 0.016 gave 10.8", 0.022 gave 0", so trying 0.018 (closer to original)
-	return max(0, (temp-34)*0.018)
+	if temp <= 34 {
+		return 0
+	}
+
+	degreesDiff := temp - 34
+
+	// Non-linear melt rate: moderate near freezing, rapid at warm temps
+	// Base: 0.02 per degree, plus quadratic term for acceleration
+	// At 36°F (2° above): 0.02 * 2 + 0.0003 * 4 = 0.041 SWE/hour
+	// At 40°F (6° above): 0.02 * 6 + 0.0003 * 36 = 0.131 SWE/hour
+	// At 50°F (16° above): 0.02 * 16 + 0.0003 * 256 = 0.397 SWE/hour
+	baseMelt := 0.02*degreesDiff + 0.0003*degreesDiff*degreesDiff
+
+	return baseMelt
 }
 
 // getCompactionRate returns compaction rate based on temperature
