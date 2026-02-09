@@ -14,6 +14,8 @@ import (
 const (
 	openMeteoForecastURL   = "https://api.open-meteo.com/v1/forecast"
 	openMeteoHistoricalURL = "https://api.open-meteo.com/v1/archive"
+	maxRetries             = 3
+	initialRetryDelay      = 1 * time.Second
 )
 
 // OpenMeteoClient handles API calls to Open-Meteo
@@ -101,6 +103,49 @@ func NewOpenMeteoClient() *OpenMeteoClient {
 	}
 }
 
+// retryableGet performs an HTTP GET with retry logic for rate limiting and transient errors
+func (c *OpenMeteoClient) retryableGet(url string) (*http.Response, error) {
+	var lastErr error
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			// Calculate exponential backoff: 1s, 2s, 4s
+			delay := initialRetryDelay * time.Duration(1<<uint(attempt-1))
+			log.Printf("Retry attempt %d/%d for Open-Meteo after %v", attempt, maxRetries, delay)
+			time.Sleep(delay)
+		}
+
+		resp, err := c.httpClient.Get(url)
+		if err != nil {
+			lastErr = err
+			// Network errors are retryable
+			log.Printf("Open-Meteo request failed (attempt %d/%d): %v", attempt+1, maxRetries+1, err)
+			continue
+		}
+
+		// Check for rate limiting or server errors
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("Open-Meteo API error (status %d): %s", resp.StatusCode, string(body))
+			log.Printf("Open-Meteo returned %d (attempt %d/%d): %s", resp.StatusCode, attempt+1, maxRetries+1, string(body))
+
+			// For 429, check if Retry-After header is present
+			if resp.StatusCode == http.StatusTooManyRequests {
+				if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+					log.Printf("Open-Meteo rate limited. Retry-After: %s", retryAfter)
+				}
+			}
+			continue
+		}
+
+		// Success or non-retryable error
+		return resp, nil
+	}
+
+	return nil, fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
+}
+
 // mergePrecipitationData merges precipitation data from NCEP NAM CONUS (0-60h) and best_match (fallback)
 // NAM CONUS provides more accurate precipitation forecasts but only for 60 hours
 func mergePrecipitationData(namData []*float64, bmData []float64) []float64 {
@@ -175,7 +220,7 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=precipitation,rain,snowfall&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=1&models=ncep_nam_conus,best_match",
 		openMeteoForecastURL, lat, lon)
 
-	resp, err := c.httpClient.Get(url)
+	resp, err := c.retryableGet(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch current weather from Open-Meteo: %w", err)
 	}
@@ -242,7 +287,7 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&daily=sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=America/Los_Angeles&forecast_days=16&models=ncep_nam_conus,best_match",
 		openMeteoForecastURL, lat, lon)
 
-	resp, err := c.httpClient.Get(url)
+	resp, err := c.retryableGet(url)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to fetch weather from Open-Meteo: %w", err)
 	}
@@ -395,7 +440,7 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=16&models=ncep_nam_conus,best_match",
 		openMeteoForecastURL, lat, lon)
 
-	resp, err := c.httpClient.Get(url)
+	resp, err := c.retryableGet(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch forecast from Open-Meteo: %w", err)
 	}
@@ -476,7 +521,7 @@ func (c *OpenMeteoClient) GetHistoricalWeather(lat, lon float64, days int) ([]mo
 	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&past_days=%d&forecast_days=1&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC",
 		openMeteoForecastURL, lat, lon, days)
 
-	resp, err := c.httpClient.Get(url)
+	resp, err := c.retryableGet(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch historical weather from Open-Meteo: %w", err)
 	}

@@ -16,6 +16,11 @@ const queryClient = new QueryClient({
       staleTime: 5 * 60 * 1000, // 5 minutes
       gcTime: 10 * 60 * 1000, // 10 minutes (renamed from cacheTime)
       refetchOnWindowFocus: true,
+      // Retry failed requests up to 3 times with exponential backoff
+      retry: 3,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // 1s, 2s, 4s (max 30s)
+      // Retry on mount if previous attempt failed (helps recover from rate limits)
+      retryOnMount: true,
     },
   },
 });

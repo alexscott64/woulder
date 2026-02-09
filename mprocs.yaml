@@ -1,0 +1,9 @@
+procs:
+  server:
+    cmd: ["cmd", "/c", "air"]
+    cwd: "backend"
+    stop: "SIGTERM"
+  client:
+    cmd: ["cmd", "/c", "npm", "run", "dev"]
+    cwd: "frontend"
+    stop: "SIGTERM"
