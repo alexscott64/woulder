@@ -78,6 +78,13 @@ type Repository interface {
 	UpsertAreaComment(ctx context.Context, mpCommentID, mpAreaID int64, userName string, userID *string, commentText string, commentedAt time.Time) error
 	UpsertRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName string, userID *string, commentText string, commentedAt time.Time) error
 
+	// Priority-based sync operations for tick/comment optimization
+	UpdateRouteSyncPriorities(ctx context.Context) error
+	GetLocationRoutesDueForSync(ctx context.Context, syncType string) ([]int64, error)
+	GetRoutesDueForTickSync(ctx context.Context, priority string) ([]int64, error)
+	GetRoutesDueForCommentSync(ctx context.Context, priority string) ([]int64, error)
+	GetPriorityDistribution(ctx context.Context) (map[string]int, error)
+
 	// Boulder drying operations
 	GetBoulderDryingProfile(ctx context.Context, mpRouteID int64) (*models.BoulderDryingProfile, error)
 	GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.BoulderDryingProfile, error)

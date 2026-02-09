@@ -240,6 +240,21 @@ func (m *mockRepository) UpsertAreaComment(ctx context.Context, mpCommentID, mpA
 func (m *mockRepository) UpsertRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName string, userID *string, commentText string, commentedAt time.Time) error {
 	return nil
 }
+func (m *mockRepository) UpdateRouteSyncPriorities(ctx context.Context) error {
+	return nil
+}
+func (m *mockRepository) GetLocationRoutesDueForSync(ctx context.Context, syncType string) ([]int64, error) {
+	return nil, nil
+}
+func (m *mockRepository) GetRoutesDueForTickSync(ctx context.Context, priority string) ([]int64, error) {
+	return nil, nil
+}
+func (m *mockRepository) GetRoutesDueForCommentSync(ctx context.Context, priority string) ([]int64, error) {
+	return nil, nil
+}
+func (m *mockRepository) GetPriorityDistribution(ctx context.Context) (map[string]int, error) {
+	return make(map[string]int), nil
+}
 
 // TestGetAreaDryingStats_AllDry tests area stats when all routes are dry
 func TestGetAreaDryingStats_AllDry(t *testing.T) {

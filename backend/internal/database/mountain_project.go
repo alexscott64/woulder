@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
@@ -74,8 +75,9 @@ func (db *Database) SaveMPRoute(ctx context.Context, route *models.MPRoute) erro
 	return err
 }
 
-// SaveMPTick saves a Mountain Project tick
+// SaveMPTick saves a Mountain Project tick and updates the last_tick_sync_at timestamp
 func (db *Database) SaveMPTick(ctx context.Context, tick *models.MPTick) error {
+	// Insert the tick
 	query := `
 		INSERT INTO woulder.mp_ticks (
 			mp_route_id, user_name, climbed_at, style, comment
@@ -91,7 +93,17 @@ func (db *Database) SaveMPTick(ctx context.Context, tick *models.MPTick) error {
 		tick.Style,
 		tick.Comment,
 	)
+	if err != nil {
+		return err
+	}
 
+	// Update last_tick_sync_at timestamp for this route
+	updateQuery := `
+		UPDATE woulder.mp_routes
+		SET last_tick_sync_at = NOW()
+		WHERE mp_route_id = $1
+	`
+	_, err = db.conn.ExecContext(ctx, updateQuery, tick.MPRouteID)
 	return err
 }
 
@@ -122,8 +134,9 @@ func (db *Database) SaveAreaComment(ctx context.Context, mpCommentID, mpAreaID i
 	return err
 }
 
-// SaveRouteComment saves a Mountain Project route comment
+// SaveRouteComment saves a Mountain Project route comment and updates the last_comment_sync_at timestamp
 func (db *Database) SaveRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName, commentText string, commentedAt time.Time) error {
+	// Insert/update the comment
 	query := `
 		INSERT INTO woulder.mp_comments (
 			mp_comment_id, comment_type, mp_area_id, mp_route_id,
@@ -145,7 +158,17 @@ func (db *Database) SaveRouteComment(ctx context.Context, mpCommentID, mpRouteID
 		commentText,
 		commentedAt,
 	)
+	if err != nil {
+		return err
+	}
 
+	// Update last_comment_sync_at timestamp for this route
+	updateQuery := `
+		UPDATE woulder.mp_routes
+		SET last_comment_sync_at = NOW()
+		WHERE mp_route_id = $1
+	`
+	_, err = db.conn.ExecContext(ctx, updateQuery, mpRouteID)
 	return err
 }
 
@@ -447,4 +470,260 @@ func (db *Database) UpsertRouteComment(ctx context.Context, mpCommentID, mpRoute
 
 	_, err := db.conn.ExecContext(ctx, query, mpCommentID, mpRouteID, userName, userID, commentText, commentedAt)
 	return err
+}
+
+// UpdateRouteSyncPriorities recalculates sync priority for all NON-LOCATION routes based on tick activity
+// IMPORTANT: Only updates routes WHERE location_id IS NULL (location routes always sync daily)
+// UpdateRouteSyncPriorities recalculates route priorities using a hybrid multi-signal system
+// that adapts to seasonal patterns, activity surges, and per-area population differences.
+//
+// Priority Signals (evaluated in order):
+// 1. Seasonal routes (Ice/Alpine/Snow/Mixed): HIGH if any activity in 90 days
+// 2. Activity surge: HIGH if recent activity (14d) after 90+ day gap (catches season starts)
+// 3. Per-area ranking: HIGH if top 10% in area (adjusts for population)
+// 4. Absolute threshold: HIGH if 20+ ticks in 90 days (very busy routes)
+// 5. New routes: HIGH if < 90 days old with activity
+// 6. MEDIUM if any activity or above-average for area
+// 7. LOW otherwise
+//
+// This system ensures we never miss seasonal starts (ice climbing, alpine) while
+// still optimizing API calls for the majority of routes.
+func (db *Database) UpdateRouteSyncPriorities(ctx context.Context) error {
+	query := `
+		WITH route_metrics AS (
+			SELECT
+				r.mp_route_id,
+				r.mp_area_id,
+				r.route_type,
+				COUNT(CASE WHEN t.climbed_at >= NOW() - INTERVAL '14 days' THEN 1 END) AS tick_count_14d,
+				COUNT(CASE WHEN t.climbed_at >= NOW() - INTERVAL '90 days' THEN 1 END) AS tick_count_90d,
+				COUNT(t.climbed_at) AS total_tick_count,
+				(NOW()::date - MAX(t.climbed_at)::date) AS days_since_last_tick,
+				(NOW()::date - r.created_at::date) AS route_age_days
+			FROM woulder.mp_routes r
+			LEFT JOIN woulder.mp_ticks t ON r.mp_route_id = t.mp_route_id
+			WHERE r.location_id IS NULL  -- Only non-location routes
+			GROUP BY r.mp_route_id, r.mp_area_id, r.route_type, r.created_at
+		),
+		area_percentiles AS (
+			SELECT
+				mp_route_id,
+				PERCENT_RANK() OVER (
+					PARTITION BY mp_area_id
+					ORDER BY tick_count_90d
+				) as area_percentile
+			FROM route_metrics
+		)
+		UPDATE woulder.mp_routes r
+		SET
+			tick_count_14d = m.tick_count_14d,
+			tick_count_90d = m.tick_count_90d,
+			total_tick_count = m.total_tick_count,
+			days_since_last_tick = m.days_since_last_tick,
+			area_percentile = p.area_percentile,
+			sync_priority = CASE
+				-- Seasonal routes: ANY activity in 90 days = HIGH (catches ice/alpine seasons)
+				WHEN m.route_type IN ('Ice', 'Alpine', 'Snow', 'Mixed') AND m.tick_count_90d >= 1 THEN 'high'
+
+				-- Activity surge: Recent ticks after long gap = HIGH (catches season starts)
+				WHEN m.tick_count_14d >= 1 AND m.days_since_last_tick > 90 THEN 'high'
+
+				-- Per-area top performers: Top 10% = HIGH (adjusts for population)
+				WHEN p.area_percentile >= 0.90 THEN 'high'
+
+				-- Absolute threshold: Very busy routes = HIGH (safety net)
+				WHEN m.tick_count_90d >= 20 THEN 'high'
+
+				-- New routes with activity = HIGH (catch new classics early)
+				WHEN m.route_age_days < 90 AND m.total_tick_count > 0 THEN 'high'
+
+				-- Medium: Any activity OR above-average for area
+				WHEN m.tick_count_90d >= 1 OR p.area_percentile >= 0.50 THEN 'medium'
+
+				-- Low: Everything else
+				ELSE 'low'
+			END,
+			updated_at = NOW()
+		FROM route_metrics m
+		JOIN area_percentiles p ON m.mp_route_id = p.mp_route_id
+		WHERE r.mp_route_id = m.mp_route_id
+	`
+
+	_, err := db.conn.ExecContext(ctx, query)
+	return err
+}
+
+// GetLocationRoutesDueForSync returns ALL routes with location_id that need syncing
+// These routes always sync daily regardless of activity
+func (db *Database) GetLocationRoutesDueForSync(ctx context.Context, syncType string) ([]int64, error) {
+	var query string
+
+	if syncType == "ticks" {
+		query = `
+			SELECT mp_route_id
+			FROM woulder.mp_routes
+			WHERE
+				location_id IS NOT NULL
+				AND (
+					last_tick_sync_at IS NULL
+					OR last_tick_sync_at < NOW() - INTERVAL '24 hours'
+				)
+			ORDER BY last_tick_sync_at ASC NULLS FIRST
+			LIMIT 1000
+		`
+	} else if syncType == "comments" {
+		query = `
+			SELECT mp_route_id
+			FROM woulder.mp_routes
+			WHERE
+				location_id IS NOT NULL
+				AND (
+					last_comment_sync_at IS NULL
+					OR last_comment_sync_at < NOW() - INTERVAL '24 hours'
+				)
+			ORDER BY last_comment_sync_at ASC NULLS FIRST
+			LIMIT 1000
+		`
+	} else {
+		return nil, fmt.Errorf("invalid syncType: %s (must be 'ticks' or 'comments')", syncType)
+	}
+
+	rows, err := db.conn.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var routeIDs []int64
+	for rows.Next() {
+		var routeID int64
+		if err := rows.Scan(&routeID); err != nil {
+			return nil, err
+		}
+		routeIDs = append(routeIDs, routeID)
+	}
+
+	return routeIDs, rows.Err()
+}
+
+// GetRoutesDueForTickSync returns NON-LOCATION routes due for tick syncing based on priority
+// IMPORTANT: Only returns routes WHERE location_id IS NULL
+func (db *Database) GetRoutesDueForTickSync(ctx context.Context, priority string) ([]int64, error) {
+	var interval string
+	switch priority {
+	case "high":
+		interval = "24 hours"
+	case "medium":
+		interval = "7 days"
+	case "low":
+		interval = "30 days"
+	default:
+		return nil, fmt.Errorf("invalid priority: %s (must be 'high', 'medium', or 'low')", priority)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT mp_route_id
+		FROM woulder.mp_routes
+		WHERE
+			location_id IS NULL
+			AND sync_priority = $1
+			AND (
+				last_tick_sync_at IS NULL
+				OR last_tick_sync_at < NOW() - INTERVAL '%s'
+			)
+		ORDER BY last_tick_sync_at ASC NULLS FIRST
+		LIMIT 1000
+	`, interval)
+
+	rows, err := db.conn.QueryContext(ctx, query, priority)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var routeIDs []int64
+	for rows.Next() {
+		var routeID int64
+		if err := rows.Scan(&routeID); err != nil {
+			return nil, err
+		}
+		routeIDs = append(routeIDs, routeID)
+	}
+
+	return routeIDs, rows.Err()
+}
+
+// GetRoutesDueForCommentSync returns NON-LOCATION routes due for comment syncing based on priority
+// IMPORTANT: Only returns routes WHERE location_id IS NULL
+func (db *Database) GetRoutesDueForCommentSync(ctx context.Context, priority string) ([]int64, error) {
+	var interval string
+	switch priority {
+	case "high":
+		interval = "24 hours"
+	case "medium":
+		interval = "7 days"
+	case "low":
+		interval = "30 days"
+	default:
+		return nil, fmt.Errorf("invalid priority: %s (must be 'high', 'medium', or 'low')", priority)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT mp_route_id
+		FROM woulder.mp_routes
+		WHERE
+			location_id IS NULL
+			AND sync_priority = $1
+			AND (
+				last_comment_sync_at IS NULL
+				OR last_comment_sync_at < NOW() - INTERVAL '%s'
+			)
+		ORDER BY last_comment_sync_at ASC NULLS FIRST
+		LIMIT 1000
+	`, interval)
+
+	rows, err := db.conn.QueryContext(ctx, query, priority)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var routeIDs []int64
+	for rows.Next() {
+		var routeID int64
+		if err := rows.Scan(&routeID); err != nil {
+			return nil, err
+		}
+		routeIDs = append(routeIDs, routeID)
+	}
+
+	return routeIDs, rows.Err()
+}
+
+// GetPriorityDistribution returns count of routes in each priority tier (for logging/monitoring)
+func (db *Database) GetPriorityDistribution(ctx context.Context) (map[string]int, error) {
+	query := `
+		SELECT sync_priority, COUNT(*) as count
+		FROM woulder.mp_routes
+		WHERE location_id IS NULL
+		GROUP BY sync_priority
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	distribution := make(map[string]int)
+	for rows.Next() {
+		var priority string
+		var count int
+		if err := rows.Scan(&priority, &count); err != nil {
+			return nil, err
+		}
+		distribution[priority] = count
+	}
+
+	return distribution, rows.Err()
 }

@@ -62,8 +62,17 @@ func main() {
 	// Start background weather refresh (every 2 hours)
 	handler.StartBackgroundRefresh(2 * time.Hour)
 
-	// Start background tick sync (every 24 hours)
-	handler.StartBackgroundTickSync(24 * time.Hour)
+	// Start dual-track sync system for Mountain Project ticks/comments
+	// Priority recalculation runs FIRST (populates priorities for non-location routes)
+	handler.StartPriorityRecalculation(24 * time.Hour)
+	// Location route sync runs SECOND (ensures woulder locations are fresh - most critical)
+	handler.StartLocationRouteSync(24 * time.Hour)
+	// High-priority sync runs THIRD (ensures popular non-location routes are fresh)
+	handler.StartHighPrioritySync(24 * time.Hour)
+	// Medium-priority sync runs weekly
+	handler.StartMediumPrioritySync(7 * 24 * time.Hour)
+	// Low-priority sync runs monthly
+	handler.StartLowPrioritySync(30 * 24 * time.Hour)
 
 	// Start background route sync (every 24 hours)
 	handler.StartBackgroundRouteSync(24 * time.Hour)

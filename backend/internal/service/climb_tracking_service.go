@@ -955,3 +955,392 @@ func (s *ClimbTrackingService) syncNewRoutesInArea(ctx context.Context, areaID s
 	log.Printf("Successfully synced %d/%d new routes in area %s", syncedCount, len(newRoutes), areaID)
 	return syncedCount, nil
 }
+
+// RecalculateAllPriorities recalculates sync priorities for all non-location routes
+// Only applies to routes without location_id (location routes always sync daily)
+func (s *ClimbTrackingService) RecalculateAllPriorities(ctx context.Context) error {
+	log.Println("Recalculating route sync priorities (non-location routes only)...")
+
+	if err := s.repo.UpdateRouteSyncPriorities(ctx); err != nil {
+		return fmt.Errorf("failed to recalculate priorities: %w", err)
+	}
+
+	// Query and log priority distribution
+	distribution, err := s.repo.GetPriorityDistribution(ctx)
+	if err != nil {
+		log.Printf("Warning: failed to get priority distribution: %v", err)
+	} else {
+		log.Printf("Priority recalculation complete: high=%d, medium=%d, low=%d [non-location routes]",
+			distribution["high"], distribution["medium"], distribution["low"])
+	}
+
+	return nil
+}
+
+// SyncLocationRouteTicks syncs ticks for ALL routes with location_id (woulder locations - always daily)
+func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error {
+	startTime := time.Now()
+
+	// Get ALL location routes due for tick sync
+	routeIDs, err := s.repo.GetLocationRoutesDueForSync(ctx, "ticks")
+	if err != nil {
+		return fmt.Errorf("failed to get location routes for tick sync: %w", err)
+	}
+
+	if len(routeIDs) == 0 {
+		log.Println("No location routes due for tick sync")
+		return nil
+	}
+
+	log.Printf("Syncing ticks for %d location routes...", len(routeIDs))
+
+	// Load Pacific timezone for Mountain Project dates
+	pacificTZ, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		log.Printf("Warning: failed to load Pacific timezone, falling back to UTC: %v", err)
+		pacificTZ = time.UTC
+	}
+
+	totalNewTicks := 0
+
+	// Sync ticks for each route with rate limiting
+	err = s.rateLimitedSync(ctx, routeIDs, func(routeID string) error {
+		// Get last tick timestamp for this route
+		routeIDInt64, _ := strconv.ParseInt(routeID, 10, 64)
+		lastTickTime, err := s.repo.GetLastTickTimestampForRoute(ctx, routeIDInt64)
+		if err != nil {
+			return fmt.Errorf("failed to get last tick for route %s: %w", routeID, err)
+		}
+
+		// Fetch ticks from MP API
+		ticks, err := s.mpClient.GetRouteTicks(routeID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch ticks: %w", err)
+		}
+
+		// Process only new ticks
+		newTickCount := 0
+		for _, tick := range ticks {
+			// Parse tick date
+			var climbedAt time.Time
+			climbedAt, err = time.ParseInLocation("Jan 2, 2006, 3:04 pm", tick.Date, pacificTZ)
+			if err != nil {
+				climbedAt, err = time.ParseInLocation("2006-01-02 15:04:05", tick.Date, pacificTZ)
+				if err != nil {
+					climbedAt, err = time.ParseInLocation("2006-01-02", tick.Date, pacificTZ)
+					if err != nil {
+						continue
+					}
+				}
+			}
+
+			// Skip invalid dates
+			if !isTickDateValid(climbedAt) {
+				continue
+			}
+
+			// Skip if we already have this tick
+			if lastTickTime != nil && !climbedAt.After(*lastTickTime) {
+				continue
+			}
+
+			// Save new tick
+			tickModel := &models.MPTick{
+				MPRouteID: routeIDInt64,
+				UserName:  tick.GetUserName(),
+				ClimbedAt: climbedAt,
+				Style:     tick.Style,
+			}
+
+			textStr := tick.GetTextString()
+			if textStr != "" {
+				cleanedText := cleanCommentText(textStr)
+				if cleanedText != "" {
+					tickModel.Comment = &cleanedText
+				}
+			}
+
+			if err := s.repo.SaveMPTick(ctx, tickModel); err != nil {
+				log.Printf("Error saving tick for route %s: %v", routeID, err)
+				continue
+			}
+
+			newTickCount++
+		}
+
+		totalNewTicks += newTickCount
+		return nil
+	})
+
+	duration := time.Since(startTime)
+	if err != nil {
+		return fmt.Errorf("location route tick sync error: %w", err)
+	}
+
+	log.Printf("Location route tick sync complete: %d routes, %d new ticks, %.1f minutes",
+		len(routeIDs), totalNewTicks, duration.Minutes())
+
+	return nil
+}
+
+// SyncLocationRouteComments syncs comments for ALL routes with location_id (woulder locations - always daily)
+func (s *ClimbTrackingService) SyncLocationRouteComments(ctx context.Context) error {
+	startTime := time.Now()
+
+	// Get ALL location routes due for comment sync
+	routeIDs, err := s.repo.GetLocationRoutesDueForSync(ctx, "comments")
+	if err != nil {
+		return fmt.Errorf("failed to get location routes for comment sync: %w", err)
+	}
+
+	if len(routeIDs) == 0 {
+		log.Println("No location routes due for comment sync")
+		return nil
+	}
+
+	log.Printf("Syncing comments for %d location routes...", len(routeIDs))
+
+	totalNewComments := 0
+
+	// Sync comments for each route with rate limiting
+	err = s.rateLimitedSync(ctx, routeIDs, func(routeID string) error {
+		routeIDInt64, _ := strconv.ParseInt(routeID, 10, 64)
+
+		// Fetch comments from MP API
+		comments, err := s.mpClient.GetRouteComments(routeID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch comments: %w", err)
+		}
+
+		// Save comments (upsert handles duplicates)
+		newCommentCount := 0
+		for _, comment := range comments {
+			commentedAt := time.Unix(comment.Created, 0)
+			userName := comment.GetUserInfo()
+			cleanedText := cleanCommentText(comment.Message)
+
+			if err := s.repo.SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, cleanedText, commentedAt); err != nil {
+				log.Printf("Error saving comment for route %s: %v", routeID, err)
+				continue
+			}
+
+			newCommentCount++
+		}
+
+		totalNewComments += newCommentCount
+		return nil
+	})
+
+	duration := time.Since(startTime)
+	if err != nil {
+		return fmt.Errorf("location route comment sync error: %w", err)
+	}
+
+	log.Printf("Location route comment sync complete: %d routes, %d new comments, %.1f minutes",
+		len(routeIDs), totalNewComments, duration.Minutes())
+
+	return nil
+}
+
+// SyncTicksByPriority syncs ticks for non-location routes at a specific priority tier
+func (s *ClimbTrackingService) SyncTicksByPriority(ctx context.Context, priority string) error {
+	startTime := time.Now()
+
+	// Get non-location routes due for tick sync at this priority
+	routeIDs, err := s.repo.GetRoutesDueForTickSync(ctx, priority)
+	if err != nil {
+		return fmt.Errorf("failed to get routes for priority %s tick sync: %w", priority, err)
+	}
+
+	if len(routeIDs) == 0 {
+		log.Printf("No %s priority routes due for tick sync", priority)
+		return nil
+	}
+
+	log.Printf("Syncing ticks for %d %s priority routes...", len(routeIDs), priority)
+
+	// Load Pacific timezone for Mountain Project dates
+	pacificTZ, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		log.Printf("Warning: failed to load Pacific timezone, falling back to UTC: %v", err)
+		pacificTZ = time.UTC
+	}
+
+	totalNewTicks := 0
+
+	// Sync ticks for each route with rate limiting
+	err = s.rateLimitedSync(ctx, routeIDs, func(routeID string) error {
+		// Get last tick timestamp for this route
+		routeIDInt64, _ := strconv.ParseInt(routeID, 10, 64)
+		lastTickTime, err := s.repo.GetLastTickTimestampForRoute(ctx, routeIDInt64)
+		if err != nil {
+			return fmt.Errorf("failed to get last tick for route %s: %w", routeID, err)
+		}
+
+		// Fetch ticks from MP API
+		ticks, err := s.mpClient.GetRouteTicks(routeID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch ticks: %w", err)
+		}
+
+		// Process only new ticks
+		newTickCount := 0
+		for _, tick := range ticks {
+			// Parse tick date
+			var climbedAt time.Time
+			climbedAt, err = time.ParseInLocation("Jan 2, 2006, 3:04 pm", tick.Date, pacificTZ)
+			if err != nil {
+				climbedAt, err = time.ParseInLocation("2006-01-02 15:04:05", tick.Date, pacificTZ)
+				if err != nil {
+					climbedAt, err = time.ParseInLocation("2006-01-02", tick.Date, pacificTZ)
+					if err != nil {
+						continue
+					}
+				}
+			}
+
+			// Skip invalid dates
+			if !isTickDateValid(climbedAt) {
+				continue
+			}
+
+			// Skip if we already have this tick
+			if lastTickTime != nil && !climbedAt.After(*lastTickTime) {
+				continue
+			}
+
+			// Save new tick
+			tickModel := &models.MPTick{
+				MPRouteID: routeIDInt64,
+				UserName:  tick.GetUserName(),
+				ClimbedAt: climbedAt,
+				Style:     tick.Style,
+			}
+
+			textStr := tick.GetTextString()
+			if textStr != "" {
+				cleanedText := cleanCommentText(textStr)
+				if cleanedText != "" {
+					tickModel.Comment = &cleanedText
+				}
+			}
+
+			if err := s.repo.SaveMPTick(ctx, tickModel); err != nil {
+				log.Printf("Error saving tick for route %s: %v", routeID, err)
+				continue
+			}
+
+			newTickCount++
+		}
+
+		totalNewTicks += newTickCount
+		return nil
+	})
+
+	duration := time.Since(startTime)
+	if err != nil {
+		return fmt.Errorf("priority %s tick sync error: %w", priority, err)
+	}
+
+	log.Printf("Priority %s tick sync complete: %d routes, %d new ticks, %.1f minutes",
+		priority, len(routeIDs), totalNewTicks, duration.Minutes())
+
+	return nil
+}
+
+// SyncCommentsByPriority syncs comments for non-location routes at a specific priority tier
+func (s *ClimbTrackingService) SyncCommentsByPriority(ctx context.Context, priority string) error {
+	startTime := time.Now()
+
+	// Get non-location routes due for comment sync at this priority
+	routeIDs, err := s.repo.GetRoutesDueForCommentSync(ctx, priority)
+	if err != nil {
+		return fmt.Errorf("failed to get routes for priority %s comment sync: %w", priority, err)
+	}
+
+	if len(routeIDs) == 0 {
+		log.Printf("No %s priority routes due for comment sync", priority)
+		return nil
+	}
+
+	log.Printf("Syncing comments for %d %s priority routes...", len(routeIDs), priority)
+
+	totalNewComments := 0
+
+	// Sync comments for each route with rate limiting
+	err = s.rateLimitedSync(ctx, routeIDs, func(routeID string) error {
+		routeIDInt64, _ := strconv.ParseInt(routeID, 10, 64)
+
+		// Fetch comments from MP API
+		comments, err := s.mpClient.GetRouteComments(routeID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch comments: %w", err)
+		}
+
+		// Save comments (upsert handles duplicates)
+		newCommentCount := 0
+		for _, comment := range comments {
+			commentedAt := time.Unix(comment.Created, 0)
+			userName := comment.GetUserInfo()
+			cleanedText := cleanCommentText(comment.Message)
+
+			if err := s.repo.SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, cleanedText, commentedAt); err != nil {
+				log.Printf("Error saving comment for route %s: %v", routeID, err)
+				continue
+			}
+
+			newCommentCount++
+		}
+
+		totalNewComments += newCommentCount
+		return nil
+	})
+
+	duration := time.Since(startTime)
+	if err != nil {
+		return fmt.Errorf("priority %s comment sync error: %w", priority, err)
+	}
+
+	log.Printf("Priority %s comment sync complete: %d routes, %d new comments, %.1f minutes",
+		priority, len(routeIDs), totalNewComments, duration.Minutes())
+
+	return nil
+}
+
+// rateLimitedSync processes routes with consistent rate limiting
+// 50ms between requests, 10 second pause every 500 requests
+func (s *ClimbTrackingService) rateLimitedSync(
+	ctx context.Context,
+	routeIDs []int64,
+	syncFunc func(routeID string) error,
+) error {
+	requestCount := 0
+
+	for _, routeID := range routeIDs {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Apply sync function
+		if err := syncFunc(strconv.FormatInt(routeID, 10)); err != nil {
+			log.Printf("Error syncing route %d: %v", routeID, err)
+			continue
+		}
+
+		requestCount++
+
+		// Rate limiting: 50ms between requests
+		time.Sleep(50 * time.Millisecond)
+
+		// Every 500 requests, pause for 10 seconds
+		if requestCount%500 == 0 {
+			log.Printf("Processed %d requests, pausing for 10 seconds...", requestCount)
+			time.Sleep(10 * time.Second)
+		}
+	}
+
+	return nil
+}

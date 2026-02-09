@@ -70,6 +70,13 @@ type MockRepository struct {
 		IsActive  bool
 	}, error)
 
+	// Priority-based sync mocks
+	UpdateRouteSyncPrioritiesFn      func(ctx context.Context) error
+	GetLocationRoutesDueForSyncFn    func(ctx context.Context, syncType string) ([]int64, error)
+	GetRoutesDueForTickSyncFn        func(ctx context.Context, priority string) ([]int64, error)
+	GetRoutesDueForCommentSyncFn     func(ctx context.Context, priority string) ([]int64, error)
+	GetPriorityDistributionFn        func(ctx context.Context) (map[string]int, error)
+
 	// Upsert operations mocks
 	UpsertRouteFn        func(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error
 	UpsertTickFn         func(ctx context.Context, mpRouteID int64, userName string, climbedAt time.Time, style string, comment *string) error
@@ -509,4 +516,44 @@ func (m *MockRepository) UpsertRouteComment(ctx context.Context, mpCommentID, mp
 		return m.UpsertRouteCommentFn(ctx, mpCommentID, mpRouteID, userName, userID, commentText, commentedAt)
 	}
 	return nil
+}
+
+// UpdateRouteSyncPriorities mock
+func (m *MockRepository) UpdateRouteSyncPriorities(ctx context.Context) error {
+	if m.UpdateRouteSyncPrioritiesFn != nil {
+		return m.UpdateRouteSyncPrioritiesFn(ctx)
+	}
+	return nil
+}
+
+// GetLocationRoutesDueForSync mock
+func (m *MockRepository) GetLocationRoutesDueForSync(ctx context.Context, syncType string) ([]int64, error) {
+	if m.GetLocationRoutesDueForSyncFn != nil {
+		return m.GetLocationRoutesDueForSyncFn(ctx, syncType)
+	}
+	return nil, nil
+}
+
+// GetRoutesDueForTickSync mock
+func (m *MockRepository) GetRoutesDueForTickSync(ctx context.Context, priority string) ([]int64, error) {
+	if m.GetRoutesDueForTickSyncFn != nil {
+		return m.GetRoutesDueForTickSyncFn(ctx, priority)
+	}
+	return nil, nil
+}
+
+// GetRoutesDueForCommentSync mock
+func (m *MockRepository) GetRoutesDueForCommentSync(ctx context.Context, priority string) ([]int64, error) {
+	if m.GetRoutesDueForCommentSyncFn != nil {
+		return m.GetRoutesDueForCommentSyncFn(ctx, priority)
+	}
+	return nil, nil
+}
+
+// GetPriorityDistribution mock
+func (m *MockRepository) GetPriorityDistribution(ctx context.Context) (map[string]int, error) {
+	if m.GetPriorityDistributionFn != nil {
+		return m.GetPriorityDistributionFn(ctx)
+	}
+	return make(map[string]int), nil
 }
