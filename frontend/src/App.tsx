@@ -7,8 +7,9 @@ import { SettingsModal } from './components/SettingsModal';
 import AreaSelector from './components/AreaSidebar';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { getConditionColor } from './components/weather/weatherDisplay';
-import { RefreshCw, WifiOff, ChevronUp, Settings, Github, Heart, Mail } from 'lucide-react';
+import { RefreshCw, WifiOff, ChevronUp, Settings, Github, Heart, Mail, Map, Cloud } from 'lucide-react';
 import { format } from 'date-fns';
+import { HeatMapPage } from './components/map/HeatMapPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,6 +26,8 @@ const queryClient = new QueryClient({
   },
 });
 
+type ViewMode = 'weather' | 'activity-map';
+
 function Dashboard() {
   const { settings } = useSettings();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -32,6 +35,7 @@ function Dashboard() {
   const [expandedLocationId, setExpandedLocationId] = useState<number | null>(null);
   const [expandedTodayCondition, setExpandedTodayCondition] = useState<'good' | 'marginal' | 'bad' | 'do_not_climb' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('weather');
 
   // Monitor online/offline status
   useEffect(() => {
@@ -94,6 +98,104 @@ function Dashboard() {
     return a.location.name.localeCompare(b.location.name);
   });
 
+  // If in activity map mode, show the heat map page
+  if (viewMode === 'activity-map') {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        {/* Header with Navigation */}
+        <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="flex items-center justify-between gap-2 sm:gap-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <img src="/woulder-logo.svg" alt="woulder logo" className="w-10 h-10 sm:w-12 sm:h-12" />
+                <div>
+                  <h1 className="text-3xl sm:text-4xl text-gray-900 dark:text-white" style={{ fontFamily: "'Righteous', cursive" }}>
+                    woulder
+                  </h1>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 sm:gap-4">
+                {!isOnline && (
+                  <div className="flex items-center" title="Offline">
+                    <WifiOff className="w-5 h-5 text-red-600 dark:text-red-400" />
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  title="Settings"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Navigation Tabs */}
+            <div className="mt-4 flex gap-2 border-b border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setViewMode('weather')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+              >
+                <Cloud className="w-4 h-4" />
+                <span>Weather Forecasts</span>
+              </button>
+              <button
+                onClick={() => setViewMode('activity-map')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600 dark:text-blue-400"
+              >
+                <Map className="w-4 h-4" />
+                <span>Activity Heat Map</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Heat Map Content */}
+        <HeatMapPage />
+
+        {/* Footer */}
+        <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-12">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-center text-gray-900 dark:text-white font-medium">
+                Better forecasts for bouldering
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-sm">
+                <a
+                  href="mailto:woulder.pnw@gmail.com"
+                  className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                >
+                  <Mail className="w-4 h-4" />
+                  <span>Contact</span>
+                </a>
+                <a
+                  href="https://github.com/alexscott64/woulder"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                >
+                  <Github className="w-4 h-4" />
+                  <span>GitHub</span>
+                </a>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-full">
+                <Heart className="w-4 h-4 text-red-500" />
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                  Always free, always open source
+                </span>
+              </div>
+            </div>
+          </div>
+        </footer>
+
+        {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      </div>
+    );
+  }
+
+  // Weather view (default)
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -127,6 +229,26 @@ function Dashboard() {
                 title="Settings"
               >
                 <Settings className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Navigation Tabs */}
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setViewMode('weather')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600 dark:text-blue-400"
+              >
+                <Cloud className="w-4 h-4" />
+                <span>Weather Forecasts</span>
+              </button>
+              <button
+                onClick={() => setViewMode('activity-map')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+              >
+                <Map className="w-4 h-4" />
+                <span>Activity Heat Map</span>
               </button>
             </div>
           </div>
