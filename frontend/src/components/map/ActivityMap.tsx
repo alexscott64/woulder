@@ -93,10 +93,11 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
         
         <MarkerClusterGroup
           chunkedLoading
-          maxClusterRadius={60}
+          maxClusterRadius={80}
           spiderfyOnMaxZoom={true}
           showCoverageOnHover={false}
-          zoomToBoundsOnClick={true}
+          zoomToBoundsOnClick={false}
+          disableClusteringAtZoom={15}
           removeOutsideVisibleBounds={true}
           animate={true}
           animateAddingMarkers={false}
