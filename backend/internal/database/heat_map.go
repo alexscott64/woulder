@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/lib/pq"
 )
 
 // Validate ensures bounds are logical
@@ -26,44 +27,84 @@ func (b *GeoBounds) Validate() error {
 }
 
 // GetHeatMapData returns aggregated climbing activity for geographic areas
+// Supports route type filtering and lightweight mode for performance
 func (db *Database) GetHeatMapData(
 	ctx context.Context,
 	startDate, endDate time.Time,
 	bounds *GeoBounds,
 	minActivity int,
 	limit int,
+	routeTypes []string,
+	lightweight bool,
 ) ([]models.HeatMapPoint, error) {
-	query := `
-		SELECT
-			a.mp_area_id,
-			a.name,
-			a.latitude,
-			a.longitude,
-			COUNT(DISTINCT t.mp_route_id) as active_routes,
-			COUNT(t.id) as total_ticks,
-			MAX(t.climbed_at) as last_activity,
-			COUNT(DISTINCT t.user_name) as unique_climbers,
-			EXISTS(
-				SELECT 1 FROM woulder.mp_areas sub
-				WHERE sub.parent_mp_area_id = a.mp_area_id
-				LIMIT 1
-			) as has_subareas
-		FROM woulder.mp_areas a
-		JOIN woulder.mp_routes r ON r.mp_area_id = a.mp_area_id
-		JOIN woulder.mp_ticks t ON t.mp_route_id = r.mp_route_id
-		WHERE t.climbed_at >= $1
-			AND t.climbed_at <= $2
-			AND a.latitude IS NOT NULL
-			AND a.longitude IS NOT NULL
-			AND ($3::float IS NULL OR (
-				a.latitude BETWEEN $3 AND $4
-				AND a.longitude BETWEEN $5 AND $6
-			))
-		GROUP BY a.mp_area_id, a.name, a.latitude, a.longitude
-		HAVING COUNT(t.id) >= $7
-		ORDER BY COUNT(t.id) DESC
-		LIMIT $8;
-	`
+	// Build the query based on lightweight mode
+	var query string
+
+	if lightweight {
+		// Lightweight query: minimal data for clustering performance
+		query = `
+			SELECT
+				a.mp_area_id,
+				a.name,
+				a.latitude,
+				a.longitude,
+				0 as active_routes,  -- Not calculated in lightweight mode
+				COUNT(t.id) as total_ticks,
+				MAX(t.climbed_at) as last_activity,
+				0 as unique_climbers,  -- Not calculated in lightweight mode
+				false as has_subareas  -- Not calculated in lightweight mode
+			FROM woulder.mp_areas a
+			JOIN woulder.mp_routes r ON r.mp_area_id = a.mp_area_id
+			JOIN woulder.mp_ticks t ON t.mp_route_id = r.mp_route_id
+			WHERE t.climbed_at >= $1
+				AND t.climbed_at <= $2
+				AND a.latitude IS NOT NULL
+				AND a.longitude IS NOT NULL
+				AND ($3::float IS NULL OR (
+					a.latitude BETWEEN $3 AND $4
+					AND a.longitude BETWEEN $5 AND $6
+				))
+				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
+			GROUP BY a.mp_area_id, a.name, a.latitude, a.longitude
+			HAVING COUNT(t.id) >= $8
+			ORDER BY COUNT(t.id) DESC
+			LIMIT $9;
+		`
+	} else {
+		// Full query: complete data with all aggregations
+		query = `
+			SELECT
+				a.mp_area_id,
+				a.name,
+				a.latitude,
+				a.longitude,
+				COUNT(DISTINCT t.mp_route_id) as active_routes,
+				COUNT(t.id) as total_ticks,
+				MAX(t.climbed_at) as last_activity,
+				COUNT(DISTINCT t.user_name) as unique_climbers,
+				EXISTS(
+					SELECT 1 FROM woulder.mp_areas sub
+					WHERE sub.parent_mp_area_id = a.mp_area_id
+					LIMIT 1
+				) as has_subareas
+			FROM woulder.mp_areas a
+			JOIN woulder.mp_routes r ON r.mp_area_id = a.mp_area_id
+			JOIN woulder.mp_ticks t ON t.mp_route_id = r.mp_route_id
+			WHERE t.climbed_at >= $1
+				AND t.climbed_at <= $2
+				AND a.latitude IS NOT NULL
+				AND a.longitude IS NOT NULL
+				AND ($3::float IS NULL OR (
+					a.latitude BETWEEN $3 AND $4
+					AND a.longitude BETWEEN $5 AND $6
+				))
+				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
+			GROUP BY a.mp_area_id, a.name, a.latitude, a.longitude
+			HAVING COUNT(t.id) >= $8
+			ORDER BY COUNT(t.id) DESC
+			LIMIT $9;
+		`
+	}
 
 	var minLat, maxLat, minLon, maxLon interface{}
 	if bounds != nil {
@@ -71,9 +112,19 @@ func (db *Database) GetHeatMapData(
 		minLon, maxLon = bounds.MinLon, bounds.MaxLon
 	}
 
+	// Convert route types to PostgreSQL array format using pq.Array
+	// IMPORTANT: Pass nil for empty slice, not pq.Array([]), to avoid SQL syntax errors
+	var routeTypesParam interface{}
+	if len(routeTypes) > 0 {
+		routeTypesParam = pq.Array(routeTypes)
+	} else {
+		routeTypesParam = nil
+	}
+
 	rows, err := db.conn.QueryContext(ctx, query,
 		startDate, endDate,
 		minLat, maxLat, minLon, maxLon,
+		routeTypesParam,
 		minActivity, limit,
 	)
 	if err != nil {

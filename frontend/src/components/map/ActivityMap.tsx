@@ -1,7 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-markercluster';
+import L from 'leaflet';
 import { HeatMapPoint } from '../../types/heatmap';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
 interface ActivityMapProps {
   points: HeatMapPoint[];
@@ -87,59 +91,89 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
         
         {points.length > 0 && <FitBounds points={points} />}
         
-        {points.map((point) => {
-          const color = getMarkerColor(point.last_activity);
-          const radius = getMarkerRadius(point.activity_score, allScores);
-          const opacity = getMarkerOpacity(point.activity_score, allScores);
-          const isSelected = selectedAreaId === point.mp_area_id;
-          
-          return (
-            <CircleMarker
-              key={point.mp_area_id}
-              center={[point.latitude, point.longitude]}
-              radius={radius}
-              pathOptions={{
-                fillColor: color,
-                fillOpacity: isSelected ? 0.9 : opacity,
-                color: isSelected ? '#1e40af' : '#fff',
-                weight: isSelected ? 3 : 1,
-              }}
-              eventHandlers={{
-                click: () => onAreaClick(point.mp_area_id),
-              }}
-            >
-              <Popup>
-                <div className="text-sm min-w-[200px]">
-                  <h3 className="font-bold text-base mb-2">{point.name}</h3>
-                  <div className="space-y-1 text-gray-700">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Activity Score:</span>
-                      <span className="font-semibold">{point.activity_score}</span>
+        <MarkerClusterGroup
+          chunkedLoading
+          maxClusterRadius={60}
+          spiderfyOnMaxZoom={true}
+          showCoverageOnHover={false}
+          zoomToBoundsOnClick={true}
+          removeOutsideVisibleBounds={true}
+          animate={true}
+          animateAddingMarkers={false}
+          iconCreateFunction={(cluster: any) => {
+            const count = cluster.getChildCount();
+            let size = 'small';
+            let sizeClass = 'w-10 h-10 text-xs';
+            
+            if (count > 100) {
+              size = 'large';
+              sizeClass = 'w-16 h-16 text-lg';
+            } else if (count > 20) {
+              size = 'medium';
+              sizeClass = 'w-12 h-12 text-sm';
+            }
+            
+            return L.divIcon({
+              html: `<div class="flex items-center justify-center ${sizeClass} bg-blue-500 bg-opacity-80 rounded-full text-white font-bold border-2 border-white shadow-lg">${count}</div>`,
+              className: 'marker-cluster',
+              iconSize: L.point(40, 40, true),
+            });
+          }}
+        >
+          {points.map((point) => {
+            const color = getMarkerColor(point.last_activity);
+            const radius = getMarkerRadius(point.activity_score, allScores);
+            const opacity = getMarkerOpacity(point.activity_score, allScores);
+            const isSelected = selectedAreaId === point.mp_area_id;
+            
+            return (
+              <CircleMarker
+                key={point.mp_area_id}
+                center={[point.latitude, point.longitude]}
+                radius={radius}
+                pathOptions={{
+                  fillColor: color,
+                  fillOpacity: isSelected ? 0.9 : opacity,
+                  color: isSelected ? '#1e40af' : '#fff',
+                  weight: isSelected ? 3 : 1,
+                }}
+                eventHandlers={{
+                  click: () => onAreaClick(point.mp_area_id),
+                }}
+              >
+                <Popup>
+                  <div className="text-sm min-w-[200px]">
+                    <h3 className="font-bold text-base mb-2">{point.name}</h3>
+                    <div className="space-y-1 text-gray-700">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Activity Score:</span>
+                        <span className="font-semibold">{point.activity_score}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Total Ticks:</span>
+                        <span className="font-semibold">{point.total_ticks}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Active Routes:</span>
+                        <span className="font-semibold">{point.active_routes}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Climbers:</span>
+                        <span className="font-semibold">{point.unique_climbers}</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Total Ticks:</span>
-                      <span className="font-semibold">{point.total_ticks}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Active Routes:</span>
-                      <span className="font-semibold">{point.active_routes}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Climbers:</span>
-                      <span className="font-semibold">{point.unique_climbers}</span>
-                    </div>
+                    <button
+                      onClick={() => onAreaClick(point.mp_area_id)}
+                      className="mt-3 w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition-colors"
+                    >
+                      View Details
+                    </button>
                   </div>
-                  <button
-                    onClick={() => onAreaClick(point.mp_area_id)}
-                    className="mt-3 w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition-colors"
-                  >
-                    View Details
-                  </button>
-                </div>
-              </Popup>
-            </CircleMarker>
-          );
-        })}
+                </Popup>
+              </CircleMarker>
+            );
+          })}
+        </MarkerClusterGroup>
       </MapContainer>
       
       {/* Legend - Position adjusted to avoid overlap with drawer */}

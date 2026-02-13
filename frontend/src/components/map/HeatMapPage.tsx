@@ -5,6 +5,7 @@ import { HeatMapPoint } from '../../types/heatmap';
 import { Calendar, Activity, Loader2, AlertCircle, TrendingUp, Users, Map as MapIcon, List } from 'lucide-react';
 import { ActivityMap } from './ActivityMap';
 import { AreaDetailDrawer } from './AreaDetailDrawer';
+import { RouteTypeFilter } from './RouteTypeFilter';
 
 type ViewMode = 'map' | 'list';
 
@@ -16,15 +17,18 @@ export function HeatMapPage() {
   const [minActivity, setMinActivity] = useState(1);
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
+  const [selectedRouteTypes, setSelectedRouteTypes] = useState<string[]>(['Boulder', 'Sport', 'Trad', 'Ice']);
 
-  // Fetch heat map data
+  // Fetch heat map data with lightweight mode for initial map load
   const { data, isLoading, error } = useQuery({
-    queryKey: ['heatMap', dateRange, minActivity],
+    queryKey: ['heatMap', dateRange, minActivity, selectedRouteTypes],
     queryFn: () => heatMapApi.getHeatMapActivity({
       startDate: dateRange.start,
       endDate: dateRange.end,
       minActivity,
       limit: 10000, // No effective limit - show all areas
+      routeTypes: selectedRouteTypes.length > 0 ? selectedRouteTypes : undefined,
+      lightweight: true, // Initial load is lightweight for performance
     }),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -53,79 +57,88 @@ export function HeatMapPage() {
 
         {/* Filters */}
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-          <div className="flex flex-wrap gap-4 items-center">
-            {/* Date Range Presets */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <Calendar className="w-5 h-5 text-gray-500" />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300 hidden sm:inline">Time Period:</span>
-              {[
-                { label: 'Week', days: 7 },
-                { label: 'Month', days: 30 },
-                { label: '3 Months', days: 90 },
-                { label: 'Year', days: 365 },
-              ].map((preset) => {
-                const isActive = Math.abs(dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24) === preset.days;
-                return (
-                  <button
-                    key={preset.label}
-                    onClick={() => handlePreset(preset.days)}
-                    className={`px-3 py-1.5 text-xs sm:text-sm rounded-lg transition-colors ${
-                      isActive
-                        ? 'bg-blue-600 text-white'
-                        : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                );
-              })}
-            </div>
+          <div className="space-y-4">
+            {/* Route Type Filter */}
+            <RouteTypeFilter
+              selectedTypes={selectedRouteTypes}
+              onChange={setSelectedRouteTypes}
+            />
 
-            {/* Activity Threshold */}
-            <div className="flex items-center gap-2 ml-auto">
-              <Activity className="w-5 h-5 text-gray-500" />
-              <label className="text-xs sm:text-sm text-gray-700 dark:text-gray-300 hidden sm:inline">
-                Min:
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="50"
-                value={minActivity}
-                onChange={(e) => setMinActivity(Number(e.target.value))}
-                className="w-20 sm:w-32"
-              />
-              <span className="text-sm font-medium text-gray-900 dark:text-white w-8">
-                {minActivity}
-              </span>
-            </div>
+            {/* Date Range and Activity Filters */}
+            <div className="flex flex-wrap gap-4 items-center pt-4 border-t border-gray-200 dark:border-gray-700">
+              {/* Date Range Presets */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Calendar className="w-5 h-5 text-gray-500" />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 hidden sm:inline">Time Period:</span>
+                {[
+                  { label: 'Week', days: 7 },
+                  { label: 'Month', days: 30 },
+                  { label: '3 Months', days: 90 },
+                  { label: 'Year', days: 365 },
+                ].map((preset) => {
+                  const isActive = Math.abs(dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24) === preset.days;
+                  return (
+                    <button
+                      key={preset.label}
+                      onClick={() => handlePreset(preset.days)}
+                      className={`px-3 py-1.5 text-xs sm:text-sm rounded-lg transition-colors ${
+                        isActive
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
 
-            {/* View Toggle */}
-            <div className="flex items-center gap-1 border border-gray-300 dark:border-gray-600 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('map')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition-colors ${
-                  viewMode === 'map'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-                title="Map View"
-              >
-                <MapIcon className="w-4 h-4" />
-                <span className="text-sm hidden sm:inline">Map</span>
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition-colors ${
-                  viewMode === 'list'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-                title="List View"
-              >
-                <List className="w-4 h-4" />
-                <span className="text-sm hidden sm:inline">List</span>
-              </button>
+              {/* Activity Threshold */}
+              <div className="flex items-center gap-2 ml-auto">
+                <Activity className="w-5 h-5 text-gray-500" />
+                <label className="text-xs sm:text-sm text-gray-700 dark:text-gray-300 hidden sm:inline">
+                  Min:
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="50"
+                  value={minActivity}
+                  onChange={(e) => setMinActivity(Number(e.target.value))}
+                  className="w-20 sm:w-32"
+                />
+                <span className="text-sm font-medium text-gray-900 dark:text-white w-8">
+                  {minActivity}
+                </span>
+              </div>
+
+              {/* View Toggle */}
+              <div className="flex items-center gap-1 border border-gray-300 dark:border-gray-600 rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('map')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition-colors ${
+                    viewMode === 'map'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                  title="Map View"
+                >
+                  <MapIcon className="w-4 h-4" />
+                  <span className="text-sm hidden sm:inline">Map</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition-colors ${
+                    viewMode === 'list'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                  title="List View"
+                >
+                  <List className="w-4 h-4" />
+                  <span className="text-sm hidden sm:inline">List</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

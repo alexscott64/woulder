@@ -77,18 +77,34 @@ func (h *Handler) GetHeatMapActivity(c *gin.Context) {
 		}
 	}
 
-	limit := 500
+	limit := 10000
 	if val := c.Query("limit"); val != "" {
 		if parsed, err := strconv.Atoi(val); err == nil && parsed > 0 {
 			limit = parsed
-			if limit > 1000 {
-				limit = 1000 // Cap at 1000
+			if limit > 10000 {
+				limit = 10000 // Cap at 10000
 			}
 		}
 	}
 
+	// Parse route types filter (comma-separated)
+	var routeTypes []string
+	if val := c.Query("route_types"); val != "" {
+		routeTypes = strings.Split(val, ",")
+		// Trim whitespace from each type
+		for i := range routeTypes {
+			routeTypes[i] = strings.TrimSpace(routeTypes[i])
+		}
+	}
+
+	// Parse lightweight mode flag
+	lightweight := false
+	if val := c.Query("lightweight"); val == "true" || val == "1" {
+		lightweight = true
+	}
+
 	// Fetch heat map data
-	points, err := h.heatMapService.GetHeatMapData(ctx, startDate, endDate, bounds, minActivity, limit)
+	points, err := h.heatMapService.GetHeatMapData(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to fetch heat map data",
@@ -104,6 +120,8 @@ func (h *Handler) GetHeatMapActivity(c *gin.Context) {
 			"end_date":     endDate.Format("2006-01-02"),
 			"min_activity": minActivity,
 			"limit":        limit,
+			"route_types":  routeTypes,
+			"lightweight":  lightweight,
 		},
 	})
 }

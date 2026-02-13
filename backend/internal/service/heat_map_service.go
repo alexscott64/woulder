@@ -18,11 +18,14 @@ func NewHeatMapService(repo database.Repository) *HeatMapService {
 }
 
 // GetHeatMapData retrieves aggregated activity data for the map
+// Supports route type filtering and lightweight mode for performance
 func (s *HeatMapService) GetHeatMapData(
 	ctx context.Context,
 	startDate, endDate time.Time,
 	bounds *database.GeoBounds,
 	minActivity, limit int,
+	routeTypes []string,
+	lightweight bool,
 ) ([]models.HeatMapPoint, error) {
 	// Validate inputs
 	if startDate.After(endDate) {
@@ -33,8 +36,8 @@ func (s *HeatMapService) GetHeatMapData(
 		minActivity = 1
 	}
 
-	if limit < 1 || limit > 1000 {
-		limit = 500 // Default to 500
+	if limit < 1 || limit > 10000 {
+		limit = 10000 // Increased default to support showing all points
 	}
 
 	if bounds != nil {
@@ -43,8 +46,8 @@ func (s *HeatMapService) GetHeatMapData(
 		}
 	}
 
-	// Fetch raw data
-	points, err := s.repo.GetHeatMapData(ctx, startDate, endDate, bounds, minActivity, limit)
+	// Fetch raw data with route type filtering and lightweight option
+	points, err := s.repo.GetHeatMapData(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch heat map data: %w", err)
 	}

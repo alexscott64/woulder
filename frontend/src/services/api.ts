@@ -148,8 +148,10 @@ export const heatMapApi = {
     bounds?: GeoBounds;
     minActivity?: number;
     limit?: number;
+    routeTypes?: string[];
+    lightweight?: boolean;
   }): Promise<HeatMapActivityResponse> => {
-    const queryParams: Record<string, string | number> = {
+    const queryParams: Record<string, string | number | boolean> = {
       start_date: params.startDate.toISOString().split('T')[0],
       end_date: params.endDate.toISOString().split('T')[0],
     };
@@ -163,6 +165,10 @@ export const heatMapApi = {
 
     if (params.minActivity) queryParams.min_activity = params.minActivity;
     if (params.limit) queryParams.limit = params.limit;
+    if (params.routeTypes && params.routeTypes.length > 0) {
+      queryParams.route_types = params.routeTypes.join(',');
+    }
+    if (params.lightweight !== undefined) queryParams.lightweight = params.lightweight;
 
     const response = await api.get('/heat-map/activity', {
       params: queryParams,

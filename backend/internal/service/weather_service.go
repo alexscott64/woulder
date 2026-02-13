@@ -133,23 +133,23 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 	}
 
 	forecast := &models.WeatherForecast{
-		LocationID:            locationID,
-		Location:              *location,
-		Current:               *current,
-		Hourly:                hourlyForecast,
-		Historical:            historical,
-		Sunrise:               sunrise,
-		Sunset:                sunset,
-		DailySunTimes:         dailySunTimes,
-		RockDryingStatus:      rockStatus,
-		SnowDepthInches:       snowDepth,
-		DailySnowDepth:        dailySnowDepth,
-		TodayCondition:        &todayCondition,
-		RainLast48h:           &rainLast48h,
-		RainNext48h:           &rainNext48h,
-		PestConditions:        pestConditions,
-		LastClimbedInfo:       lastClimbedInfo,
-		ClimbHistory:          climbHistory,
+		LocationID:       locationID,
+		Location:         *location,
+		Current:          *current,
+		Hourly:           hourlyForecast,
+		Historical:       historical,
+		Sunrise:          sunrise,
+		Sunset:           sunset,
+		DailySunTimes:    dailySunTimes,
+		RockDryingStatus: rockStatus,
+		SnowDepthInches:  snowDepth,
+		DailySnowDepth:   dailySnowDepth,
+		TodayCondition:   &todayCondition,
+		RainLast48h:      &rainLast48h,
+		RainNext48h:      &rainNext48h,
+		PestConditions:   pestConditions,
+		LastClimbedInfo:  lastClimbedInfo,
+		ClimbHistory:     climbHistory,
 	}
 
 	return forecast, nil
@@ -250,13 +250,58 @@ func (s *WeatherService) calculateRockDryingStatus(
 	return &status, nil
 }
 
+// IsWeatherDataFresh checks if weather data is less than the specified duration old
+func (s *WeatherService) IsWeatherDataFresh(ctx context.Context, maxAge time.Duration) (bool, error) {
+	locations, err := s.repo.GetAllLocations(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to get locations: %w", err)
+	}
+
+	// Check if all locations have recent weather data
+	for _, loc := range locations {
+		weather, err := s.repo.GetCurrentWeather(ctx, loc.ID)
+		if err != nil || weather == nil {
+			// No weather data exists for this location
+			return false, nil
+		}
+
+		// Check if weather data is too old
+		age := time.Since(weather.Timestamp)
+		if age > maxAge {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
 // RefreshAllWeather refreshes weather for all locations (background job)
+// Set forceRefresh=true to bypass freshness check
 func (s *WeatherService) RefreshAllWeather(ctx context.Context) error {
+	return s.RefreshAllWeatherWithOptions(ctx, false)
+}
+
+// RefreshAllWeatherWithOptions refreshes weather with control over freshness check
+func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, forceRefresh bool) error {
 	s.refreshMutex.Lock()
 	if s.isRefreshing {
 		s.refreshMutex.Unlock()
 		return fmt.Errorf("refresh already in progress")
 	}
+
+	// Check if data is fresh (less than 1 hour old) unless force refresh
+	if !forceRefresh {
+		s.refreshMutex.Unlock() // Unlock before checking database
+		isFresh, err := s.IsWeatherDataFresh(ctx, 1*time.Hour)
+		if err != nil {
+			log.Printf("Warning: Failed to check weather data freshness: %v", err)
+		} else if isFresh {
+			log.Println("Weather data is fresh (less than 1 hour old), skipping refresh")
+			return nil
+		}
+		s.refreshMutex.Lock()
+	}
+
 	s.isRefreshing = true
 	s.refreshMutex.Unlock()
 
