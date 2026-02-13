@@ -34,7 +34,7 @@ func (db *Database) GetHeatMapData(
 	limit int,
 ) ([]models.HeatMapPoint, error) {
 	query := `
-		SELECT 
+		SELECT
 			a.mp_area_id,
 			a.name,
 			a.latitude,
@@ -44,19 +44,19 @@ func (db *Database) GetHeatMapData(
 			MAX(t.climbed_at) as last_activity,
 			COUNT(DISTINCT t.user_name) as unique_climbers,
 			EXISTS(
-				SELECT 1 FROM woulder.mp_areas sub 
-				WHERE sub.parent_mp_area_id = a.mp_area_id 
+				SELECT 1 FROM woulder.mp_areas sub
+				WHERE sub.parent_mp_area_id = a.mp_area_id
 				LIMIT 1
 			) as has_subareas
 		FROM woulder.mp_areas a
 		JOIN woulder.mp_routes r ON r.mp_area_id = a.mp_area_id
 		JOIN woulder.mp_ticks t ON t.mp_route_id = r.mp_route_id
-		WHERE t.climbed_at >= $1 
+		WHERE t.climbed_at >= $1
 			AND t.climbed_at <= $2
 			AND a.latitude IS NOT NULL
 			AND a.longitude IS NOT NULL
 			AND ($3::float IS NULL OR (
-				a.latitude BETWEEN $3 AND $4 
+				a.latitude BETWEEN $3 AND $4
 				AND a.longitude BETWEEN $5 AND $6
 			))
 		GROUP BY a.mp_area_id, a.name, a.latitude, a.longitude
@@ -133,7 +133,7 @@ func (db *Database) GetAreaActivityDetail(
 
 	// Activity stats
 	statsQuery := `
-		SELECT 
+		SELECT
 			COUNT(t.id) as total_ticks,
 			COUNT(DISTINCT t.mp_route_id) as active_routes,
 			COUNT(DISTINCT t.user_name) as unique_climbers,
@@ -157,7 +157,7 @@ func (db *Database) GetAreaActivityDetail(
 
 	// Recent ticks (last 20)
 	ticksQuery := `
-		SELECT 
+		SELECT
 			t.mp_route_id,
 			r.name as route_name,
 			r.rating,
@@ -239,7 +239,7 @@ func (db *Database) GetAreaActivityDetail(
 
 	// Activity timeline (daily aggregation)
 	timelineQuery := `
-		SELECT 
+		SELECT
 			DATE(t.climbed_at) as date,
 			COUNT(t.id) as tick_count,
 			COUNT(DISTINCT t.mp_route_id) as route_count
@@ -273,7 +273,7 @@ func (db *Database) GetAreaActivityDetail(
 
 	// Top routes by activity
 	topRoutesQuery := `
-		SELECT 
+		SELECT
 			r.mp_route_id,
 			r.name,
 			r.rating,
@@ -321,7 +321,7 @@ func (db *Database) GetRoutesByBounds(
 	limit int,
 ) ([]models.RouteActivity, error) {
 	query := `
-		SELECT 
+		SELECT
 			r.mp_route_id,
 			r.name,
 			r.rating,

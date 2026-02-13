@@ -13,7 +13,7 @@ export function HeatMapPage() {
     start: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000), // Last 90 days
     end: new Date(),
   });
-  const [minActivity, setMinActivity] = useState(5);
+  const [minActivity, setMinActivity] = useState(1);
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
 
@@ -24,7 +24,7 @@ export function HeatMapPage() {
       startDate: dateRange.start,
       endDate: dateRange.end,
       minActivity,
-      limit: 100,
+      limit: 10000, // No effective limit - show all areas
     }),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -275,7 +275,7 @@ export function HeatMapPage() {
                           </div>
                         </div>
                         <div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Ticks</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{point.total_ticks === 1 ? 'Tick' : 'Ticks'}</div>
                           <div className="text-lg font-bold text-gray-900 dark:text-white">
                             {point.total_ticks}
                           </div>

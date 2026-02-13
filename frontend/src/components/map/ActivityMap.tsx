@@ -19,15 +19,33 @@ function getMarkerColor(lastActivity: string): string {
   return '#3b82f6';                          // Blue - Older
 }
 
-// Size marker by activity score
+// Size marker by activity score using logarithmic scaling
 function getMarkerRadius(activityScore: number, allScores: number[]): number {
   const maxScore = Math.max(...allScores);
   const minScore = Math.min(...allScores);
-  const range = maxScore - minScore;
   
-  // Scale between 8 and 24 pixels
-  const normalized = range > 0 ? (activityScore - minScore) / range : 0.5;
-  return 8 + normalized * 16;
+  // Use logarithmic scaling to emphasize high-activity areas while still showing low-activity ones
+  const logScore = Math.log10(activityScore + 1);
+  const logMax = Math.log10(maxScore + 1);
+  const logMin = Math.log10(minScore + 1);
+  const logRange = logMax - logMin;
+  
+  // Scale between 3 and 20 pixels (smaller minimum for low-activity areas)
+  const normalized = logRange > 0 ? (logScore - logMin) / logRange : 0.5;
+  return 3 + normalized * 17;
+}
+
+// Get opacity based on activity score - lower activity = much lower opacity
+function getMarkerOpacity(activityScore: number, allScores: number[]): number {
+  const maxScore = Math.max(...allScores);
+  
+  // Use logarithmic scaling for opacity
+  const logScore = Math.log10(activityScore + 1);
+  const logMax = Math.log10(maxScore + 1);
+  
+  // Scale opacity between 0.15 and 0.8
+  const normalized = logMax > 0 ? logScore / logMax : 0.5;
+  return 0.15 + normalized * 0.65;
 }
 
 // Component to fit map bounds to points
@@ -72,6 +90,7 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
         {points.map((point) => {
           const color = getMarkerColor(point.last_activity);
           const radius = getMarkerRadius(point.activity_score, allScores);
+          const opacity = getMarkerOpacity(point.activity_score, allScores);
           const isSelected = selectedAreaId === point.mp_area_id;
           
           return (
@@ -81,9 +100,9 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
               radius={radius}
               pathOptions={{
                 fillColor: color,
-                fillOpacity: isSelected ? 0.9 : 0.7,
+                fillOpacity: isSelected ? 0.9 : opacity,
                 color: isSelected ? '#1e40af' : '#fff',
-                weight: isSelected ? 3 : 2,
+                weight: isSelected ? 3 : 1,
               }}
               eventHandlers={{
                 click: () => onAreaClick(point.mp_area_id),
@@ -123,8 +142,8 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
         })}
       </MapContainer>
       
-      {/* Legend */}
-      <div className="absolute bottom-6 left-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 z-[1000] border border-gray-200 dark:border-gray-700">
+      {/* Legend - Position adjusted to avoid overlap with drawer */}
+      <div className={`absolute bottom-6 left-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 border border-gray-200 dark:border-gray-700 transition-all duration-300 ${selectedAreaId ? 'z-[30]' : 'z-[1000]'}`}>
         <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Activity Recency</h4>
         <div className="space-y-2">
           <div className="flex items-center gap-2">
@@ -146,7 +165,10 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
         </div>
         <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            <span className="font-medium">Size</span> = Activity Score
+            <span className="font-medium">Size & Opacity</span> = Activity Level
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+            Lower activity areas are less visible
           </p>
         </div>
       </div>
