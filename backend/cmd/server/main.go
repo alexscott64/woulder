@@ -42,9 +42,10 @@ func main() {
 	weatherServiceLayer := service.NewWeatherService(db, weatherClient, climbTrackingService)
 	riverServiceLayer := service.NewRiverService(db, riverClient)
 	boulderDryingService := service.NewBoulderDryingService(db, weatherClient)
+	heatMapService := service.NewHeatMapService(db)
 
 	// Initialize API handler with services
-	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService)
+	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService)
 
 	// Run initial weather refresh in background (non-blocking)
 	go func() {
@@ -119,6 +120,11 @@ func main() {
 		apiGroup.GET("/climbs/routes/batch-drying-status", handler.GetBatchBoulderDryingStatus)
 		apiGroup.GET("/climbs/location/:id/search-all", handler.SearchInLocation)
 		apiGroup.GET("/climbs/location/:id/search", handler.SearchRoutesInLocation)
+
+		// Heat map routes
+		apiGroup.GET("/heat-map/activity", handler.GetHeatMapActivity)
+		apiGroup.GET("/heat-map/area/:area_id/detail", handler.GetHeatMapAreaDetail)
+		apiGroup.GET("/heat-map/routes", handler.GetHeatMapRoutes)
 	}
 
 	// Start server

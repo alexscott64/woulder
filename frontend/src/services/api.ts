@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Location, WeatherForecast, AllWeatherResponse, AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus, AreaDryingStats } from '../types/weather';
 import { Area, AreaWithLocations } from '../types/area';
+import { HeatMapActivityResponse, AreaActivityDetail, RoutesResponse, GeoBounds } from '../types/heatmap';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
@@ -134,6 +135,75 @@ export const climbActivityApi = {
     const response = await api.get(`/climbs/location/${locationId}/batch-area-drying-stats`, {
       params: { area_ids: areaIds.join(',') },
       timeout: 30000, // Longer timeout for batch request
+    });
+    return response.data;
+  },
+};
+
+export const heatMapApi = {
+  // Get heat map activity data for visualization
+  getHeatMapActivity: async (params: {
+    startDate: Date;
+    endDate: Date;
+    bounds?: GeoBounds;
+    minActivity?: number;
+    limit?: number;
+  }): Promise<HeatMapActivityResponse> => {
+    const queryParams: Record<string, string | number> = {
+      start_date: params.startDate.toISOString().split('T')[0],
+      end_date: params.endDate.toISOString().split('T')[0],
+    };
+
+    if (params.bounds) {
+      queryParams.min_lat = params.bounds.minLat;
+      queryParams.max_lat = params.bounds.maxLat;
+      queryParams.min_lon = params.bounds.minLon;
+      queryParams.max_lon = params.bounds.maxLon;
+    }
+
+    if (params.minActivity) queryParams.min_activity = params.minActivity;
+    if (params.limit) queryParams.limit = params.limit;
+
+    const response = await api.get('/heat-map/activity', {
+      params: queryParams,
+      timeout: 30000, // 30s timeout for potentially large datasets
+    });
+    return response.data;
+  },
+
+  // Get detailed activity information for a specific area
+  getAreaDetail: async (
+    areaId: number,
+    dateRange: { start: Date; end: Date }
+  ): Promise<AreaActivityDetail> => {
+    const response = await api.get(`/heat-map/area/${areaId}/detail`, {
+      params: {
+        start_date: dateRange.start.toISOString().split('T')[0],
+        end_date: dateRange.end.toISOString().split('T')[0],
+      },
+      timeout: 20000, // 20s timeout
+    });
+    return response.data;
+  },
+
+  // Get routes within geographic bounds with activity
+  getRoutesByBounds: async (params: {
+    bounds: GeoBounds;
+    startDate: Date;
+    endDate: Date;
+    limit?: number;
+  }): Promise<RoutesResponse> => {
+    const response = await api.get('/heat-map/routes', {
+      params: {
+        min_lat: params.bounds.minLat,
+        max_lat: params.bounds.maxLat,
+        min_lon: params.bounds.minLon,
+        max_lon: params.bounds.maxLon,
+        start_date: params.startDate.toISOString().split('T')[0],
+        end_date: params.endDate.toISOString().split('T')[0],
+        limit: params.limit || 100,
+      },
+      timeout: 20000, // 20s timeout
     });
     return response.data;
   },
