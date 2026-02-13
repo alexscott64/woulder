@@ -47,6 +47,15 @@ export function RouteListItem({ route, isExpanded, onToggleExpand, dryingStatus:
   // Use prop data if in batch mode, otherwise fall back to individual fetch
   const dryingStatus = useBatchMode ? propDryingStatus : (propDryingStatus || fetchedDryingStatus);
 
+  // Debug logging for forecast data
+  if (dryingStatus && isExpanded) {
+    console.log(`[FORECAST DEBUG] Route ${route.mp_route_id}:`, {
+      hasForecast: !!dryingStatus.forecast,
+      forecastLength: dryingStatus.forecast?.length || 0,
+      forecast: dryingStatus.forecast
+    });
+  }
+
   // Check if rain is forecasted in the next 48 hours
   const hasUpcomingRain = () => {
     if (!dryingStatus?.forecast) return false;

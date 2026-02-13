@@ -620,7 +620,7 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
                   {Math.round(day.high)}°
                 </div>
               </div>
-              <div className="flex items-center justify-center gap-2">
+              <div className="flex items-center justify-center gap-2 mb-2">
                 <div className="text-xs text-blue-600 font-medium">L</div>
                 <div className={`text-sm font-semibold ${getTempColor(day.low)}`}>
                   {Math.round(day.low)}°

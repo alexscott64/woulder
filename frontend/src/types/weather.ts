@@ -124,7 +124,7 @@ export interface WeatherForecast {
   sunrise?: string;  // Today's sunrise time (ISO 8601)
   sunset?: string;   // Today's sunset time (ISO 8601)
   daily_sun_times?: DailySunTimes[]; // Sunrise/sunset for each forecast day
-  rock_drying_status?: RockDryingStatus; // Rock drying status
+  rock_drying_status?: RockDryingStatus; // Rock drying status (current day)
   snow_depth_inches?: number; // Current snow depth on ground in inches (calculated by backend)
   daily_snow_depth?: Record<string, number>; // Daily snow depth forecast by date (YYYY-MM-DD)
   today_condition?: WeatherCondition; // Today's overall climbing condition (calculated by backend)

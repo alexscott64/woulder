@@ -380,16 +380,25 @@ func (s *BoulderDryingService) GetAreaDryingStats(
 		}
 
 		// Aggregate statistics
+		// Classify routes as dry, drying, or wet
+		// Dry: not wet at all
+		// Drying: wet but drying within 48 hours (actively improving)
+		// Wet: wet and taking > 48 hours to dry (or unknown)
 		if !status.IsWet {
+			// Boulder is dry
 			stats.DryCount++
-		} else if status.HoursUntilDry > 0 && status.HoursUntilDry <= 24 {
+		} else if status.HoursUntilDry > 0 && status.HoursUntilDry <= 48 {
+			// Boulder is wet but drying soon (within 48h)
 			stats.DryingCount++
 			totalHoursUntilDry += status.HoursUntilDry
 			wetRouteCount++
 		} else {
+			// Boulder is wet and taking a long time (> 48h or unknown)
 			stats.WetCount++
-			totalHoursUntilDry += status.HoursUntilDry
-			wetRouteCount++
+			if status.HoursUntilDry < 999 {
+				totalHoursUntilDry += status.HoursUntilDry
+				wetRouteCount++
+			}
 		}
 
 		// Tree coverage
@@ -548,18 +557,25 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 				continue
 			}
 
-			if status.IsWet {
+			// Classify routes as dry, drying, or wet
+			// Dry: not wet at all
+			// Drying: wet but drying within 48 hours (actively improving)
+			// Wet: wet and taking > 48 hours to dry (or unknown)
+			if !status.IsWet {
+				// Boulder is dry
+				stats.DryCount++
+			} else if status.HoursUntilDry > 0 && status.HoursUntilDry <= 48 {
+				// Boulder is wet but drying soon (within 48h)
+				stats.DryingCount++
+				wetRouteCount++
+				totalHoursUntilDry += status.HoursUntilDry
+			} else {
+				// Boulder is wet and taking a long time (> 48h or unknown)
 				stats.WetCount++
 				if status.HoursUntilDry < 999 {
 					wetRouteCount++
 					totalHoursUntilDry += status.HoursUntilDry
 				}
-			} else {
-				stats.DryCount++
-			}
-
-			if status.HoursUntilDry > 0 && status.HoursUntilDry < 999 {
-				stats.DryingCount++
 			}
 
 			if status.TreeCoveragePercent > 0 {

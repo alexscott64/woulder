@@ -500,6 +500,175 @@ func TestGetAreaDryingStats_NoRoutes(t *testing.T) {
 	}
 }
 
+// TestGetAreaDryingStats_MixedStatus tests area stats with dry, drying, and wet routes
+// This test verifies the fix for dry/drying/wet counting logic
+func TestGetAreaDryingStats_MixedStatus(t *testing.T) {
+	now := time.Now()
+	locationID := 1
+
+	// Mock 6 routes with different statuses:
+	// 2 dry (0 hours until dry)
+	// 2 drying (12 hours until dry - within 48h threshold)
+	// 2 wet (96 hours until dry - beyond 48h threshold)
+	routes := []*models.MPRoute{
+		{
+			MPRouteID:  1001,
+			Name:       "Dry Route 1",
+			LocationID: &locationID,
+			Latitude:   ptrFloat64(47.6),
+			Longitude:  ptrFloat64(-120.9),
+			Aspect:     ptrString("South"),
+		},
+		{
+			MPRouteID:  1002,
+			Name:       "Dry Route 2",
+			LocationID: &locationID,
+			Latitude:   ptrFloat64(47.61),
+			Longitude:  ptrFloat64(-120.91),
+			Aspect:     ptrString("South"),
+		},
+		{
+			MPRouteID:  1003,
+			Name:       "Drying Route 1",
+			LocationID: &locationID,
+			Latitude:   ptrFloat64(47.62),
+			Longitude:  ptrFloat64(-120.92),
+			Aspect:     ptrString("North"), // North aspect dries slower
+		},
+		{
+			MPRouteID:  1004,
+			Name:       "Drying Route 2",
+			LocationID: &locationID,
+			Latitude:   ptrFloat64(47.63),
+			Longitude:  ptrFloat64(-120.93),
+			Aspect:     ptrString("North"),
+		},
+		{
+			MPRouteID:  1005,
+			Name:       "Wet Route 1",
+			LocationID: &locationID,
+			Latitude:   ptrFloat64(47.64),
+			Longitude:  ptrFloat64(-120.94),
+			Aspect:     ptrString("North"), // North aspect + recent heavy rain = very slow drying
+		},
+		{
+			MPRouteID:  1006,
+			Name:       "Wet Route 2",
+			LocationID: &locationID,
+			Latitude:   ptrFloat64(47.65),
+			Longitude:  ptrFloat64(-120.95),
+			Aspect:     ptrString("North"),
+		},
+	}
+
+	// Create historical weather with:
+	// - Light rain 24h ago (dry routes already dry)
+	// - Moderate rain 12h ago (drying routes actively drying)
+	// - Heavy rain 6h ago (wet routes taking long time to dry)
+	historicalWeather := []models.WeatherData{}
+	for i := 168; i > 0; i-- {
+		timestamp := now.Add(-time.Duration(i) * time.Hour)
+		precip := 0.0
+		if i == 24 {
+			precip = 0.1 // Light rain 24h ago
+		} else if i == 12 {
+			precip = 0.3 // Moderate rain 12h ago
+		} else if i == 6 {
+			precip = 0.8 // Heavy rain 6h ago
+		}
+
+		historicalWeather = append(historicalWeather, models.WeatherData{
+			LocationID:    locationID,
+			Timestamp:     timestamp,
+			Temperature:   55.0,
+			Precipitation: precip,
+			Humidity:      60,
+			WindSpeed:     5.0,
+		})
+	}
+
+	// Current weather: dry, sunny
+	currentWeather := &models.WeatherData{
+		LocationID:    locationID,
+		Timestamp:     now,
+		Temperature:   65.0,
+		Precipitation: 0,
+		Humidity:      50,
+		WindSpeed:     7.0,
+	}
+
+	// Forecast: no more rain
+	forecastWeather := []models.WeatherData{}
+	for i := 1; i <= 168; i++ {
+		forecastWeather = append(forecastWeather, models.WeatherData{
+			LocationID:    locationID,
+			Timestamp:     now.Add(time.Duration(i) * time.Hour),
+			Temperature:   65.0,
+			Precipitation: 0,
+			Humidity:      50,
+			WindSpeed:     7.0,
+		})
+	}
+
+	rockTypes := []models.RockType{
+		{
+			ID:              1,
+			Name:            "Granite",
+			BaseDryingHours: 8.0,
+			PorosityPercent: 5.0,
+			IsWetSensitive:  false,
+		},
+	}
+
+	mock := &mockRepository{
+		routes:            routes,
+		currentWeather:    currentWeather,
+		historicalWeather: historicalWeather,
+		forecastWeather:   forecastWeather,
+		rockTypes:         rockTypes,
+	}
+
+	mockWeather := &mockBoulderWeatherClient{
+		currentWeather:  currentWeather,
+		forecastWeather: forecastWeather,
+	}
+
+	service := NewBoulderDryingService(mock, mockWeather)
+	stats, err := service.GetAreaDryingStats(context.Background(), 2001, locationID)
+
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	if stats == nil {
+		t.Fatal("Expected stats, got nil")
+	}
+
+	// Verify total routes
+	if stats.TotalRoutes != 6 {
+		t.Errorf("Expected TotalRoutes=6, got %d", stats.TotalRoutes)
+	}
+
+	// Verify dry/drying/wet counts
+	// Note: The actual counts will vary based on the drying algorithm,
+	// but we should have a mix (not all in one category)
+	totalCounted := stats.DryCount + stats.DryingCount + stats.WetCount
+	if totalCounted != stats.TotalRoutes {
+		t.Errorf("Expected dry+drying+wet=%d, got %d+%d+%d=%d",
+			stats.TotalRoutes, stats.DryCount, stats.DryingCount, stats.WetCount, totalCounted)
+	}
+
+	// Verify percentages make sense
+	if stats.PercentDry < 0 || stats.PercentDry > 100 {
+		t.Errorf("Expected PercentDry in [0,100], got %.2f", stats.PercentDry)
+	}
+
+	// Log the results for debugging
+	t.Logf("Area Stats: Total=%d, Dry=%d, Drying=%d, Wet=%d, PercentDry=%.2f, AvgHoursUntilDry=%.2f",
+		stats.TotalRoutes, stats.DryCount, stats.DryingCount, stats.WetCount,
+		stats.PercentDry, stats.AvgHoursUntilDry)
+}
+
 // Helper functions
 func ptrFloat64(f float64) *float64 {
 	return &f

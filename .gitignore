@@ -60,3 +60,7 @@ woulder
 woulder-*
 !woulder.go
 backend/tmp/
+
+# roo
+.roo*
+

@@ -139,11 +139,14 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
         if (!dryingStatus) return false; // Hide routes without drying data when filtering
 
         if (filterStatus === 'dry') {
-          return !dryingStatus.is_wet && dryingStatus.hours_until_dry === 0;
+          // Dry: not wet at all
+          return !dryingStatus.is_wet;
         } else if (filterStatus === 'drying') {
-          return dryingStatus.is_wet || (dryingStatus.hours_until_dry > 0 && dryingStatus.hours_until_dry < 48);
+          // Drying: wet but drying within 48 hours (actively improving)
+          return dryingStatus.is_wet && dryingStatus.hours_until_dry > 0 && dryingStatus.hours_until_dry <= 48;
         } else if (filterStatus === 'wet') {
-          return dryingStatus.is_wet && dryingStatus.hours_until_dry >= 48;
+          // Wet: wet and taking > 48 hours to dry (or unknown)
+          return dryingStatus.is_wet && (dryingStatus.hours_until_dry > 48 || dryingStatus.hours_until_dry === 999);
         }
         return true;
       });

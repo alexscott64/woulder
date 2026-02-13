@@ -160,10 +160,13 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 			baseDryingHours = 4.0
 		}
 		status.Forecast = c.Calculate6DayForecast(status, hourlyForecast, baseDryingHours)
+		log.Printf("[FORECAST DEBUG] Generated %d forecast periods for boulder %d", len(status.Forecast), status.MPRouteID)
 		forecastTime := time.Since(forecastStart)
 		if forecastTime > 50*time.Millisecond {
 			log.Printf("[PERF]     6-day forecast calculation took %v (should be <50ms)", forecastTime)
 		}
+	} else {
+		log.Printf("[FORECAST DEBUG] No hourly forecast data for boulder %d - skipping forecast generation", status.MPRouteID)
 	}
 
 	return status, nil
@@ -349,7 +352,7 @@ func (c *Calculator) Calculate6DayForecast(
 	const rainThreshold = 0.01
 
 	// Process hourly forecast
-	for i, hour := range hourlyForecast {
+	for _, hour := range hourlyForecast {
 		// Stop after 6 days (144 hours)
 		if hour.Timestamp.Sub(now).Hours() > 144 {
 			break
@@ -436,13 +439,11 @@ func (c *Calculator) Calculate6DayForecast(
 				}
 			}
 		}
+	}
 
-		// If last hour, close final period
-		if i == len(hourlyForecast)-1 {
-			if forecast[len(forecast)-1].EndTime.IsZero() {
-				forecast[len(forecast)-1].EndTime = hour.Timestamp.Add(6 * 24 * time.Hour)
-			}
-		}
+	// Close the final period (set end time to 6 days from now if not already set)
+	if len(forecast) > 0 && forecast[len(forecast)-1].EndTime.IsZero() {
+		forecast[len(forecast)-1].EndTime = now.Add(6 * 24 * time.Hour)
 	}
 
 	return forecast
