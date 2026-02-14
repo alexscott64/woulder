@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, TrendingUp, Users, MapPin, Loader2, ExternalLink, Calendar, ChevronRight, ChevronLeft, MessageSquare, Activity, Info } from 'lucide-react';
 import { heatMapApi } from '../../services/api';

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { X, TrendingUp, Users, MapPin, Search, ChevronDown, ChevronRight } from 'lucide-react';
 import { HeatMapPoint, RouteActivity } from '../../types/heatmap';
 import { heatMapApi } from '../../services/api';

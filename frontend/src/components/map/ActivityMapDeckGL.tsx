@@ -1,11 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import DeckGL from '@deck.gl/react';
 import { Map } from 'react-map-gl/maplibre';
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { HexagonLayer } from '@deck.gl/aggregation-layers';
 import { HeatMapPoint } from '../../types/heatmap';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { ClusterDetailDrawer } from './ClusterDetailDrawer';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 interface ActivityMapDeckGLProps {
@@ -46,8 +45,6 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
   const [legendExpanded, setLegendExpanded] = useState(false);
   const [hoveredObject, setHoveredObject] = useState<any>(null);
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number } | null>(null);
-  const [clusterAreas, setClusterAreas] = useState<HeatMapPoint[]>([]);
-  const [showClusterDrawer, setShowClusterDrawer] = useState(false);
   const [isReady, setIsReady] = useState(false);
 
   // Suppress known Firefox WebGL errors (cosmetic only, doesn't affect functionality)
@@ -189,14 +186,9 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
         if (nearbyPoints.length === 1) {
           // Single area - open detail drawer
           onAreaClick(nearbyPoints[0].mp_area_id);
-        } else if (nearbyPoints.length > 1) {
-          // Multiple areas - show cluster drawer
-          setClusterAreas(nearbyPoints);
-          setShowClusterDrawer(true);
-          // Notify parent if callback provided
-          if (onShowCluster) {
-            onShowCluster(nearbyPoints);
-          }
+        } else if (nearbyPoints.length > 1 && onShowCluster) {
+          // Multiple areas - notify parent to show cluster drawer
+          onShowCluster(nearbyPoints);
         }
       }
       return true;
