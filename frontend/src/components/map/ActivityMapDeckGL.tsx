@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import DeckGL from '@deck.gl/react';
 import { Map } from 'react-map-gl/maplibre';
 import { ScatterplotLayer } from '@deck.gl/layers';
@@ -48,6 +48,38 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number } | null>(null);
   const [clusterAreas, setClusterAreas] = useState<HeatMapPoint[]>([]);
   const [showClusterDrawer, setShowClusterDrawer] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+
+  // Suppress known Firefox WebGL errors (cosmetic only, doesn't affect functionality)
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      const errorMsg = event.message || '';
+      if (errorMsg.includes('device.limits') || errorMsg.includes('maxTextureDimension2D')) {
+        event.preventDefault();
+        event.stopPropagation();
+        return false;
+      }
+    };
+
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  }, []);
+
+  // Initialize map when document is visible
+  useEffect(() => {
+    if (document.visibilityState === 'visible' && points.length > 0) {
+      setIsReady(true);
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && points.length > 0) {
+        setIsReady(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [points.length]);
 
   const maxScore = useMemo(() => Math.max(...points.map(p => p.activity_score)), [points]);
 
@@ -206,10 +238,10 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
 
   const layers = viewMode === 'scatter' ? [scatterLayer] : [hexagonLayer];
 
-  // Only render deck.gl when component is actually visible to avoid WebGL errors
-  if (points.length === 0) {
+  // Only render deck.gl when component is ready and has data to avoid WebGL errors
+  if (!isReady || points.length === 0) {
     return <div className="h-full w-full relative flex items-center justify-center">
-      <p className="text-gray-500">No activity data to display</p>
+      <p className="text-gray-500">{points.length === 0 ? 'No activity data to display' : 'Loading map...'}</p>
     </div>;
   }
 
@@ -220,7 +252,7 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
         controller={true}
         layers={layers}
         onViewStateChange={({ viewState }: any) => setViewState(viewState)}
-        getTooltip={() => null} // We'll use custom tooltip
+        getTooltip={() => null}
       >
         <Map
           mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"

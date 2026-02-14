@@ -262,3 +262,141 @@ func (h *Handler) GetHeatMapRoutes(c *gin.Context) {
 		"count":  len(routes),
 	})
 }
+
+// SearchClusterRoutes searches for routes within a cluster of areas
+// POST /api/heat-map/cluster/search-routes
+// Body: { "area_ids": [123, 456], "query": "chimney", "start_date": "2024-01-01", "end_date": "2024-12-31" }
+func (h *Handler) SearchClusterRoutes(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// Parse request body
+	var req struct {
+		AreaIDs   []int64 `json:"area_ids" binding:"required"`
+		Query     string  `json:"query" binding:"required"`
+		StartDate string  `json:"start_date" binding:"required"`
+		EndDate   string  `json:"end_date" binding:"required"`
+		Limit     int     `json:"limit"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	// Parse dates
+	startDate, err := time.Parse("2006-01-02", req.StartDate)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid start_date format (use YYYY-MM-DD)",
+		})
+		return
+	}
+
+	endDate, err := time.Parse("2006-01-02", req.EndDate)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid end_date format (use YYYY-MM-DD)",
+		})
+		return
+	}
+
+	// Default limit
+	limit := req.Limit
+	if limit == 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+
+	// Search routes
+	routes, err := h.heatMapService.SearchRoutesInAreas(ctx, req.AreaIDs, req.Query, startDate, endDate, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to search routes",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"routes": routes,
+		"count":  len(routes),
+		"query":  req.Query,
+	})
+}
+
+// GetRouteTicksInDateRange returns all ticks for a specific route within a date range
+// GET /api/heat-map/route/:route_id/ticks?start_date=...&end_date=...&limit=100
+func (h *Handler) GetRouteTicksInDateRange(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// Parse route ID
+	routeIDStr := c.Param("route_id")
+	routeID, err := strconv.ParseInt(routeIDStr, 10, 64)
+	if err != nil || routeID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid route ID",
+		})
+		return
+	}
+
+	// Parse date range
+	startDateStr := c.Query("start_date")
+	if startDateStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "start_date is required (format: YYYY-MM-DD)",
+		})
+		return
+	}
+
+	endDateStr := c.Query("end_date")
+	if endDateStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "end_date is required (format: YYYY-MM-DD)",
+		})
+		return
+	}
+
+	startDate, err := time.Parse("2006-01-02", startDateStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid start_date format (use YYYY-MM-DD)",
+		})
+		return
+	}
+
+	endDate, err := time.Parse("2006-01-02", endDateStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid end_date format (use YYYY-MM-DD)",
+		})
+		return
+	}
+
+	// Parse limit
+	limit := 100
+	if val := c.Query("limit"); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil && parsed > 0 {
+			limit = parsed
+			if limit > 500 {
+				limit = 500
+			}
+		}
+	}
+
+	// Fetch ticks
+	ticks, err := h.heatMapService.GetRouteTicksInDateRange(ctx, routeID, startDate, endDate, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch route ticks",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"ticks": ticks,
+		"count": len(ticks),
+	})
+}

@@ -132,3 +132,62 @@ func (s *HeatMapService) GetRoutesByBounds(
 
 	return routes, nil
 }
+
+// GetRouteTicksInDateRange retrieves all ticks for a specific route within a date range
+func (s *HeatMapService) GetRouteTicksInDateRange(
+	ctx context.Context,
+	routeID int64,
+	startDate, endDate time.Time,
+	limit int,
+) ([]models.TickDetail, error) {
+	if routeID <= 0 {
+		return nil, fmt.Errorf("invalid route ID: %d", routeID)
+	}
+
+	if startDate.After(endDate) {
+		return nil, fmt.Errorf("start_date must be before end_date")
+	}
+
+	if limit < 1 || limit > 500 {
+		limit = 100 // Default to 100 for route ticks
+	}
+
+	ticks, err := s.repo.GetRouteTicksInDateRange(ctx, routeID, startDate, endDate, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch route ticks: %w", err)
+	}
+
+	return ticks, nil
+}
+
+// SearchRoutesInAreas searches for routes within specified areas by name
+func (s *HeatMapService) SearchRoutesInAreas(
+	ctx context.Context,
+	areaIDs []int64,
+	searchQuery string,
+	startDate, endDate time.Time,
+	limit int,
+) ([]models.RouteActivity, error) {
+	if len(areaIDs) == 0 {
+		return []models.RouteActivity{}, nil
+	}
+
+	if searchQuery == "" {
+		return []models.RouteActivity{}, nil
+	}
+
+	if startDate.After(endDate) {
+		return nil, fmt.Errorf("start_date must be before end_date")
+	}
+
+	if limit < 1 || limit > 500 {
+		limit = 100 // Default to 100 for route search
+	}
+
+	routes, err := s.repo.SearchRoutesInAreas(ctx, areaIDs, searchQuery, startDate, endDate, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search routes: %w", err)
+	}
+
+	return routes, nil
+}

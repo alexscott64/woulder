@@ -238,6 +238,7 @@ export function HeatMapPage() {
             onAreaClick={(areaId: number) => {
               setSelectedAreaId(areaId);
             }}
+            dateRange={dateRange}
           />
           
           {/* Area Detail Drawer */}

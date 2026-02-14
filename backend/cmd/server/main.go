@@ -112,6 +112,8 @@ func main() {
 		apiGroup.GET("/heat-map/activity", handler.GetHeatMapActivity)
 		apiGroup.GET("/heat-map/area/:area_id/detail", handler.GetHeatMapAreaDetail)
 		apiGroup.GET("/heat-map/routes", handler.GetHeatMapRoutes)
+		apiGroup.GET("/heat-map/route/:route_id/ticks", handler.GetRouteTicksInDateRange)
+		apiGroup.POST("/heat-map/cluster/search-routes", handler.SearchClusterRoutes)
 	}
 
 	// Start server

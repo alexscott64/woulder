@@ -432,3 +432,124 @@ func (db *Database) GetRoutesByBounds(
 
 	return routes, nil
 }
+
+// GetRouteTicksInDateRange returns all ticks for a specific route within a date range
+func (db *Database) GetRouteTicksInDateRange(
+	ctx context.Context,
+	routeID int64,
+	startDate, endDate time.Time,
+	limit int,
+) ([]models.TickDetail, error) {
+	query := `
+		SELECT
+			t.mp_route_id,
+			r.name as route_name,
+			COALESCE(r.rating, '') as rating,
+			COALESCE(t.user_name, '') as user_name,
+			t.climbed_at,
+			COALESCE(t.style, '') as style,
+			COALESCE(t.comment, '') as comment
+		FROM woulder.mp_ticks t
+		JOIN woulder.mp_routes r ON t.mp_route_id = r.mp_route_id
+		WHERE t.mp_route_id = $1
+			AND t.climbed_at >= $2
+			AND t.climbed_at <= $3
+		ORDER BY t.climbed_at DESC
+		LIMIT $4
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query, routeID, startDate, endDate, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query route ticks: %w", err)
+	}
+	defer rows.Close()
+
+	var ticks []models.TickDetail
+	for rows.Next() {
+		var tick models.TickDetail
+		if err := rows.Scan(
+			&tick.MPRouteID,
+			&tick.RouteName,
+			&tick.Rating,
+			&tick.UserName,
+			&tick.ClimbedAt,
+			&tick.Style,
+			&tick.Comment,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan tick: %w", err)
+		}
+		ticks = append(ticks, tick)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating tick rows: %w", err)
+	}
+
+	return ticks, nil
+}
+
+// SearchRoutesInAreas searches for routes within specified areas by name
+func (db *Database) SearchRoutesInAreas(
+	ctx context.Context,
+	areaIDs []int64,
+	searchQuery string,
+	startDate, endDate time.Time,
+	limit int,
+) ([]models.RouteActivity, error) {
+	query := `
+		SELECT
+			r.mp_route_id,
+			r.name,
+			r.rating,
+			r.latitude,
+			r.longitude,
+			COUNT(t.id) as tick_count,
+			MAX(t.climbed_at) as last_activity,
+			r.mp_area_id,
+			a.name as area_name
+		FROM woulder.mp_routes r
+		LEFT JOIN woulder.mp_ticks t ON r.mp_route_id = t.mp_route_id
+			AND t.climbed_at >= $2
+			AND t.climbed_at <= $3
+		JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
+		WHERE r.mp_area_id = ANY($1)
+			AND LOWER(r.name) LIKE LOWER($4)
+		GROUP BY r.mp_route_id, r.name, r.rating, r.latitude, r.longitude, r.mp_area_id, a.name
+		HAVING COUNT(t.id) > 0
+		ORDER BY COUNT(t.id) DESC, r.name ASC
+		LIMIT $5
+	`
+
+	searchPattern := "%" + searchQuery + "%"
+
+	rows, err := db.conn.QueryContext(ctx, query,
+		pq.Array(areaIDs),
+		startDate, endDate,
+		searchPattern,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search routes in areas: %w", err)
+	}
+	defer rows.Close()
+
+	var routes []models.RouteActivity
+	for rows.Next() {
+		var r models.RouteActivity
+		if err := rows.Scan(
+			&r.MPRouteID, &r.Name, &r.Rating,
+			&r.Latitude, &r.Longitude,
+			&r.TickCount, &r.LastActivity,
+			&r.MPAreaID, &r.AreaName,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan route: %w", err)
+		}
+		routes = append(routes, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating route rows: %w", err)
+	}
+
+	return routes, nil
+}

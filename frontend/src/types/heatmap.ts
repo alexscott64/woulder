@@ -90,6 +90,11 @@ export interface RoutesResponse {
   count: number;
 }
 
+export interface RouteTicksResponse {
+  ticks: TickDetail[];
+  count: number;
+}
+
 export interface GeoBounds {
   minLat: number;
   maxLat: number;

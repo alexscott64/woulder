@@ -97,6 +97,8 @@ type Repository interface {
 	GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error)
 	GetAreaActivityDetail(ctx context.Context, areaID int64, startDate, endDate time.Time) (*models.AreaActivityDetail, error)
 	GetRoutesByBounds(ctx context.Context, bounds GeoBounds, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error)
+	GetRouteTicksInDateRange(ctx context.Context, routeID int64, startDate, endDate time.Time, limit int) ([]models.TickDetail, error)
+	SearchRoutesInAreas(ctx context.Context, areaIDs []int64, searchQuery string, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error)
 
 	// Health check
 	Ping(ctx context.Context) error

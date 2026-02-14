@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Location, WeatherForecast, AllWeatherResponse, AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus, AreaDryingStats } from '../types/weather';
 import { Area, AreaWithLocations } from '../types/area';
-import { HeatMapActivityResponse, AreaActivityDetail, RoutesResponse, GeoBounds } from '../types/heatmap';
+import { HeatMapActivityResponse, AreaActivityDetail, RoutesResponse, RouteTicksResponse, GeoBounds } from '../types/heatmap';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
@@ -210,6 +210,44 @@ export const heatMapApi = {
         limit: params.limit || 100,
       },
       timeout: 20000, // 20s timeout
+    });
+    return response.data;
+  },
+
+  // Search routes within a cluster of areas
+  searchRoutesInCluster: async (params: {
+    areaIds: number[];
+    query: string;
+    startDate: Date;
+    endDate: Date;
+    limit?: number;
+  }): Promise<RoutesResponse & { query: string }> => {
+    const response = await api.post('/heat-map/cluster/search-routes', {
+      area_ids: params.areaIds,
+      query: params.query,
+      start_date: params.startDate.toISOString().split('T')[0],
+      end_date: params.endDate.toISOString().split('T')[0],
+      limit: params.limit || 100,
+    }, {
+      timeout: 15000, // 15s timeout
+    });
+    return response.data;
+  },
+
+  // Get all ticks for a specific route within a date range
+  getRouteTicksInDateRange: async (params: {
+    routeId: number;
+    startDate: Date;
+    endDate: Date;
+    limit?: number;
+  }): Promise<RouteTicksResponse> => {
+    const response = await api.get(`/heat-map/route/${params.routeId}/ticks`, {
+      params: {
+        start_date: params.startDate.toISOString().split('T')[0],
+        end_date: params.endDate.toISOString().split('T')[0],
+        limit: params.limit || 100,
+      },
+      timeout: 15000, // 15s timeout
     });
     return response.data;
   },
