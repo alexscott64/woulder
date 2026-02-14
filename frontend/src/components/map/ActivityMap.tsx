@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-markercluster';
 import L from 'leaflet';
 import { HeatMapPoint } from '../../types/heatmap';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
@@ -68,12 +69,61 @@ function FitBounds({ points }: { points: HeatMapPoint[] }) {
 
 export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMapProps) {
   const mapRef = useRef(null);
+  const clusterRef = useRef<any>(null);
+  const [legendExpanded, setLegendExpanded] = useState(false);
   
   // North America center as default
   const center: [number, number] = [45.0, -100.0];
   const zoom = 4;
   
   const allScores = points.map(p => p.activity_score);
+
+  // Handle cluster click events to show summary for smaller clusters
+  useEffect(() => {
+    if (!clusterRef.current) return;
+    
+    const handleClusterClick = (e: any) => {
+      const cluster = e.layer;
+      const childCount = cluster.getChildCount();
+      
+      // For smaller clusters (< 100), show a summary popup before spiderfying
+      if (childCount < 100 && childCount > 1) {
+        const childMarkers = cluster.getAllChildMarkers();
+        const areas = childMarkers.slice(0, 10); // Show first 10
+        
+        let popupContent = `<div class="p-2 max-w-xs">
+          <h3 class="font-bold text-base mb-2">${childCount} ${childCount === 1 ? 'Area' : 'Areas'}</h3>
+          <div class="space-y-1 text-sm max-h-60 overflow-y-auto">`;
+        
+        areas.forEach((marker: any) => {
+          const pathOptions: any = marker.options?.pathOptions || {};
+          const areaName = pathOptions.areaName || 'Unknown Area';
+          popupContent += `<div class="py-1 border-b border-gray-200 last:border-0">
+            <div class="font-medium text-gray-900">${areaName}</div>
+          </div>`;
+        });
+        
+        if (childCount > 10) {
+          popupContent += `<div class="text-gray-500 text-xs mt-2">... and ${childCount - 10} more</div>`;
+        }
+        
+        popupContent += `<div class="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-200">Click individual dots to view details</div></div>`;
+        
+        cluster.bindPopup(popupContent).openPopup();
+      }
+      
+      // Still spiderfy to allow individual selection
+      cluster.spiderfy();
+    };
+    
+    clusterRef.current.on('clusterclick', handleClusterClick);
+    
+    return () => {
+      if (clusterRef.current) {
+        clusterRef.current.off('clusterclick', handleClusterClick);
+      }
+    };
+  }, []);
 
   return (
     <div className="h-full w-full relative">
@@ -92,6 +142,7 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
         {points.length > 0 && <FitBounds points={points} />}
         
         <MarkerClusterGroup
+          ref={clusterRef}
           chunkedLoading
           maxClusterRadius={80}
           spiderfyOnMaxZoom={true}
@@ -101,6 +152,7 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
           removeOutsideVisibleBounds={true}
           animate={true}
           animateAddingMarkers={false}
+          spiderfyDistanceMultiplier={2}
           iconCreateFunction={(cluster: any) => {
             const count = cluster.getChildCount();
             let size = 'small';
@@ -137,6 +189,8 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
                   fillOpacity: isSelected ? 0.9 : opacity,
                   color: isSelected ? '#1e40af' : '#fff',
                   weight: isSelected ? 3 : 1,
+                  // @ts-ignore - Store area name in options for cluster popup
+                  areaName: point.name,
                 }}
                 eventHandlers={{
                   click: () => onAreaClick(point.mp_area_id),
@@ -177,35 +231,57 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
         </MarkerClusterGroup>
       </MapContainer>
       
-      {/* Legend - Position adjusted to avoid overlap with drawer */}
-      <div className={`absolute bottom-6 left-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 border border-gray-200 dark:border-gray-700 transition-all duration-300 ${selectedAreaId ? 'z-[30]' : 'z-[1000]'}`}>
-        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Activity Recency</h4>
-        <div className="space-y-2">
+      {/* Legend - Collapsible and Compact */}
+      <div className={`absolute bottom-6 left-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300 ${selectedAreaId ? 'z-[30]' : 'z-[1000]'}`}>
+        {/* Legend Header - Always Visible */}
+        <button
+          onClick={() => setLegendExpanded(!legendExpanded)}
+          className="flex items-center justify-between w-full px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg transition-colors"
+        >
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-red-500" />
-            <span className="text-xs text-gray-700 dark:text-gray-300">Last Week</span>
+            <div className="flex gap-1">
+              <div className="w-2 h-2 rounded-full bg-red-500" />
+              <div className="w-2 h-2 rounded-full bg-orange-500" />
+              <div className="w-2 h-2 rounded-full bg-yellow-500" />
+              <div className="w-2 h-2 rounded-full bg-blue-500" />
+            </div>
+            <span className="text-xs font-medium text-gray-900 dark:text-white">Legend</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-orange-500" />
-            <span className="text-xs text-gray-700 dark:text-gray-300">Last Month</span>
+          {legendExpanded ? (
+            <ChevronDown className="w-4 h-4 text-gray-500" />
+          ) : (
+            <ChevronUp className="w-4 h-4 text-gray-500" />
+          )}
+        </button>
+        
+        {/* Expanded Legend Details */}
+        {legendExpanded && (
+          <div className="px-3 pb-3 pt-1 border-t border-gray-200 dark:border-gray-700">
+            <div className="space-y-1.5 mt-2">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-red-500" />
+                <span className="text-xs text-gray-700 dark:text-gray-300">Last Week</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-orange-500" />
+                <span className="text-xs text-gray-700 dark:text-gray-300">Last Month</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                <span className="text-xs text-gray-700 dark:text-gray-300">Last 3 Months</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-blue-500" />
+                <span className="text-xs text-gray-700 dark:text-gray-300">Older</span>
+              </div>
+            </div>
+            <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                <span className="font-medium">Size & Opacity:</span> Activity Level
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-yellow-500" />
-            <span className="text-xs text-gray-700 dark:text-gray-300">Last 3 Months</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-blue-500" />
-            <span className="text-xs text-gray-700 dark:text-gray-300">Older</span>
-          </div>
-        </div>
-        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
-          <p className="text-xs text-gray-600 dark:text-gray-400">
-            <span className="font-medium">Size & Opacity</span> = Activity Level
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-            Lower activity areas are less visible
-          </p>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -12,14 +12,14 @@ import (
 
 // MockHeatMapRepository for testing
 type MockHeatMapRepository struct {
-	GetHeatMapDataFunc        func(ctx context.Context, startDate, endDate time.Time, bounds *database.GeoBounds, minActivity, limit int) ([]models.HeatMapPoint, error)
+	GetHeatMapDataFunc        func(ctx context.Context, startDate, endDate time.Time, bounds *database.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error)
 	GetAreaActivityDetailFunc func(ctx context.Context, areaID int64, startDate, endDate time.Time) (*models.AreaActivityDetail, error)
 	GetRoutesByBoundsFunc     func(ctx context.Context, bounds database.GeoBounds, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error)
 }
 
-func (m *MockHeatMapRepository) GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *database.GeoBounds, minActivity, limit int) ([]models.HeatMapPoint, error) {
+func (m *MockHeatMapRepository) GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *database.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error) {
 	if m.GetHeatMapDataFunc != nil {
-		return m.GetHeatMapDataFunc(ctx, startDate, endDate, bounds, minActivity, limit)
+		return m.GetHeatMapDataFunc(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight)
 	}
 	return nil, errors.New("not implemented")
 }
@@ -226,7 +226,7 @@ func TestHeatMapService_GetHeatMapData(t *testing.T) {
 
 	t.Run("successfully retrieves and calculates activity scores", func(t *testing.T) {
 		mockRepo := &MockHeatMapRepository{
-			GetHeatMapDataFunc: func(ctx context.Context, startDate, endDate time.Time, bounds *database.GeoBounds, minActivity, limit int) ([]models.HeatMapPoint, error) {
+			GetHeatMapDataFunc: func(ctx context.Context, startDate, endDate time.Time, bounds *database.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error) {
 				return []models.HeatMapPoint{
 					{
 						MPAreaID:       1,
@@ -253,7 +253,7 @@ func TestHeatMapService_GetHeatMapData(t *testing.T) {
 		}
 
 		service := NewHeatMapService(mockRepo)
-		points, err := service.GetHeatMapData(ctx, thirtyDaysAgo, now, nil, 1, 500)
+		points, err := service.GetHeatMapData(ctx, thirtyDaysAgo, now, nil, 1, 500, nil, false)
 
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -283,7 +283,7 @@ func TestHeatMapService_GetHeatMapData(t *testing.T) {
 		service := NewHeatMapService(mockRepo)
 
 		// Invalid: start after end
-		_, err := service.GetHeatMapData(ctx, now, thirtyDaysAgo, nil, 1, 500)
+		_, err := service.GetHeatMapData(ctx, now, thirtyDaysAgo, nil, 1, 500, nil, false)
 
 		if err == nil {
 			t.Error("Expected error for invalid date range")
@@ -301,7 +301,7 @@ func TestHeatMapService_GetHeatMapData(t *testing.T) {
 			MaxLon: -120.0,
 		}
 
-		_, err := service.GetHeatMapData(ctx, thirtyDaysAgo, now, invalidBounds, 1, 500)
+		_, err := service.GetHeatMapData(ctx, thirtyDaysAgo, now, invalidBounds, 1, 500, nil, false)
 
 		if err == nil {
 			t.Error("Expected error for invalid bounds")

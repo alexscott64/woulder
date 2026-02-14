@@ -12,6 +12,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/pests"
 	"github.com/alexscott64/woulder/backend/internal/weather"
 	"github.com/alexscott64/woulder/backend/internal/weather/calculator"
+	"github.com/alexscott64/woulder/backend/internal/weather/client"
 	"github.com/alexscott64/woulder/backend/internal/weather/rock_drying"
 )
 
@@ -39,6 +40,7 @@ func NewWeatherService(repo database.Repository, client *weather.WeatherService,
 }
 
 // GetLocationWeather retrieves complete weather forecast for a location
+// Uses cached data from database if available and fresh (< 1 hour old)
 func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int) (*models.WeatherForecast, error) {
 	// 1. Get location
 	location, err := s.repo.GetLocation(ctx, locationID)
@@ -46,12 +48,41 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 		return nil, fmt.Errorf("location not found: %w", err)
 	}
 
-	// 2. Fetch weather from API (fresh data, not from DB)
-	current, hourlyForecast, sunTimes, err := s.weatherClient.GetCurrentAndForecast(
-		location.Latitude, location.Longitude,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch weather: %w", err)
+	// 2. Try to get current weather from database cache first
+	var current *models.WeatherData
+	var hourlyForecast []models.WeatherData
+	var sunTimes *client.SunTimes
+
+	cachedCurrent, err := s.repo.GetCurrentWeather(ctx, locationID)
+	if err == nil && cachedCurrent != nil {
+		// Check if cached data is fresh (less than 1 hour old)
+		age := time.Since(cachedCurrent.Timestamp)
+		if age < 1*time.Hour {
+			log.Printf("Using cached weather data for location %d (age: %v)", locationID, age.Round(time.Minute))
+			current = cachedCurrent
+
+			// Also get cached forecast data (next 7 days)
+			hourlyForecast, err = s.repo.GetForecastWeather(ctx, locationID, 168) // 7 days
+			if err != nil {
+				log.Printf("Warning: failed to get forecast from cache: %v", err)
+				hourlyForecast = []models.WeatherData{}
+			}
+
+			// We don't have cached sun times, but that's okay - we can skip for cached responses
+			sunTimes = nil
+		}
+	}
+
+	// 3. If no cached data or data is stale, fetch from API
+	if current == nil {
+		log.Printf("Cache miss or stale data, fetching fresh weather for location %d", locationID)
+		var fetchErr error
+		current, hourlyForecast, sunTimes, fetchErr = s.weatherClient.GetCurrentAndForecast(
+			location.Latitude, location.Longitude,
+		)
+		if fetchErr != nil {
+			return nil, fmt.Errorf("failed to fetch weather: %w", fetchErr)
+		}
 	}
 
 	// Extract sunrise/sunset

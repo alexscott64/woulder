@@ -14,7 +14,7 @@ export function HeatMapPage() {
     start: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000), // Last 90 days
     end: new Date(),
   });
-  const [minActivity, setMinActivity] = useState(1);
+  const [minActivity, setMinActivity] = useState(5);
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
   const [selectedRouteTypes, setSelectedRouteTypes] = useState<string[]>(['Boulder', 'Sport', 'Trad', 'Ice']);
@@ -43,8 +43,8 @@ export function HeatMapPage() {
   const sortedPoints: HeatMapPoint[] = data?.points.sort((a, b) => b.activity_score - a.activity_score) || [];
 
   return (
-    <main className="max-w-full mx-auto h-[calc(100vh-200px)] flex flex-col">
-      <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 space-y-4">
+    <main className="h-screen flex flex-col overflow-hidden">
+      <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 space-y-4 flex-shrink-0">
         {/* Header */}
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">

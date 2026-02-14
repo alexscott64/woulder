@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/alexscott64/woulder/backend/internal/weather/client"
 )
@@ -31,7 +32,6 @@ type mockBoulderWeatherClient struct {
 func (m *mockBoulderWeatherClient) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *client.SunTimes, error) {
 	return m.currentWeather, m.forecastWeather, nil, nil
 }
-
 
 func (m *mockRepository) GetRoutesWithGPSByArea(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error) {
 	if m.getRoutesWithGPSErr != nil {
@@ -255,6 +255,15 @@ func (m *mockRepository) GetRoutesDueForCommentSync(ctx context.Context, priorit
 func (m *mockRepository) GetPriorityDistribution(ctx context.Context) (map[string]int, error) {
 	return make(map[string]int), nil
 }
+func (m *mockRepository) GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *database.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error) {
+	return nil, nil
+}
+func (m *mockRepository) GetAreaActivityDetail(ctx context.Context, areaID int64, startDate, endDate time.Time) (*models.AreaActivityDetail, error) {
+	return nil, nil
+}
+func (m *mockRepository) GetRoutesByBounds(ctx context.Context, bounds database.GeoBounds, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error) {
+	return nil, nil
+}
 
 // TestGetAreaDryingStats_AllDry tests area stats when all routes are dry
 func TestGetAreaDryingStats_AllDry(t *testing.T) {
@@ -308,7 +317,7 @@ func TestGetAreaDryingStats_AllDry(t *testing.T) {
 	}
 
 	mock := &mockRepository{
-		routes:            routes,
+		routes: routes,
 		currentWeather: &models.WeatherData{
 			LocationID:    locationID,
 			Timestamp:     now,

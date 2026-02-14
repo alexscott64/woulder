@@ -51,7 +51,7 @@ func (db *Database) GetHeatMapData(
 				0 as active_routes,  -- Not calculated in lightweight mode
 				COUNT(t.id) as total_ticks,
 				MAX(t.climbed_at) as last_activity,
-				0 as unique_climbers,  -- Not calculated in lightweight mode
+				COUNT(DISTINCT CASE WHEN t.user_name IS NOT NULL THEN t.user_name END) as unique_climbers,
 				false as has_subareas  -- Not calculated in lightweight mode
 			FROM woulder.mp_areas a
 			JOIN woulder.mp_routes r ON r.mp_area_id = a.mp_area_id
@@ -160,7 +160,7 @@ func (db *Database) GetAreaActivityDetail(
 ) (*models.AreaActivityDetail, error) {
 	// Base area info
 	areaQuery := `
-		SELECT 
+		SELECT
 			a.mp_area_id,
 			a.name,
 			a.parent_mp_area_id,
@@ -187,7 +187,7 @@ func (db *Database) GetAreaActivityDetail(
 		SELECT
 			COUNT(t.id) as total_ticks,
 			COUNT(DISTINCT t.mp_route_id) as active_routes,
-			COUNT(DISTINCT t.user_name) as unique_climbers,
+			COUNT(DISTINCT CASE WHEN t.user_name IS NOT NULL THEN t.user_name END) as unique_climbers,
 			MAX(t.climbed_at) as last_activity
 		FROM woulder.mp_ticks t
 		JOIN woulder.mp_routes r ON t.mp_route_id = r.mp_route_id
@@ -211,10 +211,10 @@ func (db *Database) GetAreaActivityDetail(
 		SELECT
 			t.mp_route_id,
 			r.name as route_name,
-			r.rating,
-			t.user_name,
+			COALESCE(r.rating, '') as rating,
+			COALESCE(t.user_name, '') as user_name,
 			t.climbed_at,
-			t.style,
+			COALESCE(t.style, '') as style,
 			COALESCE(t.comment, '') as comment
 		FROM woulder.mp_ticks t
 		JOIN woulder.mp_routes r ON t.mp_route_id = r.mp_route_id
