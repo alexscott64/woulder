@@ -9,12 +9,13 @@ interface AreaDetailDrawerProps {
   dateRange: { start: Date; end: Date };
   isOpen: boolean;
   onClose: () => void;
+  onBack?: () => void; // Optional back callback for cluster navigation
 }
 
 type View = 'area' | 'route';
 type Tab = 'routes' | 'ticks' | 'comments';
 
-export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose }: AreaDetailDrawerProps) {
+export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack }: AreaDetailDrawerProps) {
   const [view, setView] = useState<View>('area');
   const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null);
   const [selectedTab, setSelectedTab] = useState<Tab>('routes');
@@ -56,18 +57,18 @@ export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose }: AreaDet
         {/* Header */}
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 sm:p-4 z-10">
           <div className="flex items-center justify-between gap-3">
-            {view === 'route' && (
+            {(view === 'route' || (view === 'area' && onBack)) && (
               <button
-                onClick={handleBackToArea}
+                onClick={view === 'route' ? handleBackToArea : onBack}
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shrink-0"
-                title="Back to area"
+                title={view === 'route' ? 'Back to area' : 'Back to cluster'}
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
             )}
             <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white truncate flex-1">
-              {view === 'area' 
-                ? (detail?.name || 'Loading...') 
+              {view === 'area'
+                ? (detail?.name || 'Loading...')
                 : (selectedRoute?.name || 'Route Details')}
             </h2>
             <button

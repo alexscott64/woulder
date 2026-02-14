@@ -35,7 +35,18 @@ function Dashboard() {
   const [expandedLocationId, setExpandedLocationId] = useState<number | null>(null);
   const [expandedTodayCondition, setExpandedTodayCondition] = useState<'good' | 'marginal' | 'bad' | 'do_not_climb' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('weather');
+  
+  // Load last viewed tab from localStorage
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem('woulder-last-tab');
+    return (saved === 'activity-map' || saved === 'weather') ? saved : 'weather';
+  });
+  
+  // Save tab selection to localStorage whenever it changes
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
+    localStorage.setItem('woulder-last-tab', mode);
+  };
 
   // Monitor online/offline status
   useEffect(() => {
@@ -135,14 +146,14 @@ function Dashboard() {
             {/* Navigation Tabs */}
             <div className="mt-4 flex gap-2 border-b border-gray-200 dark:border-gray-700">
               <button
-                onClick={() => setViewMode('weather')}
+                onClick={() => handleViewModeChange('weather')}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
               >
                 <Cloud className="w-4 h-4" />
                 <span>Weather Forecasts</span>
               </button>
               <button
-                onClick={() => setViewMode('activity-map')}
+                onClick={() => handleViewModeChange('activity-map')}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600 dark:text-blue-400"
               >
                 <Map className="w-4 h-4" />
@@ -237,14 +248,14 @@ function Dashboard() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
               <button
-                onClick={() => setViewMode('weather')}
+                onClick={() => handleViewModeChange('weather')}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600 dark:text-blue-400"
               >
                 <Cloud className="w-4 h-4" />
                 <span>Weather Forecasts</span>
               </button>
               <button
-                onClick={() => setViewMode('activity-map')}
+                onClick={() => handleViewModeChange('activity-map')}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
               >
                 <Map className="w-4 h-4" />

@@ -12,6 +12,7 @@ interface ActivityMapDeckGLProps {
   points: HeatMapPoint[];
   onAreaClick: (areaId: number) => void;
   selectedAreaId?: number | null;
+  onShowCluster?: (areas: HeatMapPoint[]) => void;
 }
 
 // Color-code by recency
@@ -32,7 +33,7 @@ function getRadiusByActivity(activityScore: number, maxScore: number): number {
 
 type ViewMode = 'scatter' | 'hexagon';
 
-export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId }: ActivityMapDeckGLProps) {
+export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowCluster }: ActivityMapDeckGLProps) {
   const [viewState, setViewState] = useState({
     longitude: -100.0,
     latitude: 45.0,
@@ -160,6 +161,10 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId }: Activ
           // Multiple areas - show cluster drawer
           setClusterAreas(nearbyPoints);
           setShowClusterDrawer(true);
+          // Notify parent if callback provided
+          if (onShowCluster) {
+            onShowCluster(nearbyPoints);
+          }
         }
       }
       return true;
@@ -200,6 +205,13 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId }: Activ
   });
 
   const layers = viewMode === 'scatter' ? [scatterLayer] : [hexagonLayer];
+
+  // Only render deck.gl when component is actually visible to avoid WebGL errors
+  if (points.length === 0) {
+    return <div className="h-full w-full relative flex items-center justify-center">
+      <p className="text-gray-500">No activity data to display</p>
+    </div>;
+  }
 
   return (
     <div className="h-full w-full relative">
@@ -406,16 +418,6 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId }: Activ
         )}
       </div>
 
-      {/* Cluster Detail Drawer */}
-      <ClusterDetailDrawer
-        areas={clusterAreas}
-        isOpen={showClusterDrawer}
-        onClose={() => setShowClusterDrawer(false)}
-        onAreaClick={(areaId) => {
-          setShowClusterDrawer(false);
-          onAreaClick(areaId);
-        }}
-      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { HeatMapPoint } from '../../types/heatmap';
 import { Calendar, Activity, Loader2, AlertCircle, TrendingUp, Users, Map as MapIcon, List } from 'lucide-react';
 import { ActivityMapDeckGL } from './ActivityMapDeckGL';
 import { AreaDetailDrawer } from './AreaDetailDrawer';
+import { ClusterDetailDrawer } from './ClusterDetailDrawer';
 import { RouteTypeFilter } from './RouteTypeFilter';
 
 type ViewMode = 'map' | 'list';
@@ -18,8 +19,10 @@ export function HeatMapPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
   const [selectedRouteTypes, setSelectedRouteTypes] = useState<string[]>(['Boulder', 'Sport', 'Trad', 'Ice']);
+  const [clusterAreas, setClusterAreas] = useState<HeatMapPoint[]>([]);
+  const [showClusterDrawer, setShowClusterDrawer] = useState(false);
 
-  // Fetch heat map data with lightweight mode for initial map load
+  // Fetch heat map data - full mode to get active_routes
   const { data, isLoading, error } = useQuery({
     queryKey: ['heatMap', dateRange, minActivity, selectedRouteTypes],
     queryFn: () => heatMapApi.getHeatMapActivity({
@@ -28,7 +31,7 @@ export function HeatMapPage() {
       minActivity,
       limit: 10000, // No effective limit - show all areas
       routeTypes: selectedRouteTypes.length > 0 ? selectedRouteTypes : undefined,
-      lightweight: true, // Initial load is lightweight for performance
+      lightweight: false, // Full mode to get active_routes and other stats
     }),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -212,15 +215,46 @@ export function HeatMapPage() {
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden h-full relative">
             <ActivityMapDeckGL
               points={sortedPoints}
-              onAreaClick={setSelectedAreaId}
+              onAreaClick={(areaId) => {
+                setShowClusterDrawer(false);
+                setSelectedAreaId(areaId);
+              }}
               selectedAreaId={selectedAreaId}
+              onShowCluster={(areas) => {
+                setClusterAreas(areas);
+                setShowClusterDrawer(true);
+              }}
             />
           </div>
+          
+          {/* Cluster Drawer */}
+          <ClusterDetailDrawer
+            areas={clusterAreas}
+            isOpen={showClusterDrawer && !selectedAreaId}
+            onClose={() => {
+              setShowClusterDrawer(false);
+              setClusterAreas([]);
+            }}
+            onAreaClick={(areaId: number) => {
+              setSelectedAreaId(areaId);
+            }}
+          />
+          
+          {/* Area Detail Drawer */}
           <AreaDetailDrawer
             areaId={selectedAreaId}
             dateRange={dateRange}
             isOpen={!!selectedAreaId}
-            onClose={() => setSelectedAreaId(null)}
+            onClose={() => {
+              setSelectedAreaId(null);
+              if (!showClusterDrawer) {
+                setClusterAreas([]);
+              }
+            }}
+            onBack={clusterAreas.length > 0 ? () => {
+              setSelectedAreaId(null);
+              setShowClusterDrawer(true);
+            } : undefined}
           />
         </div>
       )}

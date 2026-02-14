@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, TrendingUp, Users, MapPin } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, TrendingUp, Users, MapPin, Search } from 'lucide-react';
 import { HeatMapPoint } from '../../types/heatmap';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -11,16 +11,33 @@ interface ClusterDetailDrawerProps {
 }
 
 export function ClusterDetailDrawer({ areas, isOpen, onClose, onAreaClick }: ClusterDetailDrawerProps) {
-  if (!isOpen || areas.length === 0) return null;
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Filter and sort areas - always run hooks before early return
+  const filteredAndSortedAreas = useMemo(() => {
+    if (!isOpen || areas.length === 0) return [];
+    
+    let filtered = areas;
+    
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = areas.filter(area =>
+        area.name.toLowerCase().includes(query)
+      );
+    }
+    
+    // Sort by activity score
+    return [...filtered].sort((a, b) => b.activity_score - a.activity_score);
+  }, [areas, searchQuery, isOpen]);
 
   // Calculate aggregate stats
-  const totalTicks = areas.reduce((sum, a) => sum + a.total_ticks, 0);
-  const totalRoutes = areas.reduce((sum, a) => sum + a.active_routes, 0);
-  const totalClimbers = areas.reduce((sum, a) => sum + a.unique_climbers, 0);
-  const totalActivityScore = areas.reduce((sum, a) => sum + a.activity_score, 0);
-
-  // Sort areas by activity score
-  const sortedAreas = [...areas].sort((a, b) => b.activity_score - a.activity_score);
+  const totalTicks = useMemo(() => areas.reduce((sum, a) => sum + a.total_ticks, 0), [areas]);
+  const totalRoutes = useMemo(() => areas.reduce((sum, a) => sum + a.active_routes, 0), [areas]);
+  const totalClimbers = useMemo(() => areas.reduce((sum, a) => sum + a.unique_climbers, 0), [areas]);
+  const totalActivityScore = useMemo(() => areas.reduce((sum, a) => sum + a.activity_score, 0), [areas]);
+  
+  if (!isOpen || areas.length === 0) return null;
 
   return (
     <>
@@ -74,13 +91,33 @@ export function ClusterDetailDrawer({ areas, isOpen, onClose, onAreaClick }: Clu
             />
           </div>
 
+          {/* Search Bar */}
+          <div className="mb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search areas..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            {searchQuery && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Showing {filteredAndSortedAreas.length} of {areas.length} areas
+              </p>
+            )}
+          </div>
+
           {/* Areas List */}
           <div>
             <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-3">
-              All Areas in this Cluster
+              {searchQuery ? 'Filtered Areas' : 'All Areas in this Cluster'}
             </h3>
             <div className="space-y-2">
-              {sortedAreas.map((area, index) => {
+              {filteredAndSortedAreas.length > 0 ? (
+                filteredAndSortedAreas.map((area, index) => {
                 const daysSince = (Date.now() - new Date(area.last_activity).getTime()) / (1000 * 60 * 60 * 24);
                 const colorClass = daysSince <= 7 ? 'bg-red-500'
                   : daysSince <= 30 ? 'bg-orange-500'
@@ -129,7 +166,12 @@ export function ClusterDetailDrawer({ areas, isOpen, onClose, onAreaClick }: Clu
                     </div>
                   </button>
                 );
-              })}
+              })
+              ) : (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  <p>No areas found matching "{searchQuery}"</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
