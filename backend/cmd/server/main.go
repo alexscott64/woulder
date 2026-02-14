@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log"
 	"time"
 
@@ -42,25 +41,14 @@ func main() {
 	weatherServiceLayer := service.NewWeatherService(db, weatherClient, climbTrackingService)
 	riverServiceLayer := service.NewRiverService(db, riverClient)
 	boulderDryingService := service.NewBoulderDryingService(db, weatherClient)
+	heatMapService := service.NewHeatMapService(db)
 
 	// Initialize API handler with services
-	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService)
+	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService)
 
-	// Run initial weather refresh in background (non-blocking)
-	go func() {
-		log.Println("Starting initial weather refresh in background...")
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-		defer cancel()
-
-		if err := weatherServiceLayer.RefreshAllWeather(ctx); err != nil {
-			log.Printf("Warning: Initial weather refresh failed: %v", err)
-		} else {
-			log.Println("Initial weather refresh completed successfully")
-		}
-	}()
-
-	// Start background weather refresh (every 2 hours)
-	handler.StartBackgroundRefresh(2 * time.Hour)
+	// Start background weather refresh (every 1 hour)
+	// The refresh automatically checks if data is fresh and skips API calls if updated within the last hour
+	handler.StartBackgroundRefresh(1 * time.Hour)
 
 	// Start dual-track sync system for Mountain Project ticks/comments
 	// Priority recalculation runs FIRST (populates priorities for non-location routes)
@@ -119,6 +107,13 @@ func main() {
 		apiGroup.GET("/climbs/routes/batch-drying-status", handler.GetBatchBoulderDryingStatus)
 		apiGroup.GET("/climbs/location/:id/search-all", handler.SearchInLocation)
 		apiGroup.GET("/climbs/location/:id/search", handler.SearchRoutesInLocation)
+
+		// Heat map routes
+		apiGroup.GET("/heat-map/activity", handler.GetHeatMapActivity)
+		apiGroup.GET("/heat-map/area/:area_id/detail", handler.GetHeatMapAreaDetail)
+		apiGroup.GET("/heat-map/routes", handler.GetHeatMapRoutes)
+		apiGroup.GET("/heat-map/route/:route_id/ticks", handler.GetRouteTicksInDateRange)
+		apiGroup.POST("/heat-map/cluster/search-routes", handler.SearchClusterRoutes)
 	}
 
 	// Start server

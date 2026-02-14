@@ -129,11 +129,11 @@ func TestWeatherService_GetWeatherByCoordinates(t *testing.T) {
 
 func TestWeatherService_GetAllWeather(t *testing.T) {
 	tests := []struct {
-		name              string
-		areaID            *int
-		mockLocationsFn   func(ctx context.Context) ([]models.Location, error)
+		name               string
+		areaID             *int
+		mockLocationsFn    func(ctx context.Context) ([]models.Location, error)
 		mockLocationByArea func(ctx context.Context, areaID int) ([]models.Location, error)
-		wantErr           bool
+		wantErr            bool
 	}{
 		{
 			name:   "success - all locations",
@@ -280,18 +280,21 @@ func TestWeatherService_RefreshAllWeather_ConcurrentCalls(t *testing.T) {
 			time.Sleep(100 * time.Millisecond) // Simulate slow operation
 			return []models.Location{}, nil
 		},
+		GetCurrentWeatherFn: func(ctx context.Context, locationID int) (*models.WeatherData, error) {
+			return nil, nil // Return nil to force refresh
+		},
 	}
 
 	client := weather.NewWeatherService("test_api_key")
 	mockClimbService := NewClimbTrackingService(mockRepo, &MockMPClient{})
 	service := NewWeatherService(mockRepo, client, mockClimbService)
 
-	// Start first refresh
-	go service.RefreshAllWeather(context.Background())
+	// Start first refresh with forceRefresh=true to bypass freshness check
+	go service.RefreshAllWeatherWithOptions(context.Background(), true)
 	time.Sleep(10 * time.Millisecond) // Let it start
 
 	// Try to start second refresh while first is running
-	err := service.RefreshAllWeather(context.Background())
+	err := service.RefreshAllWeatherWithOptions(context.Background(), true)
 
 	// Should get error because refresh is already in progress
 	assert.Error(t, err)
