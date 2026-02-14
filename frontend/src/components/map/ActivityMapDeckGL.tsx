@@ -153,10 +153,13 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId }: Activ
         
         console.log('Found', nearbyPoints.length, 'nearby points');
         
-        if (nearbyPoints.length > 0) {
-          // Sort by activity score and open the most active area
-          const sortedAreas = nearbyPoints.sort((a, b) => b.activity_score - a.activity_score);
-          onAreaClick(sortedAreas[0].mp_area_id);
+        if (nearbyPoints.length === 1) {
+          // Single area - open detail drawer
+          onAreaClick(nearbyPoints[0].mp_area_id);
+        } else if (nearbyPoints.length > 1) {
+          // Multiple areas - show cluster drawer
+          setClusterAreas(nearbyPoints);
+          setShowClusterDrawer(true);
         }
       }
       return true;
@@ -403,6 +406,16 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId }: Activ
         )}
       </div>
 
+      {/* Cluster Detail Drawer */}
+      <ClusterDetailDrawer
+        areas={clusterAreas}
+        isOpen={showClusterDrawer}
+        onClose={() => setShowClusterDrawer(false)}
+        onAreaClick={(areaId) => {
+          setShowClusterDrawer(false);
+          onAreaClick(areaId);
+        }}
+      />
     </div>
   );
 }
