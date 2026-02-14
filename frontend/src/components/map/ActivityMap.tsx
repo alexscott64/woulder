@@ -78,16 +78,42 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
   
   const allScores = points.map(p => p.activity_score);
 
-  // Handle cluster click events to show summary for smaller clusters
+  // Handle cluster click events with better UX for smaller clusters
   useEffect(() => {
     if (!clusterRef.current) return;
     
     const handleClusterClick = (e: any) => {
       const cluster = e.layer;
       const childCount = cluster.getChildCount();
+      const map = clusterRef.current._group._map;
       
-      // For smaller clusters (< 100), show a summary popup before spiderfying
-      if (childCount < 100 && childCount > 1) {
+      // For very small clusters (≤5), immediately spiderfy without zooming
+      if (childCount <= 5) {
+        cluster.spiderfy();
+        return;
+      }
+      
+      // For small to medium clusters (6-50), zoom in closer and spiderfy for immediate interaction
+      if (childCount <= 50) {
+        // Get the bounds of all child markers
+        const childMarkers = cluster.getAllChildMarkers();
+        const bounds = L.latLngBounds(childMarkers.map((m: any) => m.getLatLng()));
+        
+        // Zoom to show all markers with good spacing
+        map.fitBounds(bounds, {
+          padding: [50, 50],
+          maxZoom: 16 // Ensure we zoom in close enough to see details
+        });
+        
+        // Spiderfy after a brief delay to let zoom animation complete
+        setTimeout(() => {
+          cluster.spiderfy();
+        }, 300);
+        return;
+      }
+      
+      // For medium clusters (51-100), show a preview popup and zoom
+      if (childCount <= 100) {
         const childMarkers = cluster.getAllChildMarkers();
         const areas = childMarkers.slice(0, 10); // Show first 10
         
@@ -107,13 +133,29 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
           popupContent += `<div class="text-gray-500 text-xs mt-2">... and ${childCount - 10} more</div>`;
         }
         
-        popupContent += `<div class="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-200">Click individual dots to view details</div></div>`;
+        popupContent += `<div class="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-200">Zooming in to show areas...</div></div>`;
         
         cluster.bindPopup(popupContent).openPopup();
+        
+        // Zoom to bounds
+        const bounds = L.latLngBounds(childMarkers.map((m: any) => m.getLatLng()));
+        map.fitBounds(bounds, {
+          padding: [50, 50],
+          maxZoom: 14
+        });
+        
+        // Close popup and spiderfy after zoom completes
+        setTimeout(() => {
+          cluster.closePopup();
+          cluster.spiderfy();
+        }, 500);
+        return;
       }
       
-      // Still spiderfy to allow individual selection
-      cluster.spiderfy();
+      // For large clusters (>100), zoom to bounds to break them up
+      cluster.zoomToBounds({
+        padding: [50, 50]
+      });
     };
     
     clusterRef.current.on('clusterclick', handleClusterClick);
