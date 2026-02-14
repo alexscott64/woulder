@@ -68,6 +68,8 @@ function FitBounds({ points }: { points: HeatMapPoint[] }) {
 }
 
 export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMapProps) {
+  console.log('===== ActivityMap component rendering with', points.length, 'points =====');
+  
   const mapRef = useRef(null);
   const clusterRef = useRef<any>(null);
   const [legendExpanded, setLegendExpanded] = useState(false);
@@ -77,95 +79,106 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
   const zoom = 4;
   
   const allScores = points.map(p => p.activity_score);
-
-  // Handle cluster click events with better UX for smaller clusters
+  
+  // Create a lookup map for faster point lookups in iconCreateFunction
+  const pointsByName = useRef<Map<string, HeatMapPoint>>(new Map());
   useEffect(() => {
-    if (!clusterRef.current) return;
+    pointsByName.current = new Map(points.map(p => [p.name, p]));
+  }, [points]);
+
+  // Callback when cluster group is created
+  const handleClusterGroupCreated = (clusterGroup: any) => {
+    console.log('Cluster group created!', clusterGroup);
+    clusterRef.current = clusterGroup;
     
     const handleClusterClick = (e: any) => {
+      console.log('Cluster click event fired');
+      // Prevent default zoom behavior
+      if (e.originalEvent) {
+        e.originalEvent.stopPropagation();
+      }
+      L.DomEvent.stopPropagation(e);
+      
       const cluster = e.layer;
       const childCount = cluster.getChildCount();
-      const map = clusterRef.current._group._map;
       
-      // For very small clusters (≤5), immediately spiderfy without zooming
-      if (childCount <= 5) {
-        cluster.spiderfy();
-        return;
-      }
+      console.log(`Cluster has ${childCount} items`);
       
-      // For small to medium clusters (6-50), zoom in closer and spiderfy for immediate interaction
-      if (childCount <= 50) {
-        // Get the bounds of all child markers
-        const childMarkers = cluster.getAllChildMarkers();
-        const bounds = L.latLngBounds(childMarkers.map((m: any) => m.getLatLng()));
-        
-        // Zoom to show all markers with good spacing
-        map.fitBounds(bounds, {
-          padding: [50, 50],
-          maxZoom: 16 // Ensure we zoom in close enough to see details
-        });
-        
-        // Spiderfy after a brief delay to let zoom animation complete
-        setTimeout(() => {
-          cluster.spiderfy();
-        }, 300);
-        return;
-      }
+      // Get all child markers and extract their data
+      const childMarkers = cluster.getAllChildMarkers();
       
-      // For medium clusters (51-100), show a preview popup and zoom
-      if (childCount <= 100) {
-        const childMarkers = cluster.getAllChildMarkers();
-        const areas = childMarkers.slice(0, 10); // Show first 10
-        
-        let popupContent = `<div class="p-2 max-w-xs">
-          <h3 class="font-bold text-base mb-2">${childCount} ${childCount === 1 ? 'Area' : 'Areas'}</h3>
-          <div class="space-y-1 text-sm max-h-60 overflow-y-auto">`;
-        
-        areas.forEach((marker: any) => {
-          const pathOptions: any = marker.options?.pathOptions || {};
-          const areaName = pathOptions.areaName || 'Unknown Area';
-          popupContent += `<div class="py-1 border-b border-gray-200 last:border-0">
-            <div class="font-medium text-gray-900">${areaName}</div>
-          </div>`;
-        });
-        
-        if (childCount > 10) {
-          popupContent += `<div class="text-gray-500 text-xs mt-2">... and ${childCount - 10} more</div>`;
+      // Calculate aggregate statistics
+      let totalTicks = 0;
+      let totalActiveRoutes = 0;
+      let totalUniqueClimbers = 0;
+      let totalActivityScore = 0;
+      const areasList: string[] = [];
+      
+      childMarkers.forEach((marker: any) => {
+        const pathOptions: any = marker.options?.pathOptions || {};
+        const point = pointsByName.current.get(pathOptions.areaName);
+        if (point) {
+          totalTicks += point.total_ticks;
+          totalActiveRoutes += point.active_routes;
+          totalUniqueClimbers += point.unique_climbers;
+          totalActivityScore += point.activity_score;
+          areasList.push(point.name);
         }
+      });
+      
+      console.log(`Calculated stats: ${totalTicks} ticks, ${totalActiveRoutes} routes`);
+      
+      // Show aggregated data popup
+      let popupContent = `<div class="p-3 min-w-[280px]" style="font-family: system-ui, -apple-system, sans-serif;">
+        <h3 style="font-weight: bold; font-size: 1.125rem; margin-bottom: 0.75rem; color: #111827; border-bottom: 1px solid #d1d5db; padding-bottom: 0.5rem;">${childCount} Climbing ${childCount === 1 ? 'Area' : 'Areas'}</h3>
         
-        popupContent += `<div class="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-200">Zooming in to show areas...</div></div>`;
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; background-color: #eff6ff; padding: 0.5rem; border-radius: 0.375rem;">
+            <span style="font-size: 0.875rem; font-weight: 500; color: #374151;">Total Activity Score:</span>
+            <span style="font-size: 1rem; font-weight: bold; color: #2563eb;">${totalActivityScore.toLocaleString()}</span>
+          </div>
+          <div style="display: flex; justify-between; align-items: center; background-color: #f9fafb; padding: 0.5rem; border-radius: 0.375rem;">
+            <span style="font-size: 0.875rem; font-weight: 500; color: #374151;">Total Ticks:</span>
+            <span style="font-size: 1rem; font-weight: bold; color: #111827;">${totalTicks.toLocaleString()}</span>
+          </div>
+          <div style="display: flex; justify-between; align-items: center; background-color: #f9fafb; padding: 0.5rem; border-radius: 0.375rem;">
+            <span style="font-size: 0.875rem; font-weight: 500; color: #374151;">Active Routes:</span>
+            <span style="font-size: 1rem; font-weight: bold; color: #111827;">${totalActiveRoutes.toLocaleString()}</span>
+          </div>
+          <div style="display: flex; justify-between; align-items: center; background-color: #f9fafb; padding: 0.5rem; border-radius: 0.375rem;">
+            <span style="font-size: 0.875rem; font-weight: 500; color: #374151;">Unique Climbers:</span>
+            <span style="font-size: 1rem; font-weight: bold; color: #111827;">${totalUniqueClimbers.toLocaleString()}</span>
+          </div>
+        </div>`;
+      
+      // Show list of areas (up to 30)
+      if (childCount <= 30) {
+        popupContent += `<div style="border-top: 1px solid #d1d5db; padding-top: 0.5rem; margin-top: 0.5rem;">
+          <div style="font-size: 0.75rem; font-weight: 600; color: #4b5563; margin-bottom: 0.5rem;">AREAS IN THIS CLUSTER:</div>
+          <div style="display: flex; flex-direction: column; gap: 0.25rem; max-height: 12rem; overflow-y: auto;">`;
         
-        cluster.bindPopup(popupContent).openPopup();
-        
-        // Zoom to bounds
-        const bounds = L.latLngBounds(childMarkers.map((m: any) => m.getLatLng()));
-        map.fitBounds(bounds, {
-          padding: [50, 50],
-          maxZoom: 14
+        areasList.slice(0, 30).forEach((areaName) => {
+          popupContent += `<div style="font-size: 0.75rem; color: #374151; padding: 0.25rem 0.5rem; background-color: #f9fafb; border-radius: 0.25rem;">• ${areaName}</div>`;
         });
         
-        // Close popup and spiderfy after zoom completes
-        setTimeout(() => {
-          cluster.closePopup();
-          cluster.spiderfy();
-        }, 500);
-        return;
+        popupContent += `</div></div>`;
       }
       
-      // For large clusters (>100), zoom to bounds to break them up
-      cluster.zoomToBounds({
-        padding: [50, 50]
-      });
+      popupContent += `<div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb;">
+        💡 Tip: Zoom in further to see individual climbing areas
+      </div></div>`;
+      
+      cluster.bindPopup(popupContent, {
+        maxWidth: 350,
+        className: 'cluster-aggregate-popup'
+      }).openPopup();
+      
+      console.log('Popup should now be visible');
     };
     
-    clusterRef.current.on('clusterclick', handleClusterClick);
-    
-    return () => {
-      if (clusterRef.current) {
-        clusterRef.current.off('clusterclick', handleClusterClick);
-      }
-    };
-  }, []);
+    console.log('Attaching clusterclick handler');
+    clusterGroup.on('clusterclick', handleClusterClick);
+  };
 
   return (
     <div className="h-full w-full relative">
@@ -185,6 +198,7 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
         
         <MarkerClusterGroup
           ref={clusterRef}
+          whenCreated={handleClusterGroupCreated}
           chunkedLoading
           maxClusterRadius={80}
           spiderfyOnMaxZoom={true}
@@ -197,19 +211,52 @@ export function ActivityMap({ points, onAreaClick, selectedAreaId }: ActivityMap
           spiderfyDistanceMultiplier={2}
           iconCreateFunction={(cluster: any) => {
             const count = cluster.getChildCount();
-            let size = 'small';
-            let sizeClass = 'w-10 h-10 text-xs';
             
+            // Simplified approach: determine color based on count tiers
+            // Higher count clusters likely have more recent activity
+            let bgColor = 'bg-blue-500';
+            
+            // Only get child markers for smaller clusters to avoid performance issues
+            if (count <= 50) {
+              const childMarkers = cluster.getAllChildMarkers();
+              let mostRecentTimestamp = 0;
+              
+              // Use cached lookup instead of array.find()
+              for (let i = 0; i < childMarkers.length && i < 20; i++) {
+                const marker = childMarkers[i];
+                const pathOptions: any = marker.options?.pathOptions || {};
+                const point = pointsByName.current.get(pathOptions.areaName);
+                if (point) {
+                  const timestamp = new Date(point.last_activity).getTime();
+                  if (timestamp > mostRecentTimestamp) {
+                    mostRecentTimestamp = timestamp;
+                  }
+                }
+              }
+              
+              if (mostRecentTimestamp > 0) {
+                const daysSince = (Date.now() - mostRecentTimestamp) / (1000 * 60 * 60 * 24);
+                if (daysSince <= 7) bgColor = 'bg-red-500';
+                else if (daysSince <= 30) bgColor = 'bg-orange-500';
+                else if (daysSince <= 90) bgColor = 'bg-yellow-500';
+              }
+            } else {
+              // For large clusters, use a heuristic: very large clusters in popular areas
+              // are more likely to have recent activity
+              if (count > 200) bgColor = 'bg-orange-500';
+              else if (count > 100) bgColor = 'bg-yellow-500';
+            }
+            
+            // Size based on count
+            let sizeClass = 'w-10 h-10 text-xs';
             if (count > 100) {
-              size = 'large';
               sizeClass = 'w-16 h-16 text-lg';
             } else if (count > 20) {
-              size = 'medium';
               sizeClass = 'w-12 h-12 text-sm';
             }
             
             return L.divIcon({
-              html: `<div class="flex items-center justify-center ${sizeClass} bg-blue-500 bg-opacity-80 rounded-full text-white font-bold border-2 border-white shadow-lg">${count}</div>`,
+              html: `<div class="flex items-center justify-center ${sizeClass} ${bgColor} bg-opacity-80 rounded-full text-white font-bold border-2 border-white shadow-lg">${count}</div>`,
               className: 'marker-cluster',
               iconSize: L.point(40, 40, true),
             });

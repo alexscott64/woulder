@@ -249,17 +249,22 @@ func (db *Database) GetAreaActivityDetail(
 	}
 
 	// Recent comments (last 10)
+	// Join through routes to get comments for routes in this area
+	// Strip HTML tags from comment text using regex
 	commentsQuery := `
-		SELECT 
+		SELECT
 			c.id,
 			c.user_name,
-			c.comment_text,
+			REGEXP_REPLACE(
+				REGEXP_REPLACE(c.comment_text, '<[^>]+>', '', 'g'),
+				'\s+', ' ', 'g'
+			) as comment_text,
 			c.commented_at,
 			c.mp_route_id,
 			r.name as route_name
 		FROM woulder.mp_comments c
-		LEFT JOIN woulder.mp_routes r ON c.mp_route_id = r.mp_route_id
-		WHERE c.mp_area_id = $1
+		JOIN woulder.mp_routes r ON c.mp_route_id = r.mp_route_id
+		WHERE r.mp_area_id = $1
 			AND c.commented_at >= $2
 			AND c.commented_at <= $3
 		ORDER BY c.commented_at DESC

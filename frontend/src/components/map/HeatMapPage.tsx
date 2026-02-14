@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { heatMapApi } from '../../services/api';
 import { HeatMapPoint } from '../../types/heatmap';
 import { Calendar, Activity, Loader2, AlertCircle, TrendingUp, Users, Map as MapIcon, List } from 'lucide-react';
-import { ActivityMap } from './ActivityMap';
+import { ActivityMapDeckGL } from './ActivityMapDeckGL';
 import { AreaDetailDrawer } from './AreaDetailDrawer';
 import { RouteTypeFilter } from './RouteTypeFilter';
 
@@ -208,12 +208,14 @@ export function HeatMapPage() {
 
       {/* Map View */}
       {!isLoading && !error && viewMode === 'map' && sortedPoints.length > 0 && (
-        <div className="flex-1 relative">
-          <ActivityMap
-            points={sortedPoints}
-            onAreaClick={setSelectedAreaId}
-            selectedAreaId={selectedAreaId}
-          />
+        <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pb-4 flex-1">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden h-full relative">
+            <ActivityMapDeckGL
+              points={sortedPoints}
+              onAreaClick={setSelectedAreaId}
+              selectedAreaId={selectedAreaId}
+            />
+          </div>
           <AreaDetailDrawer
             areaId={selectedAreaId}
             dateRange={dateRange}
