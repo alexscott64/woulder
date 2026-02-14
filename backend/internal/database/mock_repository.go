@@ -92,9 +92,11 @@ type MockRepository struct {
 	GetMPRoutesByIDsFn                   func(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.MPRoute, error)
 
 	// Heat map mocks
-	GetHeatMapDataFn        func(ctx context.Context, startDate, endDate time.Time, bounds *GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error)
-	GetAreaActivityDetailFn func(ctx context.Context, areaID int64, startDate, endDate time.Time) (*models.AreaActivityDetail, error)
-	GetRoutesByBoundsFn     func(ctx context.Context, bounds GeoBounds, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error)
+	GetHeatMapDataFn           func(ctx context.Context, startDate, endDate time.Time, bounds *GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error)
+	GetAreaActivityDetailFn    func(ctx context.Context, areaID int64, startDate, endDate time.Time) (*models.AreaActivityDetail, error)
+	GetRoutesByBoundsFn        func(ctx context.Context, bounds GeoBounds, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error)
+	GetRouteTicksInDateRangeFn func(ctx context.Context, routeID int64, startDate, endDate time.Time, limit int) ([]models.TickDetail, error)
+	SearchRoutesInAreasFn      func(ctx context.Context, areaIDs []int64, searchQuery string, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error)
 
 	// Health
 	PingFn  func(ctx context.Context) error
@@ -583,6 +585,22 @@ func (m *MockRepository) GetAreaActivityDetail(ctx context.Context, areaID int64
 func (m *MockRepository) GetRoutesByBounds(ctx context.Context, bounds GeoBounds, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error) {
 	if m.GetRoutesByBoundsFn != nil {
 		return m.GetRoutesByBoundsFn(ctx, bounds, startDate, endDate, limit)
+	}
+	return nil, nil
+}
+
+// GetRouteTicksInDateRange mock
+func (m *MockRepository) GetRouteTicksInDateRange(ctx context.Context, routeID int64, startDate, endDate time.Time, limit int) ([]models.TickDetail, error) {
+	if m.GetRouteTicksInDateRangeFn != nil {
+		return m.GetRouteTicksInDateRangeFn(ctx, routeID, startDate, endDate, limit)
+	}
+	return nil, nil
+}
+
+// SearchRoutesInAreas mock
+func (m *MockRepository) SearchRoutesInAreas(ctx context.Context, areaIDs []int64, searchQuery string, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error) {
+	if m.SearchRoutesInAreasFn != nil {
+		return m.SearchRoutesInAreasFn(ctx, areaIDs, searchQuery, startDate, endDate, limit)
 	}
 	return nil, nil
 }

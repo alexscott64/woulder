@@ -217,6 +217,12 @@ func (m *MockHeatMapRepository) Ping(ctx context.Context) error {
 func (m *MockHeatMapRepository) Close() error {
 	return errors.New("not implemented")
 }
+func (m *MockHeatMapRepository) GetRouteTicksInDateRange(ctx context.Context, routeID int64, startDate, endDate time.Time, limit int) ([]models.TickDetail, error) {
+	return nil, errors.New("not implemented")
+}
+func (m *MockHeatMapRepository) SearchRoutesInAreas(ctx context.Context, areaIDs []int64, searchQuery string, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error) {
+	return nil, errors.New("not implemented")
+}
 
 // Tests
 func TestHeatMapService_GetHeatMapData(t *testing.T) {

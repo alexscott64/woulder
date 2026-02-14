@@ -264,6 +264,12 @@ func (m *mockRepository) GetAreaActivityDetail(ctx context.Context, areaID int64
 func (m *mockRepository) GetRoutesByBounds(ctx context.Context, bounds database.GeoBounds, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error) {
 	return nil, nil
 }
+func (m *mockRepository) GetRouteTicksInDateRange(ctx context.Context, routeID int64, startDate, endDate time.Time, limit int) ([]models.TickDetail, error) {
+	return nil, nil
+}
+func (m *mockRepository) SearchRoutesInAreas(ctx context.Context, areaIDs []int64, searchQuery string, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error) {
+	return nil, nil
+}
 
 // TestGetAreaDryingStats_AllDry tests area stats when all routes are dry
 func TestGetAreaDryingStats_AllDry(t *testing.T) {
