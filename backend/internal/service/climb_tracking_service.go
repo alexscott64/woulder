@@ -13,6 +13,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/database/climbing"
 	"github.com/alexscott64/woulder/backend/internal/database/mountainproject"
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/alexscott64/woulder/backend/internal/monitoring"
 	mpClient "github.com/alexscott64/woulder/backend/internal/mountainproject"
 	"github.com/alexscott64/woulder/backend/internal/weather/boulder_drying"
 )
@@ -33,6 +34,7 @@ type ClimbTrackingService struct {
 	mountainProjectRepo mountainproject.Repository
 	climbingRepo        climbing.Repository
 	mpClient            MPClientInterface
+	jobMonitor          *monitoring.JobMonitor
 	syncMutex           sync.Mutex
 	lastSyncTime        time.Time
 	isSyncing           bool
@@ -43,11 +45,13 @@ func NewClimbTrackingService(
 	mountainProjectRepo mountainproject.Repository,
 	climbingRepo climbing.Repository,
 	mpClient MPClientInterface,
+	jobMonitor *monitoring.JobMonitor,
 ) *ClimbTrackingService {
 	return &ClimbTrackingService{
 		mountainProjectRepo: mountainProjectRepo,
 		climbingRepo:        climbingRepo,
 		mpClient:            mpClient,
+		jobMonitor:          jobMonitor,
 	}
 }
 
@@ -690,21 +694,93 @@ func (s *ClimbTrackingService) calculateBoulderGPS(
 
 // SyncNewRoutesForAllStates checks all root areas for new routes and syncs them
 // Uses smart binary-search traversal to minimize API calls
+// Supports checkpoint-based resume for Air hot-reload recovery
 func (s *ClimbTrackingService) SyncNewRoutesForAllStates(ctx context.Context) error {
 	log.Println("Starting new route sync for all states...")
 
-	// Get all state configurations
+	// STEP 1: Check for interrupted job from previous run
+	interrupted, err := s.jobMonitor.GetInterruptedJob(ctx, "route_sync_all_states")
+	if err != nil {
+		log.Printf("Warning: failed to check for interrupted jobs: %v", err)
+	}
+
+	var startIndex int
+	var completedStates []string
+	var totalNewRoutes int
+	var resumingJob *monitoring.JobExecution
+
+	if interrupted != nil {
+		log.Printf("Found interrupted job from %v, attempting to resume...", interrupted.StartedAt)
+		resumingJob = interrupted
+
+		// Extract checkpoint data
+		if checkpoint, ok := interrupted.Metadata["checkpoint"].(map[string]interface{}); ok {
+			if idx, ok := checkpoint["current_state_index"].(float64); ok {
+				startIndex = int(idx)
+			}
+			if states, ok := checkpoint["states_completed"].([]interface{}); ok {
+				for _, s := range states {
+					if str, ok := s.(string); ok {
+						completedStates = append(completedStates, str)
+					}
+				}
+			}
+			if routes, ok := checkpoint["total_new_routes"].(float64); ok {
+				totalNewRoutes = int(routes)
+			}
+			log.Printf("Resuming from state index %d (%d states already completed, %d routes found)",
+				startIndex, len(completedStates), totalNewRoutes)
+		} else {
+			log.Printf("DEBUG: No checkpoint data found in metadata, starting from beginning")
+		}
+	}
+
+	// STEP 2: Get all state configurations
 	states, err := s.mountainProjectRepo.Areas().GetAllStateConfigs(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get state configs: %w", err)
 	}
 
-	successCount := 0
-	failCount := 0
-	totalNewRoutes := 0
+	// STEP 3: Start or resume job monitoring
+	var jobExec *monitoring.JobExecution
+	if resumingJob != nil {
+		// Continue with existing job record
+		jobExec = resumingJob
+		log.Printf("Continuing job execution ID %d", jobExec.ID)
+	} else {
+		// Create new job
+		jobExec, err = s.jobMonitor.StartJob(ctx, "route_sync_all_states", "route_sync", len(states), map[string]interface{}{
+			"checkpoint": map[string]interface{}{
+				"states_completed":    []string{},
+				"current_state_index": 0,
+				"total_new_routes":    0,
+			},
+		})
+		if err != nil {
+			log.Printf("Warning: failed to start job monitoring: %v", err)
+			jobExec = nil
+		}
+	}
 
-	for _, state := range states {
-		log.Printf("Checking state: %s (MP Area ID: %s)", state.StateName, state.MPAreaID)
+	successCount := len(completedStates)
+	failCount := 0
+
+	// STEP 4: Process states starting from checkpoint
+	for i := startIndex; i < len(states); i++ {
+		state := states[i]
+
+		// Check for cancellation
+		select {
+		case <-ctx.Done():
+			if jobExec != nil {
+				s.jobMonitor.MarkJobPaused(ctx, jobExec.ID)
+				log.Printf("Job paused due to context cancellation at state %d/%d", i, len(states))
+			}
+			return ctx.Err()
+		default:
+		}
+
+		log.Printf("Checking state: %s (MP Area ID: %s) [%d/%d]", state.StateName, state.MPAreaID, i+1, len(states))
 
 		newRoutes, err := s.checkAreaForNewRoutes(ctx, state.MPAreaID)
 		if err != nil {
@@ -719,9 +795,41 @@ func (s *ClimbTrackingService) SyncNewRoutesForAllStates(ctx context.Context) er
 		}
 
 		successCount++
+		completedStates = append(completedStates, state.StateName)
+
+		// STEP 5: Save checkpoint after EVERY state (critical for Air hot-reload)
+		if jobExec != nil {
+			checkpointData := map[string]interface{}{
+				"states_completed":    completedStates,
+				"current_state_index": i + 1,
+				"current_state_name":  state.StateName,
+				"total_new_routes":    totalNewRoutes,
+				"states_remaining":    len(states) - (i + 1),
+			}
+
+			if err := s.jobMonitor.SaveCheckpoint(ctx, jobExec.ID, checkpointData); err != nil {
+				log.Printf("Warning: failed to save checkpoint: %v", err)
+			} else {
+				// Only log every 5 states to avoid log spam
+				if (i+1)%5 == 0 || i == 0 {
+					log.Printf("Checkpoint saved: %d/%d states complete", i+1, len(states))
+				}
+			}
+		}
 	}
 
-	log.Printf("New route sync complete: %d states checked, %d new routes found, %d failures", successCount, totalNewRoutes, failCount)
+	// STEP 6: Complete job
+	log.Printf("New route sync complete: %d states checked, %d new routes found, %d failures",
+		successCount, totalNewRoutes, failCount)
+
+	if jobExec != nil {
+		if failCount > 0 {
+			errMsg := fmt.Sprintf("sync completed with %d failures", failCount)
+			s.jobMonitor.FailJob(ctx, jobExec.ID, errMsg)
+			return fmt.Errorf(errMsg)
+		}
+		s.jobMonitor.CompleteJob(ctx, jobExec.ID)
+	}
 
 	if failCount > 0 {
 		return fmt.Errorf("sync completed with %d failures", failCount)
@@ -996,7 +1104,76 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 		return nil
 	}
 
-	log.Printf("Syncing ticks for %d location routes...", len(routeIDs))
+	// STEP 1: Check for interrupted job from previous run
+	jobName := "location_tick_sync"
+	interrupted, err := s.jobMonitor.GetInterruptedJob(ctx, jobName)
+
+	var startIndex int
+	var completedRoutes []string
+	var totalNewTicks int
+	var resumingJob *monitoring.JobExecution
+
+	if interrupted != nil {
+		log.Printf("Found interrupted tick sync job from %v, attempting to resume...", interrupted.StartedAt)
+		resumingJob = interrupted
+
+		// Extract checkpoint data
+		if checkpoint, ok := interrupted.Metadata["checkpoint"].(map[string]interface{}); ok {
+			if idx, ok := checkpoint["current_route_index"].(float64); ok {
+				startIndex = int(idx)
+			}
+			if routes, ok := checkpoint["routes_completed"].([]interface{}); ok {
+				for _, r := range routes {
+					if str, ok := r.(string); ok {
+						completedRoutes = append(completedRoutes, str)
+					}
+				}
+			}
+			if ticks, ok := checkpoint["total_new_ticks"].(float64); ok {
+				totalNewTicks = int(ticks)
+			}
+			log.Printf("Resuming from route index %d (%d routes already completed, %d ticks found)",
+				startIndex, len(completedRoutes), totalNewTicks)
+		} else {
+			log.Printf("No checkpoint data found in metadata, starting from beginning")
+		}
+	}
+
+	// STEP 2: START MONITORING - Create or resume job execution
+	var jobExec *monitoring.JobExecution
+	if resumingJob != nil {
+		jobExec = resumingJob
+		log.Printf("Continuing job execution ID %d", jobExec.ID)
+	} else {
+		jobExec, err = s.jobMonitor.StartJob(ctx, jobName, "location_tick_sync", len(routeIDs), map[string]interface{}{
+			"type": "location_routes",
+			"checkpoint": map[string]interface{}{
+				"routes_completed":    []string{},
+				"current_route_index": 0,
+				"total_new_ticks":     0,
+			},
+		})
+		if err != nil {
+			log.Printf("Warning: failed to start job monitoring: %v", err)
+			jobExec = nil // Continue without monitoring
+		}
+	}
+
+	// Create progress reporter (updates DB every 10 items or every 5 seconds)
+	var reporter *monitoring.ProgressReporter
+	if jobExec != nil {
+		reporter = monitoring.NewProgressReporter(s.jobMonitor, jobExec.ID, len(routeIDs), 10)
+		defer func() {
+			// Final flush to ensure last progress is saved
+			reporter.FlushProgress(ctx)
+		}()
+	}
+
+	if startIndex > 0 {
+		log.Printf("Resuming tick sync for %d location routes (skipping first %d)...", len(routeIDs), startIndex)
+	} else {
+		log.Printf("Syncing ticks for %d location routes...", len(routeIDs))
+	}
 
 	// Load Pacific timezone for Mountain Project dates
 	pacificTZ, err := time.LoadLocation("America/Los_Angeles")
@@ -1005,21 +1182,60 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 		pacificTZ = time.UTC
 	}
 
-	totalNewTicks := 0
-
-	// Sync ticks for each route with rate limiting
+	// STEP 3: Process routes starting from checkpoint
+	routeIndex := 0
 	err = s.rateLimitedSync(ctx, routeIDs, func(routeID string) error {
+		currentIndex := routeIndex
+		routeIndex++
+
+		// Skip routes we've already processed
+		if currentIndex < startIndex {
+			return nil
+		}
+
+		// Check for cancellation
+		select {
+		case <-ctx.Done():
+			if jobExec != nil {
+				s.jobMonitor.MarkJobPaused(ctx, jobExec.ID)
+			}
+			return ctx.Err()
+		default:
+		}
 		// Get last tick timestamp for this route
 		routeIDInt64, _ := strconv.ParseInt(routeID, 10, 64)
-		lastTickTime, err := s.mountainProjectRepo.Ticks().GetLastTimestampForRoute(ctx, routeIDInt64)
-		if err != nil {
-			return fmt.Errorf("failed to get last tick for route %s: %w", routeID, err)
+
+		// Get route name for tracking
+		if jobExec != nil {
+			route, routeErr := s.mountainProjectRepo.Routes().GetByID(ctx, routeIDInt64)
+			if routeErr == nil && route != nil {
+				// Update current route being synced
+				s.jobMonitor.UpdateCurrentItem(ctx, jobExec.ID, map[string]interface{}{
+					"current_route_id":   routeIDInt64,
+					"current_route_name": route.Name,
+					"current_route_type": route.RouteType,
+					"current_rating":     route.Rating,
+				})
+			}
+		}
+
+		lastTickTime, tickErr := s.mountainProjectRepo.Ticks().GetLastTimestampForRoute(ctx, routeIDInt64)
+		if tickErr != nil {
+			// Report progress
+			if reporter != nil {
+				reporter.Increment(ctx, false)
+			}
+			return fmt.Errorf("failed to get last tick for route %s: %w", routeID, tickErr)
 		}
 
 		// Fetch ticks from MP API
-		ticks, err := s.mpClient.GetRouteTicks(routeID)
-		if err != nil {
-			return fmt.Errorf("failed to fetch ticks: %w", err)
+		ticks, tickErr := s.mpClient.GetRouteTicks(routeID)
+		if tickErr != nil {
+			// Report progress
+			if reporter != nil {
+				reporter.Increment(ctx, false)
+			}
+			return fmt.Errorf("failed to fetch ticks: %w", tickErr)
 		}
 
 		// Process only new ticks
@@ -1027,12 +1243,12 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 		for _, tick := range ticks {
 			// Parse tick date
 			var climbedAt time.Time
-			climbedAt, err = time.ParseInLocation("Jan 2, 2006, 3:04 pm", tick.Date, pacificTZ)
-			if err != nil {
-				climbedAt, err = time.ParseInLocation("2006-01-02 15:04:05", tick.Date, pacificTZ)
-				if err != nil {
-					climbedAt, err = time.ParseInLocation("2006-01-02", tick.Date, pacificTZ)
-					if err != nil {
+			climbedAt, tickErr = time.ParseInLocation("Jan 2, 2006, 3:04 pm", tick.Date, pacificTZ)
+			if tickErr != nil {
+				climbedAt, tickErr = time.ParseInLocation("2006-01-02 15:04:05", tick.Date, pacificTZ)
+				if tickErr != nil {
+					climbedAt, tickErr = time.ParseInLocation("2006-01-02", tick.Date, pacificTZ)
+					if tickErr != nil {
 						continue
 					}
 				}
@@ -1064,19 +1280,51 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 				}
 			}
 
-			if err := s.mountainProjectRepo.Ticks().SaveTick(ctx, tickModel); err != nil {
-				log.Printf("Error saving tick for route %s: %v", routeID, err)
+			if tickErr := s.mountainProjectRepo.Ticks().SaveTick(ctx, tickModel); tickErr != nil {
+				log.Printf("Error saving tick for route %s: %v", routeID, tickErr)
 				continue
 			}
 
 			newTickCount++
 		}
-
 		totalNewTicks += newTickCount
+		completedRoutes = append(completedRoutes, routeID)
+
+		// STEP 4: Save checkpoint every 50 routes
+		if jobExec != nil && (currentIndex+1)%50 == 0 {
+			checkpointData := map[string]interface{}{
+				"routes_completed":    completedRoutes,
+				"current_route_index": currentIndex + 1,
+				"total_new_ticks":     totalNewTicks,
+				"routes_remaining":    len(routeIDs) - (currentIndex + 1),
+			}
+
+			if err := s.jobMonitor.SaveCheckpoint(ctx, jobExec.ID, checkpointData); err != nil {
+				log.Printf("Warning: failed to save checkpoint: %v", err)
+			} else {
+				log.Printf("Tick sync checkpoint saved: %d/%d routes complete", currentIndex+1, len(routeIDs))
+			}
+		}
+
+		// Report progress to monitoring system (success)
+		if reporter != nil {
+			reporter.Increment(ctx, true)
+		}
+
 		return nil
 	})
 
 	duration := time.Since(startTime)
+
+	// COMPLETE MONITORING: Mark job as completed or failed
+	if jobExec != nil {
+		if err != nil {
+			s.jobMonitor.FailJob(ctx, jobExec.ID, err.Error())
+		} else {
+			s.jobMonitor.CompleteJob(ctx, jobExec.ID)
+		}
+	}
+
 	if err != nil {
 		return fmt.Errorf("location route tick sync error: %w", err)
 	}
@@ -1102,6 +1350,26 @@ func (s *ClimbTrackingService) SyncLocationRouteComments(ctx context.Context) er
 		return nil
 	}
 
+	// START MONITORING: Create job execution record
+	jobName := "location_comment_sync"
+	jobExec, err := s.jobMonitor.StartJob(ctx, jobName, "location_comment_sync", len(routeIDs), map[string]interface{}{
+		"type": "location_routes",
+	})
+	if err != nil {
+		log.Printf("Warning: failed to start job monitoring: %v", err)
+		jobExec = nil // Continue without monitoring
+	}
+
+	// Create progress reporter (updates DB every 10 items or every 5 seconds)
+	var reporter *monitoring.ProgressReporter
+	if jobExec != nil {
+		reporter = monitoring.NewProgressReporter(s.jobMonitor, jobExec.ID, len(routeIDs), 10)
+		defer func() {
+			// Final flush to ensure last progress is saved
+			reporter.FlushProgress(ctx)
+		}()
+	}
+
 	log.Printf("Syncing comments for %d location routes...", len(routeIDs))
 
 	totalNewComments := 0
@@ -1110,10 +1378,28 @@ func (s *ClimbTrackingService) SyncLocationRouteComments(ctx context.Context) er
 	err = s.rateLimitedSync(ctx, routeIDs, func(routeID string) error {
 		routeIDInt64, _ := strconv.ParseInt(routeID, 10, 64)
 
+		// Get route name for tracking
+		if jobExec != nil {
+			route, routeErr := s.mountainProjectRepo.Routes().GetByID(ctx, routeIDInt64)
+			if routeErr == nil && route != nil {
+				// Update current route being synced
+				s.jobMonitor.UpdateCurrentItem(ctx, jobExec.ID, map[string]interface{}{
+					"current_route_id":   routeIDInt64,
+					"current_route_name": route.Name,
+					"current_route_type": route.RouteType,
+					"current_rating":     route.Rating,
+				})
+			}
+		}
+
 		// Fetch comments from MP API
-		comments, err := s.mpClient.GetRouteComments(routeID)
-		if err != nil {
-			return fmt.Errorf("failed to fetch comments: %w", err)
+		comments, commentErr := s.mpClient.GetRouteComments(routeID)
+		if commentErr != nil {
+			// Report progress
+			if reporter != nil {
+				reporter.Increment(ctx, false)
+			}
+			return fmt.Errorf("failed to fetch comments: %w", commentErr)
 		}
 
 		// Save comments (upsert handles duplicates)
@@ -1123,8 +1409,8 @@ func (s *ClimbTrackingService) SyncLocationRouteComments(ctx context.Context) er
 			userName := comment.GetUserInfo()
 			cleanedText := cleanCommentText(comment.Message)
 
-			if err := s.mountainProjectRepo.Comments().SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, cleanedText, commentedAt); err != nil {
-				log.Printf("Error saving comment for route %s: %v", routeID, err)
+			if commentErr := s.mountainProjectRepo.Comments().SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, cleanedText, commentedAt); commentErr != nil {
+				log.Printf("Error saving comment for route %s: %v", routeID, commentErr)
 				continue
 			}
 
@@ -1132,10 +1418,26 @@ func (s *ClimbTrackingService) SyncLocationRouteComments(ctx context.Context) er
 		}
 
 		totalNewComments += newCommentCount
+
+		// Report progress to monitoring system (success)
+		if reporter != nil {
+			reporter.Increment(ctx, true)
+		}
+
 		return nil
 	})
 
 	duration := time.Since(startTime)
+
+	// COMPLETE MONITORING: Mark job as completed or failed
+	if jobExec != nil {
+		if err != nil {
+			s.jobMonitor.FailJob(ctx, jobExec.ID, err.Error())
+		} else {
+			s.jobMonitor.CompleteJob(ctx, jobExec.ID)
+		}
+	}
+
 	if err != nil {
 		return fmt.Errorf("location route comment sync error: %w", err)
 	}
@@ -1161,6 +1463,26 @@ func (s *ClimbTrackingService) SyncTicksByPriority(ctx context.Context, priority
 		return nil
 	}
 
+	// START MONITORING: Create job execution record
+	jobName := fmt.Sprintf("%s_priority_tick_sync", priority)
+	jobExec, err := s.jobMonitor.StartJob(ctx, jobName, "tick_sync", len(routeIDs), map[string]interface{}{
+		"priority": priority,
+	})
+	if err != nil {
+		log.Printf("Warning: failed to start job monitoring: %v", err)
+		jobExec = nil // Continue without monitoring
+	}
+
+	// Create progress reporter (updates DB every 10 items or every 5 seconds)
+	var reporter *monitoring.ProgressReporter
+	if jobExec != nil {
+		reporter = monitoring.NewProgressReporter(s.jobMonitor, jobExec.ID, len(routeIDs), 10)
+		defer func() {
+			// Final flush to ensure last progress is saved
+			reporter.FlushProgress(ctx)
+		}()
+	}
+
 	log.Printf("Syncing ticks for %d %s priority routes...", len(routeIDs), priority)
 
 	// Load Pacific timezone for Mountain Project dates
@@ -1176,15 +1498,38 @@ func (s *ClimbTrackingService) SyncTicksByPriority(ctx context.Context, priority
 	err = s.rateLimitedSync(ctx, routeIDs, func(routeID string) error {
 		// Get last tick timestamp for this route
 		routeIDInt64, _ := strconv.ParseInt(routeID, 10, 64)
-		lastTickTime, err := s.mountainProjectRepo.Ticks().GetLastTimestampForRoute(ctx, routeIDInt64)
-		if err != nil {
-			return fmt.Errorf("failed to get last tick for route %s: %w", routeID, err)
+
+		// Get route name for tracking
+		if jobExec != nil {
+			route, routeErr := s.mountainProjectRepo.Routes().GetByID(ctx, routeIDInt64)
+			if routeErr == nil && route != nil {
+				// Update current route being synced
+				s.jobMonitor.UpdateCurrentItem(ctx, jobExec.ID, map[string]interface{}{
+					"current_route_id":   routeIDInt64,
+					"current_route_name": route.Name,
+					"current_route_type": route.RouteType,
+					"current_rating":     route.Rating,
+				})
+			}
+		}
+
+		lastTickTime, tickErr := s.mountainProjectRepo.Ticks().GetLastTimestampForRoute(ctx, routeIDInt64)
+		if tickErr != nil {
+			// Report progress
+			if reporter != nil {
+				reporter.Increment(ctx, false)
+			}
+			return fmt.Errorf("failed to get last tick for route %s: %w", routeID, tickErr)
 		}
 
 		// Fetch ticks from MP API
-		ticks, err := s.mpClient.GetRouteTicks(routeID)
-		if err != nil {
-			return fmt.Errorf("failed to fetch ticks: %w", err)
+		ticks, tickErr := s.mpClient.GetRouteTicks(routeID)
+		if tickErr != nil {
+			// Report progress
+			if reporter != nil {
+				reporter.Increment(ctx, false)
+			}
+			return fmt.Errorf("failed to fetch ticks: %w", tickErr)
 		}
 
 		// Process only new ticks
@@ -1192,12 +1537,12 @@ func (s *ClimbTrackingService) SyncTicksByPriority(ctx context.Context, priority
 		for _, tick := range ticks {
 			// Parse tick date
 			var climbedAt time.Time
-			climbedAt, err = time.ParseInLocation("Jan 2, 2006, 3:04 pm", tick.Date, pacificTZ)
-			if err != nil {
-				climbedAt, err = time.ParseInLocation("2006-01-02 15:04:05", tick.Date, pacificTZ)
-				if err != nil {
-					climbedAt, err = time.ParseInLocation("2006-01-02", tick.Date, pacificTZ)
-					if err != nil {
+			climbedAt, tickErr = time.ParseInLocation("Jan 2, 2006, 3:04 pm", tick.Date, pacificTZ)
+			if tickErr != nil {
+				climbedAt, tickErr = time.ParseInLocation("2006-01-02 15:04:05", tick.Date, pacificTZ)
+				if tickErr != nil {
+					climbedAt, tickErr = time.ParseInLocation("2006-01-02", tick.Date, pacificTZ)
+					if tickErr != nil {
 						continue
 					}
 				}
@@ -1229,8 +1574,8 @@ func (s *ClimbTrackingService) SyncTicksByPriority(ctx context.Context, priority
 				}
 			}
 
-			if err := s.mountainProjectRepo.Ticks().SaveTick(ctx, tickModel); err != nil {
-				log.Printf("Error saving tick for route %s: %v", routeID, err)
+			if tickErr := s.mountainProjectRepo.Ticks().SaveTick(ctx, tickModel); tickErr != nil {
+				log.Printf("Error saving tick for route %s: %v", routeID, tickErr)
 				continue
 			}
 
@@ -1238,10 +1583,26 @@ func (s *ClimbTrackingService) SyncTicksByPriority(ctx context.Context, priority
 		}
 
 		totalNewTicks += newTickCount
+
+		// Report progress to monitoring system (success)
+		if reporter != nil {
+			reporter.Increment(ctx, true)
+		}
+
 		return nil
 	})
 
 	duration := time.Since(startTime)
+
+	// COMPLETE MONITORING: Mark job as completed or failed
+	if jobExec != nil {
+		if err != nil {
+			s.jobMonitor.FailJob(ctx, jobExec.ID, err.Error())
+		} else {
+			s.jobMonitor.CompleteJob(ctx, jobExec.ID)
+		}
+	}
+
 	if err != nil {
 		return fmt.Errorf("priority %s tick sync error: %w", priority, err)
 	}
@@ -1267,6 +1628,26 @@ func (s *ClimbTrackingService) SyncCommentsByPriority(ctx context.Context, prior
 		return nil
 	}
 
+	// START MONITORING: Create job execution record
+	jobName := fmt.Sprintf("%s_priority_comment_sync", priority)
+	jobExec, err := s.jobMonitor.StartJob(ctx, jobName, "comment_sync", len(routeIDs), map[string]interface{}{
+		"priority": priority,
+	})
+	if err != nil {
+		log.Printf("Warning: failed to start job monitoring: %v", err)
+		jobExec = nil // Continue without monitoring
+	}
+
+	// Create progress reporter (updates DB every 10 items or every 5 seconds)
+	var reporter *monitoring.ProgressReporter
+	if jobExec != nil {
+		reporter = monitoring.NewProgressReporter(s.jobMonitor, jobExec.ID, len(routeIDs), 10)
+		defer func() {
+			// Final flush to ensure last progress is saved
+			reporter.FlushProgress(ctx)
+		}()
+	}
+
 	log.Printf("Syncing comments for %d %s priority routes...", len(routeIDs), priority)
 
 	totalNewComments := 0
@@ -1276,9 +1657,13 @@ func (s *ClimbTrackingService) SyncCommentsByPriority(ctx context.Context, prior
 		routeIDInt64, _ := strconv.ParseInt(routeID, 10, 64)
 
 		// Fetch comments from MP API
-		comments, err := s.mpClient.GetRouteComments(routeID)
-		if err != nil {
-			return fmt.Errorf("failed to fetch comments: %w", err)
+		comments, commentErr := s.mpClient.GetRouteComments(routeID)
+		if commentErr != nil {
+			// Report progress (failure)
+			if reporter != nil {
+				reporter.Increment(ctx, false)
+			}
+			return fmt.Errorf("failed to fetch comments: %w", commentErr)
 		}
 
 		// Save comments (upsert handles duplicates)
@@ -1288,8 +1673,8 @@ func (s *ClimbTrackingService) SyncCommentsByPriority(ctx context.Context, prior
 			userName := comment.GetUserInfo()
 			cleanedText := cleanCommentText(comment.Message)
 
-			if err := s.mountainProjectRepo.Comments().SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, cleanedText, commentedAt); err != nil {
-				log.Printf("Error saving comment for route %s: %v", routeID, err)
+			if commentErr := s.mountainProjectRepo.Comments().SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, cleanedText, commentedAt); commentErr != nil {
+				log.Printf("Error saving comment for route %s: %v", routeID, commentErr)
 				continue
 			}
 
@@ -1297,10 +1682,26 @@ func (s *ClimbTrackingService) SyncCommentsByPriority(ctx context.Context, prior
 		}
 
 		totalNewComments += newCommentCount
+
+		// Report progress to monitoring system (success)
+		if reporter != nil {
+			reporter.Increment(ctx, true)
+		}
+
 		return nil
 	})
 
 	duration := time.Since(startTime)
+
+	// COMPLETE MONITORING: Mark job as completed or failed
+	if jobExec != nil {
+		if err != nil {
+			s.jobMonitor.FailJob(ctx, jobExec.ID, err.Error())
+		} else {
+			s.jobMonitor.CompleteJob(ctx, jobExec.ID)
+		}
+	}
+
 	if err != nil {
 		return fmt.Errorf("priority %s comment sync error: %w", priority, err)
 	}
