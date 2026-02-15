@@ -5,23 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/alexscott64/woulder/backend/internal/weather/client"
 )
-
-// mockRepository is a mock implementation of the database.Repository interface for testing
-type mockRepository struct {
-	routes              []*models.MPRoute
-	profile             *models.BoulderDryingProfile
-	currentWeather      *models.WeatherData
-	historicalWeather   []models.WeatherData
-	forecastWeather     []models.WeatherData
-	rockTypes           []models.RockType
-	sunExposure         *models.LocationSunExposure
-	location            *models.Location
-	getRoutesWithGPSErr error
-}
 
 // mockBoulderWeatherClient provides mock weather data for boulder drying tests
 type mockBoulderWeatherClient struct {
@@ -31,244 +17,6 @@ type mockBoulderWeatherClient struct {
 
 func (m *mockBoulderWeatherClient) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *client.SunTimes, error) {
 	return m.currentWeather, m.forecastWeather, nil, nil
-}
-
-func (m *mockRepository) GetRoutesWithGPSByArea(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error) {
-	if m.getRoutesWithGPSErr != nil {
-		return nil, m.getRoutesWithGPSErr
-	}
-	return m.routes, nil
-}
-
-func (m *mockRepository) GetBoulderDryingProfile(ctx context.Context, mpRouteID int64) (*models.BoulderDryingProfile, error) {
-	return m.profile, nil
-}
-
-func (m *mockRepository) GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.BoulderDryingProfile, error) {
-	profiles := make(map[int64]*models.BoulderDryingProfile)
-	if m.profile != nil {
-		// For testing, return the same profile for all routes
-		for _, id := range mpRouteIDs {
-			profiles[id] = m.profile
-		}
-	}
-	return profiles, nil
-}
-
-func (m *mockRepository) GetMPRouteByID(ctx context.Context, mpRouteID int64) (*models.MPRoute, error) {
-	for _, route := range m.routes {
-		if route.MPRouteID == mpRouteID {
-			return route, nil
-		}
-	}
-	return nil, nil
-}
-
-func (m *mockRepository) GetMPRoutesByIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.MPRoute, error) {
-	routes := make(map[int64]*models.MPRoute)
-	for _, route := range m.routes {
-		for _, id := range mpRouteIDs {
-			if route.MPRouteID == id {
-				routes[id] = route
-				break
-			}
-		}
-	}
-	return routes, nil
-}
-
-func (m *mockRepository) GetCurrentWeather(ctx context.Context, locationID int) (*models.WeatherData, error) {
-	return m.currentWeather, nil
-}
-
-func (m *mockRepository) GetHistoricalWeather(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error) {
-	return m.historicalWeather, nil
-}
-
-func (m *mockRepository) GetForecastWeather(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error) {
-	return m.forecastWeather, nil
-}
-
-func (m *mockRepository) GetRockTypesByLocation(ctx context.Context, locationID int) ([]models.RockType, error) {
-	return m.rockTypes, nil
-}
-
-func (m *mockRepository) GetSunExposureByLocation(ctx context.Context, locationID int) (*models.LocationSunExposure, error) {
-	return m.sunExposure, nil
-}
-
-// Stub implementations for other Repository methods (not used in these tests)
-func (m *mockRepository) GetAllLocations(ctx context.Context) ([]models.Location, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetLocation(ctx context.Context, id int) (*models.Location, error) {
-	if m.location != nil {
-		return m.location, nil
-	}
-	// Return a default location if not set
-	return &models.Location{
-		ID:        id,
-		Name:      "Test Location",
-		Latitude:  47.6,
-		Longitude: -120.9,
-	}, nil
-}
-func (m *mockRepository) GetLocationsByArea(ctx context.Context, areaID int) ([]models.Location, error) {
-	return nil, nil
-}
-func (m *mockRepository) SaveWeatherData(ctx context.Context, data *models.WeatherData) error {
-	return nil
-}
-func (m *mockRepository) CleanOldWeatherData(ctx context.Context, daysToKeep int) error {
-	return nil
-}
-func (m *mockRepository) DeleteOldWeatherData(ctx context.Context, locationID int, daysToKeep int) error {
-	return nil
-}
-func (m *mockRepository) GetRiversByLocation(ctx context.Context, locationID int) ([]models.River, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetRiverByID(ctx context.Context, id int) (*models.River, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetAllAreas(ctx context.Context) ([]models.Area, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetAreasWithLocationCounts(ctx context.Context) ([]models.AreaWithLocationCount, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetAreaByID(ctx context.Context, id int) (*models.Area, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetPrimaryRockType(ctx context.Context, locationID int) (*models.RockType, error) {
-	return nil, nil
-}
-func (m *mockRepository) SaveMPArea(ctx context.Context, area *models.MPArea) error {
-	return nil
-}
-func (m *mockRepository) SaveMPRoute(ctx context.Context, route *models.MPRoute) error {
-	return nil
-}
-func (m *mockRepository) SaveMPTick(ctx context.Context, tick *models.MPTick) error {
-	return nil
-}
-func (m *mockRepository) UpdateRouteGPS(ctx context.Context, routeID int64, latitude, longitude float64, aspect string) error {
-	return nil
-}
-func (m *mockRepository) GetLastClimbedForLocation(ctx context.Context, locationID int) (*models.LastClimbedInfo, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetClimbHistoryForLocation(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetMPAreaByID(ctx context.Context, mpAreaID int64) (*models.MPArea, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetLastTickTimestampForRoute(ctx context.Context, routeID int64) (*time.Time, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetAllRouteIDsForLocation(ctx context.Context, locationID int) ([]int64, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetAreasOrderedByActivity(ctx context.Context, locationID int) ([]models.AreaActivitySummary, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetSubareasOrderedByActivity(ctx context.Context, parentAreaID int64, locationID int) ([]models.AreaActivitySummary, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetRoutesOrderedByActivity(ctx context.Context, areaID int64, locationID int, limit int) ([]models.RouteActivitySummary, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetRecentTicksForRoute(ctx context.Context, routeID int64, limit int) ([]models.ClimbHistoryEntry, error) {
-	return nil, nil
-}
-func (m *mockRepository) SearchInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.SearchResult, error) {
-	return nil, nil
-}
-func (m *mockRepository) SearchRoutesInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error) {
-	return nil, nil
-}
-func (m *mockRepository) SaveBoulderDryingProfile(ctx context.Context, profile *models.BoulderDryingProfile) error {
-	return nil
-}
-func (m *mockRepository) GetLocationByID(ctx context.Context, locationID int) (*models.Location, error) {
-	return nil, nil
-}
-func (m *mockRepository) Ping(ctx context.Context) error {
-	return nil
-}
-func (m *mockRepository) SaveAreaComment(ctx context.Context, mpCommentID, mpAreaID int64, userName, commentText string, commentedAt time.Time) error {
-	return nil
-}
-func (m *mockRepository) SaveRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName, commentText string, commentedAt time.Time) error {
-	return nil
-}
-func (m *mockRepository) Close() error {
-	return nil
-}
-func (m *mockRepository) UpdateAreaRouteCount(ctx context.Context, mpAreaID string, total int) error {
-	return nil
-}
-func (m *mockRepository) GetAreaRouteCount(ctx context.Context, mpAreaID string) (int, error) {
-	return 0, nil
-}
-func (m *mockRepository) GetChildAreas(ctx context.Context, parentMPAreaID string) ([]struct {
-	MPAreaID string
-	Name     string
-}, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetRouteIDsForArea(ctx context.Context, mpAreaID string) ([]string, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetAllStateConfigs(ctx context.Context) ([]struct {
-	StateName string
-	MPAreaID  string
-	IsActive  bool
-}, error) {
-	return nil, nil
-}
-func (m *mockRepository) UpsertRoute(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error {
-	return nil
-}
-func (m *mockRepository) UpsertTick(ctx context.Context, mpRouteID int64, userName string, climbedAt time.Time, style string, comment *string) error {
-	return nil
-}
-func (m *mockRepository) UpsertAreaComment(ctx context.Context, mpCommentID, mpAreaID int64, userName string, userID *string, commentText string, commentedAt time.Time) error {
-	return nil
-}
-func (m *mockRepository) UpsertRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName string, userID *string, commentText string, commentedAt time.Time) error {
-	return nil
-}
-func (m *mockRepository) UpdateRouteSyncPriorities(ctx context.Context) error {
-	return nil
-}
-func (m *mockRepository) GetLocationRoutesDueForSync(ctx context.Context, syncType string) ([]int64, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetRoutesDueForTickSync(ctx context.Context, priority string) ([]int64, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetRoutesDueForCommentSync(ctx context.Context, priority string) ([]int64, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetPriorityDistribution(ctx context.Context) (map[string]int, error) {
-	return make(map[string]int), nil
-}
-func (m *mockRepository) GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *database.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetAreaActivityDetail(ctx context.Context, areaID int64, startDate, endDate time.Time) (*models.AreaActivityDetail, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetRoutesByBounds(ctx context.Context, bounds database.GeoBounds, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error) {
-	return nil, nil
-}
-func (m *mockRepository) GetRouteTicksInDateRange(ctx context.Context, routeID int64, startDate, endDate time.Time, limit int) ([]models.TickDetail, error) {
-	return nil, nil
-}
-func (m *mockRepository) SearchRoutesInAreas(ctx context.Context, areaIDs []int64, searchQuery string, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error) {
-	return nil, nil
 }
 
 // TestGetAreaDryingStats_AllDry tests area stats when all routes are dry
@@ -322,31 +70,64 @@ func TestGetAreaDryingStats_AllDry(t *testing.T) {
 		})
 	}
 
-	mock := &mockRepository{
-		routes: routes,
-		currentWeather: &models.WeatherData{
-			LocationID:    locationID,
-			Timestamp:     now,
-			Temperature:   60.0,
-			Humidity:      50.0,
-			WindSpeed:     5.0,
-			Precipitation: 0.0,
-		},
-		historicalWeather: historicalWeather,
-		rockTypes: []models.RockType{
-			{Name: "Granite", BaseDryingHours: 12.0},
-		},
-		sunExposure: &models.LocationSunExposure{
-			TreeCoveragePercent: 30.0,
-		},
+	currentWeather := &models.WeatherData{
+		LocationID:    locationID,
+		Timestamp:     now,
+		Temperature:   60.0,
+		Humidity:      50.0,
+		WindSpeed:     5.0,
+		Precipitation: 0.0,
 	}
 
-	mockWeather := &mockBoulderWeatherClient{
-		currentWeather:  mock.currentWeather,
+	mockBouldersRepo := &MockBouldersRepository{}
+	mockWeatherRepo := &MockWeatherRepository{
+		GetCurrentFn: func(ctx context.Context, locID int) (*models.WeatherData, error) {
+			return currentWeather, nil
+		},
+		GetHistoricalFn: func(ctx context.Context, locID int, days int) ([]models.WeatherData, error) {
+			return historicalWeather, nil
+		},
+	}
+	mockLocationsRepo := &MockLocationsRepository{
+		GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
+			return &models.Location{
+				ID:        id,
+				Name:      "Test Location",
+				Latitude:  47.6,
+				Longitude: -120.9,
+			}, nil
+		},
+	}
+	mockRocksRepo := &MockRocksRepository{
+		GetRockTypesByLocationFn: func(ctx context.Context, locID int) ([]models.RockType, error) {
+			return []models.RockType{
+				{Name: "Granite", BaseDryingHours: 12.0},
+			}, nil
+		},
+		GetSunExposureByLocationFn: func(ctx context.Context, locID int) (*models.LocationSunExposure, error) {
+			return &models.LocationSunExposure{
+				TreeCoveragePercent: 30.0,
+			}, nil
+		},
+	}
+	mockMPRepo := NewMockMountainProjectRepository()
+	mockMPRepo.routes.GetWithGPSByAreaFn = func(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error) {
+		return routes, nil
+	}
+	mockMPRepo.routes.GetByIDsFn = func(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.MPRoute, error) {
+		routeMap := make(map[int64]*models.MPRoute)
+		for _, route := range routes {
+			routeMap[route.MPRouteID] = route
+		}
+		return routeMap, nil
+	}
+
+	mockWeatherClient := &mockBoulderWeatherClient{
+		currentWeather:  currentWeather,
 		forecastWeather: []models.WeatherData{},
 	}
 
-	service := NewBoulderDryingService(mock, mockWeather)
+	service := NewBoulderDryingService(mockBouldersRepo, mockWeatherRepo, mockLocationsRepo, mockRocksRepo, mockMPRepo, mockWeatherClient)
 	stats, err := service.GetAreaDryingStats(context.Background(), 2001, locationID)
 
 	if err != nil {
@@ -422,46 +203,80 @@ func TestGetAreaDryingStats_Mixed(t *testing.T) {
 	// Historical weather: rain at different times for different routes
 	// Route 1: Last rain 48h ago (dry)
 	// Routes 2-4: Rain 2h ago (wet/drying)
-	mock := &mockRepository{
-		routes: routes,
-		currentWeather: &models.WeatherData{
+	currentWeather := &models.WeatherData{
+		LocationID:    locationID,
+		Timestamp:     now,
+		Temperature:   60.0,
+		Humidity:      50.0,
+		WindSpeed:     5.0,
+		Precipitation: 0.0,
+	}
+	historicalWeather := []models.WeatherData{
+		{
 			LocationID:    locationID,
-			Timestamp:     now,
-			Temperature:   60.0,
-			Humidity:      50.0,
-			WindSpeed:     5.0,
-			Precipitation: 0.0,
+			Timestamp:     now.Add(-48 * time.Hour),
+			Temperature:   55.0,
+			Humidity:      80.0,
+			Precipitation: 0.3, // Old rain
 		},
-		historicalWeather: []models.WeatherData{
-			{
-				LocationID:    locationID,
-				Timestamp:     now.Add(-48 * time.Hour),
-				Temperature:   55.0,
-				Humidity:      80.0,
-				Precipitation: 0.3, // Old rain
-			},
-			{
-				LocationID:    locationID,
-				Timestamp:     now.Add(-2 * time.Hour),
-				Temperature:   58.0,
-				Humidity:      70.0,
-				Precipitation: 0.5, // Recent rain
-			},
-		},
-		rockTypes: []models.RockType{
-			{Name: "Granite", BaseDryingHours: 12.0},
-		},
-		sunExposure: &models.LocationSunExposure{
-			TreeCoveragePercent: 30.0,
+		{
+			LocationID:    locationID,
+			Timestamp:     now.Add(-2 * time.Hour),
+			Temperature:   58.0,
+			Humidity:      70.0,
+			Precipitation: 0.5, // Recent rain
 		},
 	}
 
-	mockWeather := &mockBoulderWeatherClient{
-		currentWeather:  mock.currentWeather,
+	mockBouldersRepo := &MockBouldersRepository{}
+	mockWeatherRepo := &MockWeatherRepository{
+		GetCurrentFn: func(ctx context.Context, locID int) (*models.WeatherData, error) {
+			return currentWeather, nil
+		},
+		GetHistoricalFn: func(ctx context.Context, locID int, days int) ([]models.WeatherData, error) {
+			return historicalWeather, nil
+		},
+	}
+	mockLocationsRepo := &MockLocationsRepository{
+		GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
+			return &models.Location{
+				ID:        id,
+				Name:      "Test Location",
+				Latitude:  47.6,
+				Longitude: -120.9,
+			}, nil
+		},
+	}
+	mockRocksRepo := &MockRocksRepository{
+		GetRockTypesByLocationFn: func(ctx context.Context, locID int) ([]models.RockType, error) {
+			return []models.RockType{
+				{Name: "Granite", BaseDryingHours: 12.0},
+			}, nil
+		},
+		GetSunExposureByLocationFn: func(ctx context.Context, locID int) (*models.LocationSunExposure, error) {
+			return &models.LocationSunExposure{
+				TreeCoveragePercent: 30.0,
+			}, nil
+		},
+	}
+	mockMPRepo := NewMockMountainProjectRepository()
+	mockMPRepo.routes.GetWithGPSByAreaFn = func(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error) {
+		return routes, nil
+	}
+	mockMPRepo.routes.GetByIDsFn = func(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.MPRoute, error) {
+		routeMap := make(map[int64]*models.MPRoute)
+		for _, route := range routes {
+			routeMap[route.MPRouteID] = route
+		}
+		return routeMap, nil
+	}
+
+	mockWeatherClient := &mockBoulderWeatherClient{
+		currentWeather:  currentWeather,
 		forecastWeather: []models.WeatherData{},
 	}
 
-	service := NewBoulderDryingService(mock, mockWeather)
+	service := NewBoulderDryingService(mockBouldersRepo, mockWeatherRepo, mockLocationsRepo, mockRocksRepo, mockMPRepo, mockWeatherClient)
 	stats, err := service.GetAreaDryingStats(context.Background(), 2001, locationID)
 
 	if err != nil {
@@ -494,16 +309,21 @@ func TestGetAreaDryingStats_Mixed(t *testing.T) {
 
 // TestGetAreaDryingStats_NoRoutes tests area stats when area has no routes with GPS
 func TestGetAreaDryingStats_NoRoutes(t *testing.T) {
-	mock := &mockRepository{
-		routes: []*models.MPRoute{}, // Empty
+	mockBouldersRepo := &MockBouldersRepository{}
+	mockWeatherRepo := &MockWeatherRepository{}
+	mockLocationsRepo := &MockLocationsRepository{}
+	mockRocksRepo := &MockRocksRepository{}
+	mockMPRepo := NewMockMountainProjectRepository()
+	mockMPRepo.routes.GetWithGPSByAreaFn = func(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error) {
+		return []*models.MPRoute{}, nil
 	}
 
-	mockWeather := &mockBoulderWeatherClient{
+	mockWeatherClient := &mockBoulderWeatherClient{
 		currentWeather:  nil,
 		forecastWeather: []models.WeatherData{},
 	}
 
-	service := NewBoulderDryingService(mock, mockWeather)
+	service := NewBoulderDryingService(mockBouldersRepo, mockWeatherRepo, mockLocationsRepo, mockRocksRepo, mockMPRepo, mockWeatherClient)
 	stats, err := service.GetAreaDryingStats(context.Background(), 2001, 1)
 
 	if err != nil {
@@ -635,20 +455,56 @@ func TestGetAreaDryingStats_MixedStatus(t *testing.T) {
 		},
 	}
 
-	mock := &mockRepository{
-		routes:            routes,
-		currentWeather:    currentWeather,
-		historicalWeather: historicalWeather,
-		forecastWeather:   forecastWeather,
-		rockTypes:         rockTypes,
+	mockBouldersRepo := &MockBouldersRepository{}
+	mockWeatherRepo := &MockWeatherRepository{
+		GetCurrentFn: func(ctx context.Context, locID int) (*models.WeatherData, error) {
+			return currentWeather, nil
+		},
+		GetHistoricalFn: func(ctx context.Context, locID int, days int) ([]models.WeatherData, error) {
+			return historicalWeather, nil
+		},
+		GetForecastFn: func(ctx context.Context, locID int, hours int) ([]models.WeatherData, error) {
+			return forecastWeather, nil
+		},
+	}
+	mockLocationsRepo := &MockLocationsRepository{
+		GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
+			return &models.Location{
+				ID:        id,
+				Name:      "Test Location",
+				Latitude:  47.6,
+				Longitude: -120.9,
+			}, nil
+		},
+	}
+	mockRocksRepo := &MockRocksRepository{
+		GetRockTypesByLocationFn: func(ctx context.Context, locID int) ([]models.RockType, error) {
+			return rockTypes, nil
+		},
+		GetSunExposureByLocationFn: func(ctx context.Context, locID int) (*models.LocationSunExposure, error) {
+			return &models.LocationSunExposure{
+				TreeCoveragePercent: 30.0,
+			}, nil
+		},
+	}
+	mockMPRepo := NewMockMountainProjectRepository()
+	mockMPRepo.routes.GetWithGPSByAreaFn = func(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error) {
+		return routes, nil
+	}
+	mockMPRepo.routes.GetByIDsFn = func(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.MPRoute, error) {
+		routeMap := make(map[int64]*models.MPRoute)
+		for _, route := range routes {
+			routeMap[route.MPRouteID] = route
+		}
+		return routeMap, nil
 	}
 
-	mockWeather := &mockBoulderWeatherClient{
+	mockWeatherClient := &mockBoulderWeatherClient{
 		currentWeather:  currentWeather,
 		forecastWeather: forecastWeather,
 	}
 
-	service := NewBoulderDryingService(mock, mockWeather)
+	service := NewBoulderDryingService(mockBouldersRepo, mockWeatherRepo, mockLocationsRepo, mockRocksRepo, mockMPRepo, mockWeatherClient)
 	stats, err := service.GetAreaDryingStats(context.Background(), 2001, locationID)
 
 	if err != nil {

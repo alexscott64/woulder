@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/alexscott64/woulder/backend/internal/mountainproject"
 	"github.com/stretchr/testify/assert"
@@ -31,10 +30,10 @@ func createTickWithUser(date, userName, style string) mountainproject.Tick {
 
 // Mock Mountain Project Client
 type MockMPClient struct {
-	GetRouteTicksFn     func(routeID string) ([]mountainproject.Tick, error)
-	GetAreaFn           func(areaID string) (*mountainproject.AreaResponse, error)
-	GetAreaCommentsFn   func(areaID string) ([]mountainproject.Comment, error)
-	GetRouteCommentsFn  func(routeID string) ([]mountainproject.Comment, error)
+	GetRouteTicksFn    func(routeID string) ([]mountainproject.Tick, error)
+	GetAreaFn          func(areaID string) (*mountainproject.AreaResponse, error)
+	GetAreaCommentsFn  func(areaID string) ([]mountainproject.Comment, error)
+	GetRouteCommentsFn func(routeID string) ([]mountainproject.Comment, error)
 }
 
 func (m *MockMPClient) GetRouteTicks(routeID string) ([]mountainproject.Tick, error) {
@@ -121,11 +120,11 @@ func TestClimbTrackingService_GetClimbHistoryForLocation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetClimbHistoryForLocationFn: tt.mockFn,
-			}
+			mockMPRepo := NewMockMountainProjectRepository()
+			mockClimbingRepo := NewMockClimbingRepository()
+			mockClimbingRepo.history.GetClimbHistoryForLocationFn = tt.mockFn
 
-			service := NewClimbTrackingService(mockRepo, &MockMPClient{})
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, &MockMPClient{})
 			history, err := service.GetClimbHistoryForLocation(context.Background(), tt.locID, tt.limit)
 
 			if tt.wantErr {
@@ -221,17 +220,18 @@ func TestClimbTrackingService_SyncNewTicksForLocation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			savedCount := 0
 
-			mockRepo := &database.MockRepository{
-				GetAllRouteIDsForLocationFn: tt.mockGetRoutes,
-				GetLastTickTimestampForRouteFn: tt.mockGetLastFn,
-				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
-					savedCount++
-					if tt.mockSaveTickFn != nil {
-						return tt.mockSaveTickFn(ctx, tick)
-					}
-					return nil
-				},
+			mockMPRepo := NewMockMountainProjectRepository()
+			mockMPRepo.routes.GetAllIDsForLocationFn = tt.mockGetRoutes
+			mockMPRepo.ticks.GetLastTimestampForRouteFn = tt.mockGetLastFn
+			mockMPRepo.ticks.SaveTickFn = func(ctx context.Context, tick *models.MPTick) error {
+				savedCount++
+				if tt.mockSaveTickFn != nil {
+					return tt.mockSaveTickFn(ctx, tick)
+				}
+				return nil
 			}
+
+			mockClimbingRepo := NewMockClimbingRepository()
 
 			mockMPClient := &MockMPClient{
 				GetRouteTicksFn: func(routeID string) ([]mountainproject.Tick, error) {
@@ -239,7 +239,7 @@ func TestClimbTrackingService_SyncNewTicksForLocation(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
 			err := service.SyncNewTicksForLocation(context.Background(), tt.locationID)
 
 			if tt.wantErr {
@@ -253,10 +253,11 @@ func TestClimbTrackingService_SyncNewTicksForLocation(t *testing.T) {
 }
 
 func TestClimbTrackingService_GetSyncStatus(t *testing.T) {
-	mockRepo := &database.MockRepository{}
+	mockMPRepo := NewMockMountainProjectRepository()
+	mockClimbingRepo := NewMockClimbingRepository()
 	mockMPClient := &MockMPClient{}
 
-	service := NewClimbTrackingService(mockRepo, mockMPClient)
+	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
 
 	// Initially not syncing
 	isSyncing, lastSync := service.GetSyncStatus()
@@ -283,16 +284,16 @@ func TestClimbTrackingService_GetSyncStatus(t *testing.T) {
 }
 
 func TestClimbTrackingService_ConcurrentSyncPrevention(t *testing.T) {
-	mockRepo := &database.MockRepository{
-		GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
-			// Simulate slow operation
-			time.Sleep(100 * time.Millisecond)
-			return []int64{}, nil
-		},
+	mockMPRepo := NewMockMountainProjectRepository()
+	mockMPRepo.routes.GetAllIDsForLocationFn = func(ctx context.Context, locationID int) ([]int64, error) {
+		// Simulate slow operation
+		time.Sleep(100 * time.Millisecond)
+		return []int64{}, nil
 	}
+	mockClimbingRepo := NewMockClimbingRepository()
 	mockMPClient := &MockMPClient{}
 
-	service := NewClimbTrackingService(mockRepo, mockMPClient)
+	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
 
 	// Start first sync
 	go func() {
@@ -336,19 +337,20 @@ func TestClimbTrackingService_DateParsing(t *testing.T) {
 			savedCount := 0
 			testTime := time.Now().Add(-1 * time.Hour)
 
-			mockRepo := &database.MockRepository{
-				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
-					return []int64{123}, nil
-				},
-				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
-					oldTime := testTime.Add(-48 * time.Hour)
-					return &oldTime, nil
-				},
-				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
-					savedCount++
-					return nil
-				},
+			mockMPRepo := NewMockMountainProjectRepository()
+			mockMPRepo.routes.GetAllIDsForLocationFn = func(ctx context.Context, locationID int) ([]int64, error) {
+				return []int64{123}, nil
 			}
+			mockMPRepo.ticks.GetLastTimestampForRouteFn = func(ctx context.Context, routeID int64) (*time.Time, error) {
+				oldTime := testTime.Add(-48 * time.Hour)
+				return &oldTime, nil
+			}
+			mockMPRepo.ticks.SaveTickFn = func(ctx context.Context, tick *models.MPTick) error {
+				savedCount++
+				return nil
+			}
+
+			mockClimbingRepo := NewMockClimbingRepository()
 
 			mockMPClient := &MockMPClient{
 				GetRouteTicksFn: func(routeID string) ([]mountainproject.Tick, error) {
@@ -358,7 +360,7 @@ func TestClimbTrackingService_DateParsing(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
 			err := service.SyncNewTicksForLocation(context.Background(), 1)
 
 			assert.NoError(t, err)
@@ -392,7 +394,7 @@ func TestDateParsingWithTimezone(t *testing.T) {
 		{
 			name:         "Late evening Pacific crosses date boundary to next day UTC",
 			inputDate:    "Jan 14, 2026, 11:00 pm",
-			expectedHour: 7, // 11 PM PST = 7 AM UTC next day
+			expectedHour: 7,  // 11 PM PST = 7 AM UTC next day
 			expectedDay:  15, // Crosses to next day in UTC
 		},
 		{
@@ -407,18 +409,19 @@ func TestDateParsingWithTimezone(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			savedTicks := []*models.MPTick{}
 
-			mockRepo := &database.MockRepository{
-				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
-					return []int64{123456789}, nil
-				},
-				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
-					return nil, nil // No previous ticks
-				},
-				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
-					savedTicks = append(savedTicks, tick)
-					return nil
-				},
+			mockMPRepo := NewMockMountainProjectRepository()
+			mockMPRepo.routes.GetAllIDsForLocationFn = func(ctx context.Context, locationID int) ([]int64, error) {
+				return []int64{123456789}, nil
 			}
+			mockMPRepo.ticks.GetLastTimestampForRouteFn = func(ctx context.Context, routeID int64) (*time.Time, error) {
+				return nil, nil // No previous ticks
+			}
+			mockMPRepo.ticks.SaveTickFn = func(ctx context.Context, tick *models.MPTick) error {
+				savedTicks = append(savedTicks, tick)
+				return nil
+			}
+
+			mockClimbingRepo := NewMockClimbingRepository()
 
 			mockMPClient := &MockMPClient{
 				GetRouteTicksFn: func(routeID string) ([]mountainproject.Tick, error) {
@@ -428,7 +431,7 @@ func TestDateParsingWithTimezone(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
 			err := service.SyncNewTicksForLocation(context.Background(), 1)
 
 			assert.NoError(t, err)
@@ -503,18 +506,19 @@ func TestTimezoneConsistencyBetweenSyncs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			savedTicks := []*models.MPTick{}
 
-			mockRepo := &database.MockRepository{
-				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
-					return []int64{100001}, nil
-				},
-				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
-					return &referenceTime, nil
-				},
-				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
-					savedTicks = append(savedTicks, tick)
-					return nil
-				},
+			mockMPRepo := NewMockMountainProjectRepository()
+			mockMPRepo.routes.GetAllIDsForLocationFn = func(ctx context.Context, locationID int) ([]int64, error) {
+				return []int64{100001}, nil
 			}
+			mockMPRepo.ticks.GetLastTimestampForRouteFn = func(ctx context.Context, routeID int64) (*time.Time, error) {
+				return &referenceTime, nil
+			}
+			mockMPRepo.ticks.SaveTickFn = func(ctx context.Context, tick *models.MPTick) error {
+				savedTicks = append(savedTicks, tick)
+				return nil
+			}
+
+			mockClimbingRepo := NewMockClimbingRepository()
 
 			mockMPClient := &MockMPClient{
 				GetRouteTicksFn: func(routeID string) ([]mountainproject.Tick, error) {
@@ -524,7 +528,7 @@ func TestTimezoneConsistencyBetweenSyncs(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
 			err := service.SyncNewTicksForLocation(context.Background(), 1)
 
 			assert.NoError(t, err)
@@ -589,18 +593,19 @@ func TestFutureDateFiltering(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			savedTicks := []*models.MPTick{}
 
-			mockRepo := &database.MockRepository{
-				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
-					return []int64{123456789}, nil
-				},
-				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
-					return nil, nil // No previous ticks
-				},
-				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
-					savedTicks = append(savedTicks, tick)
-					return nil
-				},
+			mockMPRepo := NewMockMountainProjectRepository()
+			mockMPRepo.routes.GetAllIDsForLocationFn = func(ctx context.Context, locationID int) ([]int64, error) {
+				return []int64{123456789}, nil
 			}
+			mockMPRepo.ticks.GetLastTimestampForRouteFn = func(ctx context.Context, routeID int64) (*time.Time, error) {
+				return nil, nil // No previous ticks
+			}
+			mockMPRepo.ticks.SaveTickFn = func(ctx context.Context, tick *models.MPTick) error {
+				savedTicks = append(savedTicks, tick)
+				return nil
+			}
+
+			mockClimbingRepo := NewMockClimbingRepository()
 
 			mockMPClient := &MockMPClient{
 				GetRouteTicksFn: func(routeID string) ([]mountainproject.Tick, error) {
@@ -610,7 +615,7 @@ func TestFutureDateFiltering(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
 			err := service.SyncNewTicksForLocation(context.Background(), 1)
 
 			assert.NoError(t, err)
@@ -680,18 +685,19 @@ func TestCommentCleaning(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			savedTicks := []*models.MPTick{}
 
-			mockRepo := &database.MockRepository{
-				GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
-					return []int64{123456789}, nil
-				},
-				GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
-					return nil, nil
-				},
-				SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
-					savedTicks = append(savedTicks, tick)
-					return nil
-				},
+			mockMPRepo := NewMockMountainProjectRepository()
+			mockMPRepo.routes.GetAllIDsForLocationFn = func(ctx context.Context, locationID int) ([]int64, error) {
+				return []int64{123456789}, nil
 			}
+			mockMPRepo.ticks.GetLastTimestampForRouteFn = func(ctx context.Context, routeID int64) (*time.Time, error) {
+				return nil, nil
+			}
+			mockMPRepo.ticks.SaveTickFn = func(ctx context.Context, tick *models.MPTick) error {
+				savedTicks = append(savedTicks, tick)
+				return nil
+			}
+
+			mockClimbingRepo := NewMockClimbingRepository()
 
 			// Create tick with comment text
 			testTime := time.Now().Add(-1 * time.Hour)
@@ -714,7 +720,7 @@ func TestCommentCleaning(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
 			err := service.SyncNewTicksForLocation(context.Background(), 1)
 
 			assert.NoError(t, err)
@@ -749,18 +755,19 @@ func TestJamieZeldaRailsScenario(t *testing.T) {
 
 	savedTicks := []*models.MPTick{}
 
-	mockRepo := &database.MockRepository{
-		GetAllRouteIDsForLocationFn: func(ctx context.Context, locationID int) ([]int64, error) {
-			return []int64{999888777}, nil
-		},
-		GetLastTickTimestampForRouteFn: func(ctx context.Context, routeID int64) (*time.Time, error) {
-			return nil, nil // No previous ticks
-		},
-		SaveMPTickFn: func(ctx context.Context, tick *models.MPTick) error {
-			savedTicks = append(savedTicks, tick)
-			return nil
-		},
+	mockMPRepo := NewMockMountainProjectRepository()
+	mockMPRepo.routes.GetAllIDsForLocationFn = func(ctx context.Context, locationID int) ([]int64, error) {
+		return []int64{999888777}, nil
 	}
+	mockMPRepo.ticks.GetLastTimestampForRouteFn = func(ctx context.Context, routeID int64) (*time.Time, error) {
+		return nil, nil // No previous ticks
+	}
+	mockMPRepo.ticks.SaveTickFn = func(ctx context.Context, tick *models.MPTick) error {
+		savedTicks = append(savedTicks, tick)
+		return nil
+	}
+
+	mockClimbingRepo := NewMockClimbingRepository()
 
 	mockMPClient := &MockMPClient{
 		GetRouteTicksFn: func(routeID string) ([]mountainproject.Tick, error) {
@@ -770,7 +777,7 @@ func TestJamieZeldaRailsScenario(t *testing.T) {
 		},
 	}
 
-	service := NewClimbTrackingService(mockRepo, mockMPClient)
+	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
 	err := service.SyncNewTicksForLocation(context.Background(), 2) // Location 2 is Index, WA
 
 	assert.NoError(t, err)

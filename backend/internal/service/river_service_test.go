@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/alexscott64/woulder/backend/internal/rivers"
 	"github.com/stretchr/testify/assert"
@@ -53,13 +52,13 @@ func TestRiverService_GetRiverDataForLocation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetRiversByLocationFn: tt.mockRepoFn,
+			mockRiversRepo := &MockRiversRepository{
+				GetByLocationFn: tt.mockRepoFn,
 			}
 
 			// Create a mock USGS client (simplified - in reality you'd mock this too)
 			client := rivers.NewUSGSClient()
-			service := NewRiverService(mockRepo, client)
+			service := NewRiverService(mockRiversRepo, client)
 
 			_, err := service.GetRiverDataForLocation(context.Background(), tt.locationID)
 
@@ -107,12 +106,12 @@ func TestRiverService_GetRiverDataByID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetRiverByIDFn: tt.mockRepoFn,
+			mockRiversRepo := &MockRiversRepository{
+				GetByIDFn: tt.mockRepoFn,
 			}
 
 			client := rivers.NewUSGSClient()
-			service := NewRiverService(mockRepo, client)
+			service := NewRiverService(mockRiversRepo, client)
 
 			_, err := service.GetRiverDataByID(context.Background(), tt.riverID)
 

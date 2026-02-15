@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/stretchr/testify/assert"
 )
@@ -40,11 +39,12 @@ func TestLocationService_GetAllLocations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetAllLocationsFn: tt.mockFn,
+			mockLocationsRepo := &MockLocationsRepository{
+				GetAllFn: tt.mockFn,
 			}
+			mockAreasRepo := &MockAreasRepository{}
 
-			service := NewLocationService(mockRepo)
+			service := NewLocationService(mockLocationsRepo, mockAreasRepo)
 			locations, err := service.GetAllLocations(context.Background())
 
 			if tt.wantErr {
@@ -87,11 +87,12 @@ func TestLocationService_GetLocation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetLocationFn: tt.mockFn,
+			mockLocationsRepo := &MockLocationsRepository{
+				GetByIDFn: tt.mockFn,
 			}
+			mockAreasRepo := &MockAreasRepository{}
 
-			service := NewLocationService(mockRepo)
+			service := NewLocationService(mockLocationsRepo, mockAreasRepo)
 			location, err := service.GetLocation(context.Background(), tt.id)
 
 			if tt.wantErr {
@@ -148,11 +149,12 @@ func TestLocationService_GetLocationsByArea(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetLocationsByAreaFn: tt.mockFn,
+			mockLocationsRepo := &MockLocationsRepository{
+				GetByAreaFn: tt.mockFn,
 			}
+			mockAreasRepo := &MockAreasRepository{}
 
-			service := NewLocationService(mockRepo)
+			service := NewLocationService(mockLocationsRepo, mockAreasRepo)
 			locations, err := service.GetLocationsByArea(context.Background(), tt.areaID)
 
 			if tt.wantErr {
@@ -195,11 +197,12 @@ func TestLocationService_GetAllAreas(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetAllAreasFn: tt.mockFn,
+			mockLocationsRepo := &MockLocationsRepository{}
+			mockAreasRepo := &MockAreasRepository{
+				GetAllFn: tt.mockFn,
 			}
 
-			service := NewLocationService(mockRepo)
+			service := NewLocationService(mockLocationsRepo, mockAreasRepo)
 			areas, err := service.GetAllAreas(context.Background())
 
 			if tt.wantErr {
@@ -242,11 +245,12 @@ func TestLocationService_GetAreasWithLocationCounts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetAreasWithLocationCountsFn: tt.mockFn,
+			mockLocationsRepo := &MockLocationsRepository{}
+			mockAreasRepo := &MockAreasRepository{
+				GetAllWithLocationCountsFn: tt.mockFn,
 			}
 
-			service := NewLocationService(mockRepo)
+			service := NewLocationService(mockLocationsRepo, mockAreasRepo)
 			areas, err := service.GetAreasWithLocationCounts(context.Background())
 
 			if tt.wantErr {
@@ -289,11 +293,12 @@ func TestLocationService_GetAreaByID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetAreaByIDFn: tt.mockFn,
+			mockLocationsRepo := &MockLocationsRepository{}
+			mockAreasRepo := &MockAreasRepository{
+				GetByIDFn: tt.mockFn,
 			}
 
-			service := NewLocationService(mockRepo)
+			service := NewLocationService(mockLocationsRepo, mockAreasRepo)
 			area, err := service.GetAreaByID(context.Background(), tt.id)
 
 			if tt.wantErr {

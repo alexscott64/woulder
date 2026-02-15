@@ -6,9 +6,13 @@ import (
 	"log"
 	"time"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
+	"github.com/alexscott64/woulder/backend/internal/database/boulders"
+	"github.com/alexscott64/woulder/backend/internal/database/locations"
+	"github.com/alexscott64/woulder/backend/internal/database/mountainproject"
+	"github.com/alexscott64/woulder/backend/internal/database/rocks"
+	"github.com/alexscott64/woulder/backend/internal/database/weather"
 	"github.com/alexscott64/woulder/backend/internal/models"
-	"github.com/alexscott64/woulder/backend/internal/weather"
+	weatherPkg "github.com/alexscott64/woulder/backend/internal/weather"
 	"github.com/alexscott64/woulder/backend/internal/weather/boulder_drying"
 	"github.com/alexscott64/woulder/backend/internal/weather/calculator"
 	"github.com/alexscott64/woulder/backend/internal/weather/client"
@@ -21,21 +25,36 @@ type WeatherClientInterface interface {
 }
 
 // Ensure WeatherService implements the interface
-var _ WeatherClientInterface = (*weather.WeatherService)(nil)
+var _ WeatherClientInterface = (*weatherPkg.WeatherService)(nil)
 
 // BoulderDryingService handles boulder-specific drying calculations
 type BoulderDryingService struct {
-	db            *database.Database
-	calculator    *boulder_drying.Calculator
-	weatherClient WeatherClientInterface
+	bouldersRepo        boulders.Repository
+	weatherRepo         weather.Repository
+	locationsRepo       locations.Repository
+	rocksRepo           rocks.Repository
+	mountainProjectRepo mountainproject.Repository
+	calculator          *boulder_drying.Calculator
+	weatherClient       WeatherClientInterface
 }
 
 // NewBoulderDryingService creates a new boulder drying service
-func NewBoulderDryingService(db *database.Database, weatherClient WeatherClientInterface) *BoulderDryingService {
+func NewBoulderDryingService(
+	bouldersRepo boulders.Repository,
+	weatherRepo weather.Repository,
+	locationsRepo locations.Repository,
+	rocksRepo rocks.Repository,
+	mountainProjectRepo mountainproject.Repository,
+	weatherClient WeatherClientInterface,
+) *BoulderDryingService {
 	return &BoulderDryingService{
-		db:            db,
-		calculator:    boulder_drying.NewCalculator(""), // API key no longer used (offline sun calculations)
-		weatherClient: weatherClient,
+		bouldersRepo:        bouldersRepo,
+		weatherRepo:         weatherRepo,
+		locationsRepo:       locationsRepo,
+		rocksRepo:           rocksRepo,
+		mountainProjectRepo: mountainProjectRepo,
+		calculator:          boulder_drying.NewCalculator(""), // API key no longer used (offline sun calculations)
+		weatherClient:       weatherClient,
 	}
 }
 
@@ -56,7 +75,7 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 
 	// Fetch ALL routes in a single query (eliminates N+1 problem)
 	routeFetchStart := time.Now()
-	routesMap, err := s.db.MountainProject().Routes().GetByIDs(ctx, mpRouteIDs)
+	routesMap, err := s.mountainProjectRepo.Routes().GetByIDs(ctx, mpRouteIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch routes: %w", err)
 	}
@@ -64,7 +83,7 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 
 	// Fetch ALL boulder drying profiles in a single query (eliminates N+1 problem)
 	profileFetchStart := time.Now()
-	profilesMap, err := s.db.Boulders().GetProfilesByIDs(ctx, mpRouteIDs)
+	profilesMap, err := s.bouldersRepo.GetProfilesByIDs(ctx, mpRouteIDs)
 	if err != nil {
 		log.Printf("Warning: Failed to fetch boulder drying profiles: %v", err)
 		profilesMap = make(map[int64]*models.BoulderDryingProfile) // Continue with empty profiles
@@ -105,7 +124,7 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 
 		// Get location sun exposure (shared for all routes in this location)
 		sunStart := time.Now()
-		sunExposure, err := s.db.Rocks().GetSunExposureByLocation(ctx, locationID)
+		sunExposure, err := s.rocksRepo.GetSunExposureByLocation(ctx, locationID)
 		if err != nil {
 			log.Printf("Warning: Failed to get sun exposure for location %d: %v", locationID, err)
 			sunExposure = nil
@@ -184,7 +203,7 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 	mpRouteID int64,
 ) (*boulder_drying.BoulderDryingStatus, error) {
 	// Get the route
-	route, err := s.db.MountainProject().Routes().GetByID(ctx, mpRouteID)
+	route, err := s.mountainProjectRepo.Routes().GetByID(ctx, mpRouteID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get route: %w", err)
 	}
@@ -204,14 +223,14 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 	}
 
 	// Get boulder drying profile (if exists)
-	profile, err := s.db.Boulders().GetProfile(ctx, mpRouteID)
+	profile, err := s.bouldersRepo.GetProfile(ctx, mpRouteID)
 	if err != nil {
 		log.Printf("Warning: Failed to get boulder drying profile for %d: %v", mpRouteID, err)
 		profile = nil // Continue without profile
 	}
 
 	// Get location sun exposure (for tree coverage)
-	sunExposure, err := s.db.Rocks().GetSunExposureByLocation(ctx, *route.LocationID)
+	sunExposure, err := s.rocksRepo.GetSunExposureByLocation(ctx, *route.LocationID)
 	if err != nil {
 		log.Printf("Warning: Failed to get sun exposure for location %d: %v", *route.LocationID, err)
 		sunExposure = nil
@@ -245,7 +264,7 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 ) (*models.RockDryingStatus, []models.WeatherData, error) {
 	// Get location for elevation data (needed for snow calculation)
 	locStart := time.Now()
-	location, err := s.db.Locations().GetByID(ctx, locationID)
+	location, err := s.locationsRepo.GetByID(ctx, locationID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get location: %w", err)
 	}
@@ -254,13 +273,13 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	// Use cached weather data from database (updated hourly)
 	// This is much faster than fetching from API and accurate enough for drying calculations
 	weatherStart := time.Now()
-	currentWeather, err := s.db.Weather().GetCurrent(ctx, locationID)
+	currentWeather, err := s.weatherRepo.GetCurrent(ctx, locationID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get current weather from database: %w", err)
 	}
 
 	// Get hourly forecast from database (next 7 days)
-	hourlyForecast, err := s.db.Weather().GetForecast(ctx, locationID, 168) // 7 days = 168 hours
+	hourlyForecast, err := s.weatherRepo.GetForecast(ctx, locationID, 168) // 7 days = 168 hours
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get forecast weather from database: %w", err)
 	}
@@ -268,7 +287,7 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 
 	// Get historical weather (last 7 days) from database
 	histStart := time.Now()
-	historicalWeather, err := s.db.Weather().GetHistorical(ctx, locationID, 7) // 7 days
+	historicalWeather, err := s.weatherRepo.GetHistorical(ctx, locationID, 7) // 7 days
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get historical weather: %w", err)
 	}
@@ -276,7 +295,7 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 
 	// Get rock types
 	rockStart := time.Now()
-	rockTypes, err := s.db.Rocks().GetRockTypesByLocation(ctx, locationID)
+	rockTypes, err := s.rocksRepo.GetRockTypesByLocation(ctx, locationID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get rock types: %w", err)
 	}
@@ -284,7 +303,7 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 
 	// Get sun exposure
 	sunStart := time.Now()
-	sunExposure, err := s.db.Rocks().GetSunExposureByLocation(ctx, locationID)
+	sunExposure, err := s.rocksRepo.GetSunExposureByLocation(ctx, locationID)
 	if err != nil {
 		log.Printf("Warning: Failed to get sun exposure for location %d: %v", locationID, err)
 		sunExposure = nil
@@ -336,7 +355,7 @@ func (s *BoulderDryingService) GetAreaDryingStats(
 	locationID int,
 ) (*models.AreaDryingStats, error) {
 	// Get all routes with GPS in this area (including subareas)
-	routes, err := s.db.MountainProject().Routes().GetWithGPSByArea(ctx, mpAreaID)
+	routes, err := s.mountainProjectRepo.Routes().GetWithGPSByArea(ctx, mpAreaID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get routes for area: %w", err)
 	}
@@ -467,7 +486,7 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 		locationID, time.Since(locationStart), len(areaIDs))
 
 	// Get shared location data (also reused for all areas)
-	sunExposure, err := s.db.Rocks().GetSunExposureByLocation(ctx, locationID)
+	sunExposure, err := s.rocksRepo.GetSunExposureByLocation(ctx, locationID)
 	if err != nil {
 		log.Printf("Warning: Failed to get sun exposure for location %d: %v", locationID, err)
 		sunExposure = nil
@@ -483,7 +502,7 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 	// Fetch ALL routes for ALL areas in a single batch
 	allRouteIDs := []int64{}
 	for _, areaID := range areaIDs {
-		routes, err := s.db.MountainProject().Routes().GetWithGPSByArea(ctx, areaID)
+		routes, err := s.mountainProjectRepo.Routes().GetWithGPSByArea(ctx, areaID)
 		if err != nil {
 			log.Printf("Warning: Failed to get routes for area %d: %v", areaID, err)
 			continue
@@ -496,12 +515,12 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 	log.Printf("[PERF] Fetched %d total routes across %d areas", len(allRouteIDs), len(areaIDs))
 
 	// Batch fetch all route details and profiles
-	routesMap, err := s.db.MountainProject().Routes().GetByIDs(ctx, allRouteIDs)
+	routesMap, err := s.mountainProjectRepo.Routes().GetByIDs(ctx, allRouteIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch routes: %w", err)
 	}
 
-	profilesMap, err := s.db.Boulders().GetProfilesByIDs(ctx, allRouteIDs)
+	profilesMap, err := s.bouldersRepo.GetProfilesByIDs(ctx, allRouteIDs)
 	if err != nil {
 		log.Printf("Warning: Failed to fetch boulder drying profiles: %v", err)
 		profilesMap = make(map[int64]*models.BoulderDryingProfile)
@@ -537,7 +556,7 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 	// Group routes by area and compute stats
 	results := make(map[int64]*models.AreaDryingStats)
 	for _, areaID := range areaIDs {
-		routes, err := s.db.MountainProject().Routes().GetWithGPSByArea(ctx, areaID)
+		routes, err := s.mountainProjectRepo.Routes().GetWithGPSByArea(ctx, areaID)
 		if err != nil || len(routes) == 0 {
 			continue
 		}

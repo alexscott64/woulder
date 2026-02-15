@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/alexscott64/woulder/backend/internal/weather"
 	"github.com/stretchr/testify/assert"
@@ -44,14 +43,20 @@ func TestWeatherService_GetLocationWeather(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetLocationFn: tt.mockLocationFn,
-				SaveWeatherDataFn: func(ctx context.Context, data *models.WeatherData) error {
+			mockWeatherRepo := &MockWeatherRepository{
+				SaveFn: func(ctx context.Context, data *models.WeatherData) error {
 					return nil
 				},
-				GetHistoricalWeatherFn: func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error) {
+				GetHistoricalFn: func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error) {
 					return []models.WeatherData{}, nil
 				},
+			}
+
+			mockLocationsRepo := &MockLocationsRepository{
+				GetByIDFn: tt.mockLocationFn,
+			}
+
+			mockRocksRepo := &MockRocksRepository{
 				GetRockTypesByLocationFn: func(ctx context.Context, locationID int) ([]models.RockType, error) {
 					return []models.RockType{
 						{ID: 1, Name: "Granite", BaseDryingHours: 4.0, PorosityPercent: 1.0},
@@ -69,8 +74,8 @@ func TestWeatherService_GetLocationWeather(t *testing.T) {
 			}
 
 			client := weather.NewWeatherService("test_api_key")
-			mockClimbService := NewClimbTrackingService(mockRepo, &MockMPClient{})
-			service := NewWeatherService(mockRepo, client, mockClimbService)
+			// Pass nil for climb service in tests - it's optional
+			service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, client, nil)
 
 			forecast, err := service.GetLocationWeather(context.Background(), tt.locationID)
 
@@ -106,10 +111,13 @@ func TestWeatherService_GetWeatherByCoordinates(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{}
+			mockWeatherRepo := &MockWeatherRepository{}
+			mockLocationsRepo := &MockLocationsRepository{}
+			mockRocksRepo := &MockRocksRepository{}
+
 			client := weather.NewWeatherService("test_api_key")
-			mockClimbService := NewClimbTrackingService(mockRepo, &MockMPClient{})
-			service := NewWeatherService(mockRepo, client, mockClimbService)
+			// Pass nil for climb service in tests - it's optional
+			service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, client, nil)
 
 			forecast, err := service.GetWeatherByCoordinates(context.Background(), tt.lat, tt.lon)
 
@@ -168,10 +176,19 @@ func TestWeatherService_GetAllWeather(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetAllLocationsFn:    tt.mockLocationsFn,
-				GetLocationsByAreaFn: tt.mockLocationByArea,
-				GetLocationFn: func(ctx context.Context, id int) (*models.Location, error) {
+			mockWeatherRepo := &MockWeatherRepository{
+				SaveFn: func(ctx context.Context, data *models.WeatherData) error {
+					return nil
+				},
+				GetHistoricalFn: func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error) {
+					return []models.WeatherData{}, nil
+				},
+			}
+
+			mockLocationsRepo := &MockLocationsRepository{
+				GetAllFn:    tt.mockLocationsFn,
+				GetByAreaFn: tt.mockLocationByArea,
+				GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
 					return &models.Location{
 						ID:        id,
 						Name:      "Test",
@@ -179,12 +196,9 @@ func TestWeatherService_GetAllWeather(t *testing.T) {
 						Longitude: -122.0,
 					}, nil
 				},
-				SaveWeatherDataFn: func(ctx context.Context, data *models.WeatherData) error {
-					return nil
-				},
-				GetHistoricalWeatherFn: func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error) {
-					return []models.WeatherData{}, nil
-				},
+			}
+
+			mockRocksRepo := &MockRocksRepository{
 				GetRockTypesByLocationFn: func(ctx context.Context, locationID int) ([]models.RockType, error) {
 					return []models.RockType{}, nil
 				},
@@ -194,8 +208,8 @@ func TestWeatherService_GetAllWeather(t *testing.T) {
 			}
 
 			client := weather.NewWeatherService("test_api_key")
-			mockClimbService := NewClimbTrackingService(mockRepo, &MockMPClient{})
-			service := NewWeatherService(mockRepo, client, mockClimbService)
+			// Pass nil for climb service in tests - it's optional
+			service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, client, nil)
 
 			_, err := service.GetAllWeather(context.Background(), tt.areaID)
 
@@ -235,9 +249,18 @@ func TestWeatherService_RefreshAllWeather(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := &database.MockRepository{
-				GetAllLocationsFn: tt.mockLocationsFn,
-				GetLocationFn: func(ctx context.Context, id int) (*models.Location, error) {
+			mockWeatherRepo := &MockWeatherRepository{
+				SaveFn: func(ctx context.Context, data *models.WeatherData) error {
+					return nil
+				},
+				GetHistoricalFn: func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error) {
+					return []models.WeatherData{}, nil
+				},
+			}
+
+			mockLocationsRepo := &MockLocationsRepository{
+				GetAllFn: tt.mockLocationsFn,
+				GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
 					return &models.Location{
 						ID:        id,
 						Name:      "Test",
@@ -245,12 +268,9 @@ func TestWeatherService_RefreshAllWeather(t *testing.T) {
 						Longitude: -122.0,
 					}, nil
 				},
-				SaveWeatherDataFn: func(ctx context.Context, data *models.WeatherData) error {
-					return nil
-				},
-				GetHistoricalWeatherFn: func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error) {
-					return []models.WeatherData{}, nil
-				},
+			}
+
+			mockRocksRepo := &MockRocksRepository{
 				GetRockTypesByLocationFn: func(ctx context.Context, locationID int) ([]models.RockType, error) {
 					return []models.RockType{}, nil
 				},
@@ -260,8 +280,8 @@ func TestWeatherService_RefreshAllWeather(t *testing.T) {
 			}
 
 			client := weather.NewWeatherService("test_api_key")
-			mockClimbService := NewClimbTrackingService(mockRepo, &MockMPClient{})
-			service := NewWeatherService(mockRepo, client, mockClimbService)
+			// Pass nil for climb service in tests - it's optional
+			service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, client, nil)
 
 			err := service.RefreshAllWeather(context.Background())
 
@@ -275,19 +295,24 @@ func TestWeatherService_RefreshAllWeather(t *testing.T) {
 }
 
 func TestWeatherService_RefreshAllWeather_ConcurrentCalls(t *testing.T) {
-	mockRepo := &database.MockRepository{
-		GetAllLocationsFn: func(ctx context.Context) ([]models.Location, error) {
-			time.Sleep(100 * time.Millisecond) // Simulate slow operation
-			return []models.Location{}, nil
-		},
-		GetCurrentWeatherFn: func(ctx context.Context, locationID int) (*models.WeatherData, error) {
+	mockWeatherRepo := &MockWeatherRepository{
+		GetCurrentFn: func(ctx context.Context, locationID int) (*models.WeatherData, error) {
 			return nil, nil // Return nil to force refresh
 		},
 	}
 
+	mockLocationsRepo := &MockLocationsRepository{
+		GetAllFn: func(ctx context.Context) ([]models.Location, error) {
+			time.Sleep(100 * time.Millisecond) // Simulate slow operation
+			return []models.Location{}, nil
+		},
+	}
+
+	mockRocksRepo := &MockRocksRepository{}
+
 	client := weather.NewWeatherService("test_api_key")
-	mockClimbService := NewClimbTrackingService(mockRepo, &MockMPClient{})
-	service := NewWeatherService(mockRepo, client, mockClimbService)
+	// Pass nil for climb service in tests - it's optional
+	service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, client, nil)
 
 	// Start first refresh with forceRefresh=true to bypass freshness check
 	go service.RefreshAllWeatherWithOptions(context.Background(), true)

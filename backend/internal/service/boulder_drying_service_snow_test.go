@@ -24,33 +24,25 @@ func TestGetLocationRockDryingStatus_WithSnow(t *testing.T) {
 	now := time.Now()
 	locationID := 15 // Tramway
 
-	// Create mock repository with snow conditions (like Tramway)
-	mock := &mockRepository{
-		location: &models.Location{
-			ID:          locationID,
-			Name:        "Tramway",
-			Latitude:    33.8,
-			Longitude:   -116.6,
-			ElevationFt: 8500, // High elevation for snow
-		},
-		currentWeather: &models.WeatherData{
-			LocationID:    locationID,
-			Timestamp:     now,
-			Temperature:   30.0, // Freezing
-			Humidity:      80,
-			WindSpeed:     10.0,
-			Precipitation: 0.5, // Active snow
-			Description:   "Slight snow",
-		},
-		historicalWeather: []models.WeatherData{},
-		rockTypes: []models.RockType{
-			{Name: "Tonalite", BaseDryingHours: 12.0, GroupName: "Granite"},
-		},
-		sunExposure: &models.LocationSunExposure{
-			TreeCoveragePercent: 30.0,
-		},
+	location := &models.Location{
+		ID:          locationID,
+		Name:        "Tramway",
+		Latitude:    33.8,
+		Longitude:   -116.6,
+		ElevationFt: 8500, // High elevation for snow
 	}
 
+	currentWeather := &models.WeatherData{
+		LocationID:    locationID,
+		Timestamp:     now,
+		Temperature:   30.0, // Freezing
+		Humidity:      80,
+		WindSpeed:     10.0,
+		Precipitation: 0.5, // Active snow
+		Description:   "Slight snow",
+	}
+
+	historicalWeather := []models.WeatherData{}
 	// Add historical weather with snow accumulation
 	for i := 168; i > 0; i-- {
 		timestamp := now.Add(-time.Duration(i) * time.Hour)
@@ -64,7 +56,7 @@ func TestGetLocationRockDryingStatus_WithSnow(t *testing.T) {
 			desc = "Snow"
 		}
 
-		mock.historicalWeather = append(mock.historicalWeather, models.WeatherData{
+		historicalWeather = append(historicalWeather, models.WeatherData{
 			LocationID:    locationID,
 			Timestamp:     timestamp,
 			Temperature:   temp,
@@ -76,10 +68,10 @@ func TestGetLocationRockDryingStatus_WithSnow(t *testing.T) {
 	}
 
 	// Add forecast weather (needed for snow calculation)
-	mock.forecastWeather = []models.WeatherData{}
+	forecastWeather := []models.WeatherData{}
 	for i := 1; i <= 144; i++ {
 		timestamp := now.Add(time.Duration(i) * time.Hour)
-		mock.forecastWeather = append(mock.forecastWeather, models.WeatherData{
+		forecastWeather = append(forecastWeather, models.WeatherData{
 			LocationID:    locationID,
 			Timestamp:     timestamp,
 			Temperature:   32.0,
@@ -90,13 +82,44 @@ func TestGetLocationRockDryingStatus_WithSnow(t *testing.T) {
 		})
 	}
 
-	// Create mock weather client with the same data as the mock repository
-	mockWeather := &mockWeatherClient{
-		currentWeather:  mock.currentWeather,
-		forecastWeather: mock.forecastWeather,
+	mockBouldersRepo := &MockBouldersRepository{}
+	mockWeatherRepo := &MockWeatherRepository{
+		GetCurrentFn: func(ctx context.Context, locID int) (*models.WeatherData, error) {
+			return currentWeather, nil
+		},
+		GetHistoricalFn: func(ctx context.Context, locID int, days int) ([]models.WeatherData, error) {
+			return historicalWeather, nil
+		},
+		GetForecastFn: func(ctx context.Context, locID int, hours int) ([]models.WeatherData, error) {
+			return forecastWeather, nil
+		},
+	}
+	mockLocationsRepo := &MockLocationsRepository{
+		GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
+			return location, nil
+		},
+	}
+	mockRocksRepo := &MockRocksRepository{
+		GetRockTypesByLocationFn: func(ctx context.Context, locID int) ([]models.RockType, error) {
+			return []models.RockType{
+				{Name: "Tonalite", BaseDryingHours: 12.0, GroupName: "Granite"},
+			}, nil
+		},
+		GetSunExposureByLocationFn: func(ctx context.Context, locID int) (*models.LocationSunExposure, error) {
+			return &models.LocationSunExposure{
+				TreeCoveragePercent: 30.0,
+			}, nil
+		},
+	}
+	mockMPRepo := NewMockMountainProjectRepository()
+
+	// Create mock weather client with the same data
+	mockWeatherClient := &mockWeatherClient{
+		currentWeather:  currentWeather,
+		forecastWeather: forecastWeather,
 	}
 
-	service := NewBoulderDryingService(mock, mockWeather)
+	service := NewBoulderDryingService(mockBouldersRepo, mockWeatherRepo, mockLocationsRepo, mockRocksRepo, mockMPRepo, mockWeatherClient)
 	dryingStatus, _, err := service.getLocationRockDryingStatus(context.Background(), locationID)
 
 	if err != nil {
