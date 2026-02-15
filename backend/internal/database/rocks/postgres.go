@@ -5,17 +5,17 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
+	"github.com/alexscott64/woulder/backend/internal/database/dberrors"
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
 // PostgresRepository implements Repository using PostgreSQL.
 type PostgresRepository struct {
-	db database.DBConn
+	db DBConn
 }
 
 // NewPostgresRepository creates a new PostgreSQL rocks repository.
-func NewPostgresRepository(db database.DBConn) *PostgresRepository {
+func NewPostgresRepository(db DBConn) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
 
@@ -62,13 +62,13 @@ func (r *PostgresRepository) GetPrimaryRockType(ctx context.Context, locationID 
 		// Fallback: if no primary is set, get the first rock type
 		rocks, err := r.GetRockTypesByLocation(ctx, locationID)
 		if err != nil || len(rocks) == 0 {
-			return nil, fmt.Errorf("no rock types found for location %d: %w", locationID, database.ErrNotFound)
+			return nil, fmt.Errorf("no rock types found for location %d: %w", locationID, dberrors.ErrNotFound)
 		}
 		return &rocks[0], nil
 	}
 
 	if err != nil {
-		return nil, database.WrapNotFound(err)
+		return nil, dberrors.WrapNotFound(err)
 	}
 
 	return &rt, nil

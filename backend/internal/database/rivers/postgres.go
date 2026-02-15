@@ -3,19 +3,19 @@ package rivers
 import (
 	"context"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
+	"github.com/alexscott64/woulder/backend/internal/database/dberrors"
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
 // PostgresRepository implements Repository using PostgreSQL.
 type PostgresRepository struct {
-	db database.DBConn
+	db DBConn
 }
 
 // NewPostgresRepository creates a new PostgreSQL river repository.
 // The db parameter can be either *sql.DB or *sql.Tx, allowing this
 // repository to work both standalone and within transactions.
-func NewPostgresRepository(db database.DBConn) *PostgresRepository {
+func NewPostgresRepository(db DBConn) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
 
@@ -78,7 +78,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id int) (*models.River
 	)
 
 	if err != nil {
-		return nil, database.WrapNotFound(err)
+		return nil, dberrors.WrapNotFound(err)
 	}
 
 	return &river, nil

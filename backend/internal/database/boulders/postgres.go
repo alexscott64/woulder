@@ -4,18 +4,17 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/lib/pq"
 )
 
 // PostgresRepository implements Repository using PostgreSQL.
 type PostgresRepository struct {
-	db database.DBConn
+	db DBConn
 }
 
 // NewPostgresRepository creates a new PostgreSQL boulders repository.
-func NewPostgresRepository(db database.DBConn) *PostgresRepository {
+func NewPostgresRepository(db DBConn) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
 

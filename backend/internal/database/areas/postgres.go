@@ -3,17 +3,17 @@ package areas
 import (
 	"context"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
+	"github.com/alexscott64/woulder/backend/internal/database/dberrors"
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
 // PostgresRepository implements Repository using PostgreSQL.
 type PostgresRepository struct {
-	db database.DBConn
+	db DBConn
 }
 
 // NewPostgresRepository creates a new PostgreSQL areas repository.
-func NewPostgresRepository(db database.DBConn) *PostgresRepository {
+func NewPostgresRepository(db DBConn) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
 
@@ -84,7 +84,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id int) (*models.Area,
 	)
 
 	if err != nil {
-		return nil, database.WrapNotFound(err)
+		return nil, dberrors.WrapNotFound(err)
 	}
 
 	return &a, nil

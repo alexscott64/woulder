@@ -1,43 +1,34 @@
 package database
 
-import (
-	"database/sql"
-	"errors"
-)
+import "github.com/alexscott64/woulder/backend/internal/database/dberrors"
 
-// Common database errors that repositories can return.
-// These provide a consistent error interface across all repositories
-// and allow service layer to handle errors uniformly.
+// Re-export common database errors for backwards compatibility.
+// The actual implementations are in the dberrors package to avoid import cycles.
 var (
 	// ErrNotFound indicates that the requested record was not found
-	ErrNotFound = errors.New("database: record not found")
+	ErrNotFound = dberrors.ErrNotFound
 
 	// ErrConflict indicates that a conflict occurred (e.g., unique constraint violation)
-	ErrConflict = errors.New("database: conflict occurred")
+	ErrConflict = dberrors.ErrConflict
 
 	// ErrInvalidInput indicates that the provided input was invalid
-	ErrInvalidInput = errors.New("database: invalid input")
+	ErrInvalidInput = dberrors.ErrInvalidInput
 
 	// ErrTransaction indicates that a transaction error occurred
-	ErrTransaction = errors.New("database: transaction error")
+	ErrTransaction = dberrors.ErrTransaction
 )
 
 // WrapNotFound converts sql.ErrNoRows to our standard ErrNotFound.
-// This provides a clean abstraction layer between database-specific errors
-// and application-level errors.
 func WrapNotFound(err error) error {
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
-	}
-	return err
+	return dberrors.WrapNotFound(err)
 }
 
 // IsNotFound checks if an error represents a not-found condition
 func IsNotFound(err error) bool {
-	return errors.Is(err, ErrNotFound) || errors.Is(err, sql.ErrNoRows)
+	return dberrors.IsNotFound(err)
 }
 
 // IsConflict checks if an error represents a conflict condition
 func IsConflict(err error) bool {
-	return errors.Is(err, ErrConflict)
+	return dberrors.IsConflict(err)
 }

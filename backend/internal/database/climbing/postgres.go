@@ -4,18 +4,17 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
 // PostgresRepository implements Repository using PostgreSQL.
 // Implements the composite pattern with sub-repositories for organization.
 type PostgresRepository struct {
-	db database.DBConn
+	db DBConn
 }
 
 // NewPostgresRepository creates a new PostgreSQL climbing repository.
-func NewPostgresRepository(db database.DBConn) *PostgresRepository {
+func NewPostgresRepository(db DBConn) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
 

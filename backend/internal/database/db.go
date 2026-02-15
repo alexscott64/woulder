@@ -9,6 +9,15 @@ import (
 	"os"
 	"time"
 
+	"github.com/alexscott64/woulder/backend/internal/database/areas"
+	"github.com/alexscott64/woulder/backend/internal/database/boulders"
+	"github.com/alexscott64/woulder/backend/internal/database/climbing"
+	"github.com/alexscott64/woulder/backend/internal/database/heatmap"
+	"github.com/alexscott64/woulder/backend/internal/database/locations"
+	"github.com/alexscott64/woulder/backend/internal/database/mountainproject"
+	"github.com/alexscott64/woulder/backend/internal/database/rivers"
+	"github.com/alexscott64/woulder/backend/internal/database/rocks"
+	"github.com/alexscott64/woulder/backend/internal/database/weather"
 	_ "github.com/lib/pq"
 )
 
@@ -91,4 +100,54 @@ func (db *Database) Close() error {
 
 func (db *Database) Ping(ctx context.Context) error {
 	return db.conn.PingContext(ctx)
+}
+
+// Domain Repository Accessors
+// These methods provide unified access to domain-specific repositories,
+// breaking import cycles by having the database package import domains
+// instead of domains importing database.
+
+// Rivers returns the rivers repository for river data operations.
+func (db *Database) Rivers() rivers.Repository {
+	return rivers.NewPostgresRepository(db.conn)
+}
+
+// Weather returns the weather repository for weather data operations.
+func (db *Database) Weather() weather.Repository {
+	return weather.NewPostgresRepository(db.conn)
+}
+
+// Areas returns the areas repository for geographic area operations.
+func (db *Database) Areas() areas.Repository {
+	return areas.NewPostgresRepository(db.conn)
+}
+
+// Locations returns the locations repository for climbing location operations.
+func (db *Database) Locations() locations.Repository {
+	return locations.NewPostgresRepository(db.conn)
+}
+
+// Rocks returns the rocks repository for rock type and sun exposure operations.
+func (db *Database) Rocks() rocks.Repository {
+	return rocks.NewPostgresRepository(db.conn)
+}
+
+// Boulders returns the boulders repository for boulder drying profile operations.
+func (db *Database) Boulders() boulders.Repository {
+	return boulders.NewPostgresRepository(db.conn)
+}
+
+// HeatMap returns the heatmap repository for activity visualization operations.
+func (db *Database) HeatMap() heatmap.Repository {
+	return heatmap.NewPostgresRepository(db.conn)
+}
+
+// Climbing returns the climbing repository for activity and history operations.
+func (db *Database) Climbing() climbing.Repository {
+	return climbing.NewPostgresRepository(db.conn)
+}
+
+// MountainProject returns the Mountain Project repository for MP data operations.
+func (db *Database) MountainProject() mountainproject.Repository {
+	return mountainproject.NewPostgresRepository(db.conn)
 }

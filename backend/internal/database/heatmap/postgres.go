@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
+	"github.com/alexscott64/woulder/backend/internal/database/dberrors"
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/lib/pq"
 )
 
 // PostgresRepository implements Repository using PostgreSQL.
 type PostgresRepository struct {
-	db database.DBConn
+	db DBConn
 }
 
 // NewPostgresRepository creates a new PostgreSQL heat map repository.
-func NewPostgresRepository(db database.DBConn) *PostgresRepository {
+func NewPostgresRepository(db DBConn) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
 
@@ -121,7 +121,7 @@ func (r *PostgresRepository) GetAreaActivityDetail(
 		&detail.Longitude,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("area not found: %w", database.WrapNotFound(err))
+		return nil, fmt.Errorf("area not found: %w", dberrors.WrapNotFound(err))
 	}
 
 	// Step 2: Get activity statistics
