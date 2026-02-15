@@ -36,12 +36,12 @@ func main() {
 	mpClient := mountainproject.NewClient()
 
 	// Initialize services with dependency injection
-	locationService := service.NewLocationService(db)
-	climbTrackingService := service.NewClimbTrackingService(db, mpClient)
-	weatherServiceLayer := service.NewWeatherService(db, weatherClient, climbTrackingService)
-	riverServiceLayer := service.NewRiverService(db, riverClient)
-	boulderDryingService := service.NewBoulderDryingService(db, weatherClient)
-	heatMapService := service.NewHeatMapService(db)
+	locationService := service.NewLocationService(db.Locations(), db.Areas())
+	climbTrackingService := service.NewClimbTrackingService(db.MountainProject(), db.Climbing(), mpClient)
+	weatherServiceLayer := service.NewWeatherService(db.Weather(), db.Locations(), db.Rocks(), weatherClient, climbTrackingService)
+	riverServiceLayer := service.NewRiverService(db.Rivers(), riverClient)
+	boulderDryingService := service.NewBoulderDryingService(db.Boulders(), db.Weather(), db.Locations(), db.Rocks(), db.MountainProject(), weatherClient)
+	heatMapService := service.NewHeatMapService(db.HeatMap())
 
 	// Initialize API handler with services
 	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService)

@@ -2,10 +2,18 @@
 
 This directory contains the PostgreSQL database setup for Woulder.
 
+## Architecture
+
+The database package uses a **domain accessor pattern** to provide clean, modular access to different data domains (rivers, weather, areas, locations, rocks, boulders, heatmap, climbing, mountainproject). Each domain is independently implemented with its own repository interface.
+
+**See [DOMAIN_ACCESSOR_PATTERN.md](DOMAIN_ACCESSOR_PATTERN.md) for detailed architecture documentation.**
+
 ## Files
 
+- **`db.go`** - Database connection and domain accessors
 - **`setup_postgres.sql`** - Complete database setup file (schema + seed data)
-- **`db.go`** - Database connection and query functions
+- **`dberrors/`** - Common database error types
+- **Domain packages**: `rivers/`, `weather/`, `areas/`, `locations/`, `rocks/`, `boulders/`, `heatmap/`, `climbing/`, `mountainproject/`
 
 ## Automatic Setup
 

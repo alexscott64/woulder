@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
@@ -47,8 +48,6 @@ type Repository interface {
 	UpdateRouteGPS(ctx context.Context, routeID int64, latitude, longitude float64, aspect string) error
 	GetLastClimbedForLocation(ctx context.Context, locationID int) (*models.LastClimbedInfo, error) // DEPRECATED: Use GetClimbHistoryForLocation
 	GetClimbHistoryForLocation(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
-	GetMPAreaByID(ctx context.Context, mpAreaID int64) (*models.MPArea, error)
-	GetMPRouteByID(ctx context.Context, mpRouteID int64) (*models.MPRoute, error)
 	GetLastTickTimestampForRoute(ctx context.Context, routeID int64) (*time.Time, error)
 	GetAllRouteIDsForLocation(ctx context.Context, locationID int) ([]int64, error)
 	GetAreasOrderedByActivity(ctx context.Context, locationID int) ([]models.AreaActivitySummary, error)
@@ -79,6 +78,7 @@ type Repository interface {
 	UpsertRouteComment(ctx context.Context, mpCommentID, mpRouteID int64, userName string, userID *string, commentText string, commentedAt time.Time) error
 
 	// Priority-based sync operations for tick/comment optimization
+	// DEPRECATED: Use MountainProject().Sync() methods instead
 	UpdateRouteSyncPriorities(ctx context.Context) error
 	GetLocationRoutesDueForSync(ctx context.Context, syncType string) ([]int64, error)
 	GetRoutesDueForTickSync(ctx context.Context, priority string) ([]int64, error)
@@ -86,12 +86,21 @@ type Repository interface {
 	GetPriorityDistribution(ctx context.Context) (map[string]int, error)
 
 	// Boulder drying operations
+	// DEPRECATED: Use Boulders() domain methods instead
 	GetBoulderDryingProfile(ctx context.Context, mpRouteID int64) (*models.BoulderDryingProfile, error)
 	GetBoulderDryingProfilesByRouteIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.BoulderDryingProfile, error)
 	SaveBoulderDryingProfile(ctx context.Context, profile *models.BoulderDryingProfile) error
+
+	// Location operations
+	// DEPRECATED: Use Locations() domain methods instead
 	GetLocationByID(ctx context.Context, locationID int) (*models.Location, error)
-	GetRoutesWithGPSByArea(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error)
+
+	// Legacy MP operations - kept for backward compatibility
+	// DEPRECATED: Use MountainProject() domain methods instead
+	GetMPAreaByID(ctx context.Context, mpAreaID int64) (*models.MPArea, error)
+	GetMPRouteByID(ctx context.Context, mpRouteID int64) (*models.MPRoute, error)
 	GetMPRoutesByIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.MPRoute, error)
+	GetRoutesWithGPSByArea(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error)
 
 	// Heat map operations
 	GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error)
@@ -113,6 +122,29 @@ type GeoBounds struct {
 	MaxLat float64
 	MinLon float64
 	MaxLon float64
+}
+
+// Validate checks if the bounds are valid
+func (b *GeoBounds) Validate() error {
+	if b.MinLat < -90 || b.MinLat > 90 {
+		return fmt.Errorf("minLat must be between -90 and 90")
+	}
+	if b.MaxLat < -90 || b.MaxLat > 90 {
+		return fmt.Errorf("maxLat must be between -90 and 90")
+	}
+	if b.MinLon < -180 || b.MinLon > 180 {
+		return fmt.Errorf("minLon must be between -180 and 180")
+	}
+	if b.MaxLon < -180 || b.MaxLon > 180 {
+		return fmt.Errorf("maxLon must be between -180 and 180")
+	}
+	if b.MinLat > b.MaxLat {
+		return fmt.Errorf("minLat must be less than or equal to maxLat")
+	}
+	if b.MinLon > b.MaxLon {
+		return fmt.Errorf("minLon must be less than or equal to maxLon")
+	}
+	return nil
 }
 
 // Ensure Database implements Repository interface at compile time

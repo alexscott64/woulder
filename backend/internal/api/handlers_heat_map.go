@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
+	"github.com/alexscott64/woulder/backend/internal/database/heatmap"
 	"github.com/gin-gonic/gin"
 )
 
@@ -49,7 +49,7 @@ func (h *Handler) GetHeatMapActivity(c *gin.Context) {
 	}
 
 	// Parse optional geographic bounds
-	var bounds *database.GeoBounds
+	var bounds *heatmap.GeoBounds
 	if c.Query("min_lat") != "" {
 		minLat, err1 := strconv.ParseFloat(c.Query("min_lat"), 64)
 		maxLat, err2 := strconv.ParseFloat(c.Query("max_lat"), 64)
@@ -63,7 +63,7 @@ func (h *Handler) GetHeatMapActivity(c *gin.Context) {
 			return
 		}
 
-		bounds = &database.GeoBounds{
+		bounds = &heatmap.GeoBounds{
 			MinLat: minLat, MaxLat: maxLat,
 			MinLon: minLon, MaxLon: maxLon,
 		}
@@ -222,7 +222,7 @@ func (h *Handler) GetHeatMapRoutes(c *gin.Context) {
 		return
 	}
 
-	bounds := database.GeoBounds{
+	bounds := heatmap.GeoBounds{
 		MinLat: minLat, MaxLat: maxLat,
 		MinLon: minLon, MaxLon: maxLon,
 	}

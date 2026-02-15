@@ -1,17 +1,80 @@
-package database
+package climbing
 
-import (
-	"context"
-	"database/sql"
+// SQL queries for climbing activity and history operations.
+// All activity queries use smart date filtering to handle data quality issues:
+// - Adjust dates ~1 year in future (typos: 2026 -> 2025)
+// - Filter dates >30 days in future (bad data)
+// - Only show climbs from past 2 years
 
-	"github.com/alexscott64/woulder/backend/internal/models"
-)
+const (
+	// queryGetLastClimbedForLocation retrieves the most recent climb for a location.
+	// DEPRECATED: Simple query without smart date filtering.
+	queryGetLastClimbedForLocation = `
+		SELECT
+			r.name AS route_name,
+			r.rating AS route_rating,
+			t.climbed_at,
+			t.user_name AS climbed_by,
+			t.style,
+			t.comment,
+			EXTRACT(DAY FROM (NOW() - t.climbed_at))::int AS days_since_climb
+		FROM woulder.mp_ticks t
+		JOIN woulder.mp_routes r ON t.mp_route_id = r.mp_route_id
+		WHERE r.location_id = $1
+		ORDER BY t.climbed_at DESC
+		LIMIT 1
+	`
 
-// GetAreasOrderedByActivity retrieves top-level areas ordered by most recent climb activity
-// Shows children of the root area with aggregated activity from all descendant areas
-// Uses the same smart date filtering as GetClimbHistoryForLocation
-func (db *Database) GetAreasOrderedByActivity(ctx context.Context, locationID int) ([]models.AreaActivitySummary, error) {
-	query := `
+	// queryGetClimbHistoryForLocation retrieves recent climb history with smart filtering.
+	// Uses CTE to adjust future-dated ticks and filter bad data.
+	queryGetClimbHistoryForLocation = `
+		WITH adjusted_ticks AS (
+			SELECT
+				t.mp_route_id,
+				t.user_name,
+				-- Smart date adjustment: if date is 350-380 days in future, subtract 1 year
+				-- This catches typos like "2026" when they meant "2025"
+				CASE
+					WHEN t.climbed_at > NOW() + INTERVAL '350 days'
+					     AND t.climbed_at < NOW() + INTERVAL '380 days'
+					THEN t.climbed_at - INTERVAL '1 year'
+					ELSE t.climbed_at
+				END AS adjusted_climbed_at,
+				t.style,
+				t.comment
+			FROM woulder.mp_ticks t
+			WHERE
+				-- Filter out dates more than 30 days in the future (bad data)
+				t.climbed_at <= NOW() + INTERVAL '30 days'
+				-- Filter out climbs older than 2 years (keep it recent)
+				AND t.climbed_at >= NOW() - INTERVAL '2 years'
+		)
+		SELECT
+			r.mp_route_id,
+			r.name AS route_name,
+			r.rating AS route_rating,
+			r.mp_area_id,
+			a.name AS area_name,
+			at.adjusted_climbed_at AS climbed_at,
+			at.user_name AS climbed_by,
+			at.style,
+			at.comment,
+			EXTRACT(DAY FROM (NOW() - at.adjusted_climbed_at))::int AS days_since_climb
+		FROM adjusted_ticks at
+		JOIN woulder.mp_routes r ON at.mp_route_id = r.mp_route_id
+		JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
+		WHERE r.location_id = $1
+		ORDER BY at.adjusted_climbed_at DESC
+		LIMIT $2
+	`
+
+	// queryGetAreasOrderedByActivity retrieves top-level areas with aggregated activity.
+	// Complex recursive query that:
+	// 1. Finds virtual root areas for the location
+	// 2. Determines top-level areas (root children or roots if multiple)
+	// 3. Recursively aggregates activity from all descendant areas
+	// 4. Orders by most recent activity
+	queryGetAreasOrderedByActivity = `
 		WITH RECURSIVE adjusted_ticks AS (
 			SELECT
 				t.mp_route_id,
@@ -78,44 +141,10 @@ func (db *Database) GetAreasOrderedByActivity(ctx context.Context, locationID in
 		ORDER BY MAX(adj.adjusted_climbed_at) DESC
 	`
 
-	rows, err := db.conn.QueryContext(ctx, query, locationID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var areas []models.AreaActivitySummary
-	for rows.Next() {
-		var area models.AreaActivitySummary
-		err := rows.Scan(
-			&area.MPAreaID,
-			&area.Name,
-			&area.ParentMPAreaID,
-			&area.LastClimbAt,
-			&area.UniqueRoutes,
-			&area.TotalTicks,
-			&area.DaysSinceClimb,
-			&area.HasSubareas,
-			&area.SubareaCount,
-		)
-		if err != nil {
-			return nil, err
-		}
-		areas = append(areas, area)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return areas, nil
-}
-
-// GetSubareasOrderedByActivity retrieves subareas of a parent area ordered by most recent climb activity
-// Recursively aggregates activity from all descendant areas
-// Uses the same smart date filtering as GetClimbHistoryForLocation
-func (db *Database) GetSubareasOrderedByActivity(ctx context.Context, parentAreaID int64, locationID int) ([]models.AreaActivitySummary, error) {
-	query := `
+	// queryGetSubareasOrderedByActivity retrieves subareas with aggregated activity.
+	// Recursively aggregates activity from all descendant areas.
+	// Shows subareas even if they have no activity (uses LEFT JOIN with COALESCE).
+	queryGetSubareasOrderedByActivity = `
 		WITH RECURSIVE adjusted_ticks AS (
 			SELECT
 				t.mp_route_id,
@@ -167,45 +196,10 @@ func (db *Database) GetSubareasOrderedByActivity(ctx context.Context, parentArea
 		ORDER BY MAX(adj.adjusted_climbed_at) DESC NULLS LAST
 	`
 
-	rows, err := db.conn.QueryContext(ctx, query, parentAreaID, locationID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var areas []models.AreaActivitySummary
-	for rows.Next() {
-		var area models.AreaActivitySummary
-		err := rows.Scan(
-			&area.MPAreaID,
-			&area.Name,
-			&area.ParentMPAreaID,
-			&area.LastClimbAt,
-			&area.UniqueRoutes,
-			&area.TotalTicks,
-			&area.DaysSinceClimb,
-			&area.HasSubareas,
-			&area.SubareaCount,
-		)
-		if err != nil {
-			return nil, err
-		}
-		areas = append(areas, area)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return areas, nil
-}
-
-// GetRoutesOrderedByActivity retrieves ALL routes in an area ordered by most recent climb activity
-// Shows routes with ticks first (ordered by recency), then routes without ticks (alphabetically)
-// Includes the most recent tick for each route if it has any
-// Uses the same smart date filtering as GetClimbHistoryForLocation
-func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID int64, locationID int, limit int) ([]models.RouteActivitySummary, error) {
-	query := `
+	// queryGetRoutesOrderedByActivity retrieves ALL routes in an area by activity.
+	// Shows routes with ticks first (by recency), then routes without ticks (alphabetically).
+	// Includes most recent tick for each route using ROW_NUMBER() window function.
+	queryGetRoutesOrderedByActivity = `
 		WITH area_routes AS (
 			-- Filter routes by area and location first
 			SELECT r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name AS area_name
@@ -260,69 +254,8 @@ func (db *Database) GetRoutesOrderedByActivity(ctx context.Context, areaID int64
 		LIMIT $3
 	`
 
-	rows, err := db.conn.QueryContext(ctx, query, areaID, locationID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var routes []models.RouteActivitySummary
-	for rows.Next() {
-		var route models.RouteActivitySummary
-		var climbedBy, style, comment, areaName sql.NullString
-		var climbedAt sql.NullTime
-		var noTicks int
-
-		err := rows.Scan(
-			&route.MPRouteID,
-			&route.Name,
-			&route.Rating,
-			&route.MPAreaID,
-			&route.LastClimbAt,
-			&route.DaysSinceClimb,
-			&climbedBy,
-			&climbedAt,
-			&style,
-			&comment,
-			&areaName,
-			&noTicks,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		// Only populate most recent tick if the route has been climbed
-		if climbedAt.Valid {
-			mostRecentTick := &models.ClimbHistoryEntry{
-				MPRouteID:      route.MPRouteID,
-				RouteName:      route.Name,
-				RouteRating:    route.Rating,
-				MPAreaID:       route.MPAreaID,
-				ClimbedBy:      climbedBy.String,
-				ClimbedAt:      climbedAt.Time,
-				Style:          style.String,
-				AreaName:       areaName.String,
-				DaysSinceClimb: route.DaysSinceClimb,
-			}
-			if comment.Valid {
-				mostRecentTick.Comment = &comment.String
-			}
-			route.MostRecentTick = mostRecentTick
-		}
-
-		routes = append(routes, route)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return routes, nil
-}
-
-// GetRecentTicksForRoute retrieves the most recent ticks for a specific route
-func (db *Database) GetRecentTicksForRoute(ctx context.Context, routeID int64, limit int) ([]models.ClimbHistoryEntry, error) {
-	query := `
+	// queryGetRecentTicksForRoute retrieves the most recent ticks for a specific route.
+	queryGetRecentTicksForRoute = `
 		WITH adjusted_ticks AS (
 			SELECT
 				t.mp_route_id,
@@ -358,55 +291,10 @@ func (db *Database) GetRecentTicksForRoute(ctx context.Context, routeID int64, l
 		LIMIT $2
 	`
 
-	rows, err := db.conn.QueryContext(ctx, query, routeID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var ticks []models.ClimbHistoryEntry
-	for rows.Next() {
-		var tick models.ClimbHistoryEntry
-		var climbedBy, style sql.NullString
-		var comment sql.NullString
-
-		err := rows.Scan(
-			&tick.MPRouteID,
-			&tick.RouteName,
-			&tick.RouteRating,
-			&tick.MPAreaID,
-			&tick.AreaName,
-			&tick.ClimbedAt,
-			&climbedBy,
-			&style,
-			&comment,
-			&tick.DaysSinceClimb,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		// Handle nullable fields
-		tick.ClimbedBy = climbedBy.String // Will be empty string if NULL
-		tick.Style = style.String         // Will be empty string if NULL
-		if comment.Valid {
-			tick.Comment = &comment.String
-		}
-
-		ticks = append(ticks, tick)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return ticks, nil
-}
-
-// SearchInLocation searches all areas and routes in a location by name
-// Returns unified search results (both areas and routes) ordered by most recent climb activity
-func (db *Database) SearchInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.SearchResult, error) {
-	query := `
+	// querySearchInLocation searches areas and routes by name.
+	// Returns unified results (both areas and routes) ordered by activity.
+	// Uses UNION ALL to combine area and route results.
+	querySearchInLocation = `
 		WITH location_routes AS (
 			-- Filter routes by location first
 			SELECT r.mp_route_id, r.name, r.rating, r.mp_area_id
@@ -495,91 +383,9 @@ func (db *Database) SearchInLocation(ctx context.Context, locationID int, search
 		LIMIT $3
 	`
 
-	searchPattern := "%" + searchQuery + "%"
-	rows, err := db.conn.QueryContext(ctx, query, locationID, searchPattern, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var results []models.SearchResult
-	for rows.Next() {
-		var result models.SearchResult
-		var rating, areaName, climbedBy, style, comment sql.NullString
-		var totalTicks, uniqueRoutes sql.NullInt64
-		var climbedAt sql.NullTime
-		var noTicks int
-
-		err := rows.Scan(
-			&result.ResultType,
-			&result.ID,
-			&result.Name,
-			&rating,
-			&result.MPAreaID,
-			&areaName,
-			&result.LastClimbAt,
-			&result.DaysSinceClimb,
-			&totalTicks,
-			&uniqueRoutes,
-			&climbedBy,
-			&climbedAt,
-			&style,
-			&comment,
-			&noTicks,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		// Populate optional fields based on result type
-		if rating.Valid {
-			result.Rating = &rating.String
-		}
-		if areaName.Valid {
-			result.AreaName = &areaName.String
-		}
-		if totalTicks.Valid {
-			ticks := int(totalTicks.Int64)
-			result.TotalTicks = &ticks
-		}
-		if uniqueRoutes.Valid {
-			routes := int(uniqueRoutes.Int64)
-			result.UniqueRoutes = &routes
-		}
-
-		// Only populate most recent tick for routes with activity
-		if result.ResultType == "route" && climbedAt.Valid {
-			mostRecentTick := &models.ClimbHistoryEntry{
-				MPRouteID:      result.ID,
-				RouteName:      result.Name,
-				RouteRating:    *result.Rating,
-				MPAreaID:       result.MPAreaID,
-				ClimbedBy:      climbedBy.String,
-				ClimbedAt:      climbedAt.Time,
-				Style:          style.String,
-				AreaName:       *result.AreaName,
-				DaysSinceClimb: result.DaysSinceClimb,
-			}
-			if comment.Valid {
-				mostRecentTick.Comment = &comment.String
-			}
-			result.MostRecentTick = mostRecentTick
-		}
-
-		results = append(results, result)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return results, nil
-}
-
-// SearchRoutesInLocation searches all routes in a location by name or grade
-// Returns routes ordered by most recent climb activity
-func (db *Database) SearchRoutesInLocation(ctx context.Context, locationID int, searchQuery string, limit int) ([]models.RouteActivitySummary, error) {
-	query := `
+	// querySearchRoutesInLocation searches routes by name, rating, or area name.
+	// Returns routes ordered by recent activity.
+	querySearchRoutesInLocation = `
 		WITH location_routes AS (
 			-- Filter routes by location and search query first
 			SELECT r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name AS area_name
@@ -633,65 +439,4 @@ func (db *Database) SearchRoutesInLocation(ctx context.Context, locationID int, 
 		ORDER BY no_ticks ASC, MAX(at.adjusted_climbed_at) DESC NULLS LAST, lr.name ASC
 		LIMIT $3
 	`
-
-	searchPattern := "%" + searchQuery + "%"
-	rows, err := db.conn.QueryContext(ctx, query, locationID, searchPattern, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var routes []models.RouteActivitySummary
-	for rows.Next() {
-		var route models.RouteActivitySummary
-		var climbedBy, style, comment, areaName sql.NullString
-		var climbedAt sql.NullTime
-		var noTicks int
-
-		err := rows.Scan(
-			&route.MPRouteID,
-			&route.Name,
-			&route.Rating,
-			&route.MPAreaID,
-			&route.LastClimbAt,
-			&route.DaysSinceClimb,
-			&climbedBy,
-			&climbedAt,
-			&style,
-			&comment,
-			&areaName,
-			&noTicks,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		// Only populate most recent tick if the route has been climbed
-		if climbedAt.Valid {
-			mostRecentTick := &models.ClimbHistoryEntry{
-				MPRouteID:      route.MPRouteID,
-				RouteName:      route.Name,
-				RouteRating:    route.Rating,
-				MPAreaID:       route.MPAreaID,
-				ClimbedBy:      climbedBy.String,
-				ClimbedAt:      climbedAt.Time,
-				Style:          style.String,
-				AreaName:       areaName.String,
-				DaysSinceClimb: route.DaysSinceClimb,
-			}
-			if comment.Valid {
-				mostRecentTick.Comment = &comment.String
-			}
-			route.MostRecentTick = mostRecentTick
-		}
-
-		routes = append(routes, route)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return routes, nil
-}
-
+)

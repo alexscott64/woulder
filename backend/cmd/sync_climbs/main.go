@@ -39,7 +39,7 @@ func main() {
 	mpClient := mountainproject.NewClient()
 
 	// Initialize climb tracking service
-	climbService := service.NewClimbTrackingService(db, mpClient)
+	climbService := service.NewClimbTrackingService(db.MountainProject(), db.Climbing(), mpClient)
 
 	// Define area mappings (location ID -> Mountain Project area IDs)
 	// IMPORTANT: These IDs must match the actual database location IDs
@@ -62,12 +62,12 @@ func main() {
 		{
 			LocationName: "Bellingham",
 			LocationID:   4,
-			MPAreaIDs:    []int64{107627792,125093900,108045031,118561215},
+			MPAreaIDs:    []int64{107627792, 125093900, 108045031, 118561215},
 		},
 		{
 			LocationName: "Icicle Creek (Leavenworth)",
 			LocationID:   5,
-			MPAreaIDs:    []int64{105790237,105794001,105790727},
+			MPAreaIDs:    []int64{105790237, 105794001, 105790727},
 		},
 		{
 			LocationName: "Squamish",
@@ -78,7 +78,7 @@ func main() {
 			//   - Apron Boulders (106025685)
 			// Paradise Valley Boulders (110937821) - contains sub-areas
 			// Powerline Boulders (121199811)
-			MPAreaIDs:    []int64{112842712,108506197,106025685,110937821,121199811},
+			MPAreaIDs: []int64{112842712, 108506197, 106025685, 110937821, 121199811},
 		},
 		{
 			LocationName: "Skykomish - Paradise",
@@ -113,7 +113,7 @@ func main() {
 		{
 			LocationName: "Happy / Sad Boulders",
 			LocationID:   13,
-			MPAreaIDs:    []int64{105799640,106068462},
+			MPAreaIDs:    []int64{105799640, 106068462},
 		},
 		{
 			LocationName: "Yosemite",

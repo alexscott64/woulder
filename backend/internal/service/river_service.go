@@ -4,26 +4,26 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alexscott64/woulder/backend/internal/database"
+	"github.com/alexscott64/woulder/backend/internal/database/rivers"
 	"github.com/alexscott64/woulder/backend/internal/models"
-	"github.com/alexscott64/woulder/backend/internal/rivers"
+	riversClient "github.com/alexscott64/woulder/backend/internal/rivers"
 )
 
 type RiverService struct {
-	repo        database.Repository
-	riverClient *rivers.USGSClient
+	riversRepo  rivers.Repository
+	riverClient *riversClient.USGSClient
 }
 
-func NewRiverService(repo database.Repository, client *rivers.USGSClient) *RiverService {
+func NewRiverService(riversRepo rivers.Repository, client *riversClient.USGSClient) *RiverService {
 	return &RiverService{
-		repo:        repo,
+		riversRepo:  riversRepo,
 		riverClient: client,
 	}
 }
 
 func (s *RiverService) GetRiverDataForLocation(ctx context.Context, locationID int) ([]models.RiverData, error) {
 	// 1. Get rivers from database
-	locationRivers, err := s.repo.GetRiversByLocation(ctx, locationID)
+	locationRivers, err := s.riversRepo.GetByLocation(ctx, locationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get rivers for location %d: %w", locationID, err)
 	}
@@ -45,7 +45,7 @@ func (s *RiverService) GetRiverDataForLocation(ctx context.Context, locationID i
 				actualFlowCFS = gaugeFlowCFS / *river.FlowDivisor
 			} else if river.DrainageAreaSqMi != nil && river.GaugeDrainageAreaSqMi != nil {
 				// Drainage area ratio method
-				actualFlowCFS = rivers.EstimateFlowFromDrainageRatio(
+				actualFlowCFS = riversClient.EstimateFlowFromDrainageRatio(
 					gaugeFlowCFS,
 					*river.DrainageAreaSqMi,
 					*river.GaugeDrainageAreaSqMi,
@@ -53,7 +53,7 @@ func (s *RiverService) GetRiverDataForLocation(ctx context.Context, locationID i
 			}
 		}
 
-		status, message, isSafe, percentOfSafe := rivers.CalculateCrossingStatus(river, actualFlowCFS)
+		status, message, isSafe, percentOfSafe := riversClient.CalculateCrossingStatus(river, actualFlowCFS)
 
 		riverDataList = append(riverDataList, models.RiverData{
 			River:         river,
@@ -71,7 +71,7 @@ func (s *RiverService) GetRiverDataForLocation(ctx context.Context, locationID i
 }
 
 func (s *RiverService) GetRiverDataByID(ctx context.Context, riverID int) (*models.RiverData, error) {
-	river, err := s.repo.GetRiverByID(ctx, riverID)
+	river, err := s.riversRepo.GetByID(ctx, riverID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get river %d: %w", riverID, err)
 	}
@@ -87,7 +87,7 @@ func (s *RiverService) GetRiverDataByID(ctx context.Context, riverID int) (*mode
 		if river.FlowDivisor != nil && *river.FlowDivisor > 0 {
 			actualFlowCFS = gaugeFlowCFS / *river.FlowDivisor
 		} else if river.DrainageAreaSqMi != nil && river.GaugeDrainageAreaSqMi != nil {
-			actualFlowCFS = rivers.EstimateFlowFromDrainageRatio(
+			actualFlowCFS = riversClient.EstimateFlowFromDrainageRatio(
 				gaugeFlowCFS,
 				*river.DrainageAreaSqMi,
 				*river.GaugeDrainageAreaSqMi,
@@ -95,7 +95,7 @@ func (s *RiverService) GetRiverDataByID(ctx context.Context, riverID int) (*mode
 		}
 	}
 
-	status, message, isSafe, percentOfSafe := rivers.CalculateCrossingStatus(*river, actualFlowCFS)
+	status, message, isSafe, percentOfSafe := riversClient.CalculateCrossingStatus(*river, actualFlowCFS)
 
 	return &models.RiverData{
 		River:         *river,
