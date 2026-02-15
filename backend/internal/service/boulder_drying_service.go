@@ -56,7 +56,7 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 
 	// Fetch ALL routes in a single query (eliminates N+1 problem)
 	routeFetchStart := time.Now()
-	routesMap, err := s.db.GetMPRoutesByIDs(ctx, mpRouteIDs)
+	routesMap, err := s.db.MountainProject().Routes().GetByIDs(ctx, mpRouteIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch routes: %w", err)
 	}
@@ -184,7 +184,7 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 	mpRouteID int64,
 ) (*boulder_drying.BoulderDryingStatus, error) {
 	// Get the route
-	route, err := s.db.GetMPRouteByID(ctx, mpRouteID)
+	route, err := s.db.MountainProject().Routes().GetByID(ctx, mpRouteID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get route: %w", err)
 	}
@@ -336,7 +336,7 @@ func (s *BoulderDryingService) GetAreaDryingStats(
 	locationID int,
 ) (*models.AreaDryingStats, error) {
 	// Get all routes with GPS in this area (including subareas)
-	routes, err := s.db.GetRoutesWithGPSByArea(ctx, mpAreaID)
+	routes, err := s.db.MountainProject().Routes().GetWithGPSByArea(ctx, mpAreaID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get routes for area: %w", err)
 	}
@@ -483,7 +483,7 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 	// Fetch ALL routes for ALL areas in a single batch
 	allRouteIDs := []int64{}
 	for _, areaID := range areaIDs {
-		routes, err := s.db.GetRoutesWithGPSByArea(ctx, areaID)
+		routes, err := s.db.MountainProject().Routes().GetWithGPSByArea(ctx, areaID)
 		if err != nil {
 			log.Printf("Warning: Failed to get routes for area %d: %v", areaID, err)
 			continue
@@ -496,7 +496,7 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 	log.Printf("[PERF] Fetched %d total routes across %d areas", len(allRouteIDs), len(areaIDs))
 
 	// Batch fetch all route details and profiles
-	routesMap, err := s.db.GetMPRoutesByIDs(ctx, allRouteIDs)
+	routesMap, err := s.db.MountainProject().Routes().GetByIDs(ctx, allRouteIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch routes: %w", err)
 	}
@@ -537,7 +537,7 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 	// Group routes by area and compute stats
 	results := make(map[int64]*models.AreaDryingStats)
 	for _, areaID := range areaIDs {
-		routes, err := s.db.GetRoutesWithGPSByArea(ctx, areaID)
+		routes, err := s.db.MountainProject().Routes().GetWithGPSByArea(ctx, areaID)
 		if err != nil || len(routes) == 0 {
 			continue
 		}

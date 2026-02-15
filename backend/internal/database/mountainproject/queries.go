@@ -82,6 +82,46 @@ const querySaveRoute = `
 		aspect = EXCLUDED.aspect
 `
 
+// queryGetRouteByID retrieves a Mountain Project route by its MP route ID.
+const queryGetRouteByID = `
+	SELECT id, mp_route_id, mp_area_id, name, route_type, rating,
+	       location_id, latitude, longitude, aspect, created_at, updated_at
+	FROM woulder.mp_routes
+	WHERE mp_route_id = $1
+`
+
+// queryGetRoutesByIDs retrieves multiple Mountain Project routes by IDs.
+const queryGetRoutesByIDs = `
+	SELECT id, mp_route_id, mp_area_id, name, route_type, rating,
+	       location_id, latitude, longitude, aspect, created_at, updated_at
+	FROM woulder.mp_routes
+	WHERE mp_route_id = ANY($1)
+`
+
+// queryGetRoutesWithGPSByArea retrieves all routes with GPS in an area and subareas.
+const queryGetRoutesWithGPSByArea = `
+	WITH RECURSIVE area_tree AS (
+		-- Start with the given area
+		SELECT mp_area_id
+		FROM woulder.mp_areas
+		WHERE mp_area_id = $1
+
+		UNION ALL
+
+		-- Recursively include all descendant areas
+		SELECT a.mp_area_id
+		FROM woulder.mp_areas a
+		INNER JOIN area_tree at ON a.parent_mp_area_id = at.mp_area_id
+	)
+	SELECT id, mp_route_id, mp_area_id, name, route_type, rating,
+	       location_id, latitude, longitude, aspect, created_at, updated_at
+	FROM woulder.mp_routes r
+	WHERE r.mp_area_id IN (SELECT mp_area_id FROM area_tree)
+	  AND r.latitude IS NOT NULL
+	  AND r.longitude IS NOT NULL
+	ORDER BY r.name
+`
+
 // queryGetAllRouteIDsForLocation retrieves all route IDs for a location.
 const queryGetAllRouteIDsForLocation = `
 	SELECT mp_route_id

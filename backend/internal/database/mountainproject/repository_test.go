@@ -77,22 +77,22 @@ func TestPostgresRepository_GetAreaByID(t *testing.T) {
 		WillReturnRows(rows)
 
 	repo := mountainproject.NewPostgresRepository(db)
-	result, err := repo.Areas().GetByID(context.Background(), mpAreaID)
+	result, err := repo.Areas().GetAreaByID(context.Background(), mpAreaID)
 
 	if err != nil {
-		t.Errorf("GetByID() error = %v", err)
+		t.Errorf("GetAreaByID() error = %v", err)
 	}
 
 	if result == nil {
-		t.Fatal("GetByID() returned nil")
+		t.Fatal("GetAreaByID() returned nil")
 	}
 
 	if result.MPAreaID != mpAreaID {
-		t.Errorf("GetByID() area ID = %v, want %v", result.MPAreaID, mpAreaID)
+		t.Errorf("GetAreaByID() area ID = %v, want %v", result.MPAreaID, mpAreaID)
 	}
 
 	if result.Name != "Smith Rock" {
-		t.Errorf("GetByID() name = %v, want Smith Rock", result.Name)
+		t.Errorf("GetAreaByID() name = %v, want Smith Rock", result.Name)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -112,10 +112,10 @@ func TestPostgresRepository_GetAreaByID_NotFound(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	repo := mountainproject.NewPostgresRepository(db)
-	result, err := repo.Areas().GetByID(context.Background(), 999)
+	result, err := repo.Areas().GetAreaByID(context.Background(), 999)
 
 	if err != nil {
-		t.Errorf("GetByID() error = %v, want nil", err)
+		t.Errorf("GetAreaByID() error = %v, want nil", err)
 	}
 
 	if result != nil {

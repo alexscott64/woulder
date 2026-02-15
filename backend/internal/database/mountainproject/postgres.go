@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/lib/pq"
 )
 
 // PostgresRepository implements all Mountain Project sub-repositories.
@@ -42,7 +43,7 @@ func (r *PostgresRepository) SaveArea(ctx context.Context, area *models.MPArea) 
 	return err
 }
 
-func (r *PostgresRepository) GetByID(ctx context.Context, mpAreaID int64) (*models.MPArea, error) {
+func (r *PostgresRepository) GetAreaByID(ctx context.Context, mpAreaID int64) (*models.MPArea, error) {
 	var area models.MPArea
 	err := r.db.QueryRowContext(ctx, queryGetAreaByID, mpAreaID).Scan(
 		&area.ID,
@@ -142,6 +143,75 @@ func (r *PostgresRepository) SaveRoute(ctx context.Context, route *models.MPRout
 	return err
 }
 
+func (r *PostgresRepository) GetByID(ctx context.Context, mpRouteID int64) (*models.MPRoute, error) {
+	var route models.MPRoute
+	err := r.db.QueryRowContext(ctx, queryGetRouteByID, mpRouteID).Scan(
+		&route.ID,
+		&route.MPRouteID,
+		&route.MPAreaID,
+		&route.Name,
+		&route.RouteType,
+		&route.Rating,
+		&route.LocationID,
+		&route.Latitude,
+		&route.Longitude,
+		&route.Aspect,
+		&route.CreatedAt,
+		&route.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &route, nil
+}
+
+func (r *PostgresRepository) GetByIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.MPRoute, error) {
+	if len(mpRouteIDs) == 0 {
+		return make(map[int64]*models.MPRoute), nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, queryGetRoutesByIDs, pq.Array(mpRouteIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	routes := make(map[int64]*models.MPRoute)
+	for rows.Next() {
+		var route models.MPRoute
+		err := rows.Scan(
+			&route.ID,
+			&route.MPRouteID,
+			&route.MPAreaID,
+			&route.Name,
+			&route.RouteType,
+			&route.Rating,
+			&route.LocationID,
+			&route.Latitude,
+			&route.Longitude,
+			&route.Aspect,
+			&route.CreatedAt,
+			&route.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		routes[route.MPRouteID] = &route
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return routes, nil
+}
+
 func (r *PostgresRepository) GetAllIDsForLocation(ctx context.Context, locationID int) ([]int64, error) {
 	rows, err := r.db.QueryContext(ctx, queryGetAllRouteIDsForLocation, locationID)
 	if err != nil {
@@ -186,6 +256,43 @@ func (r *PostgresRepository) GetIDsForArea(ctx context.Context, mpAreaID string)
 		routeIDs = append(routeIDs, routeID)
 	}
 	return routeIDs, rows.Err()
+}
+
+func (r *PostgresRepository) GetWithGPSByArea(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error) {
+	rows, err := r.db.QueryContext(ctx, queryGetRoutesWithGPSByArea, mpAreaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var routes []*models.MPRoute
+	for rows.Next() {
+		var route models.MPRoute
+		err := rows.Scan(
+			&route.ID,
+			&route.MPRouteID,
+			&route.MPAreaID,
+			&route.Name,
+			&route.RouteType,
+			&route.Rating,
+			&route.LocationID,
+			&route.Latitude,
+			&route.Longitude,
+			&route.Aspect,
+			&route.CreatedAt,
+			&route.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		routes = append(routes, &route)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return routes, nil
 }
 
 func (r *PostgresRepository) UpsertRoute(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error {

@@ -24,9 +24,9 @@ type AreasRepository interface {
 	// SaveArea saves or updates a Mountain Project area.
 	SaveArea(ctx context.Context, area *models.MPArea) error
 
-	// GetByID retrieves a Mountain Project area by MP area ID.
+	// GetAreaByID retrieves a Mountain Project area by MP area ID.
 	// Returns nil if not found.
-	GetByID(ctx context.Context, mpAreaID int64) (*models.MPArea, error)
+	GetAreaByID(ctx context.Context, mpAreaID int64) (*models.MPArea, error)
 
 	// UpdateRouteCount updates the cached route count for an area.
 	UpdateRouteCount(ctx context.Context, mpAreaID string, total int) error
@@ -47,6 +47,15 @@ type RoutesRepository interface {
 	// SaveRoute saves or updates a Mountain Project route.
 	SaveRoute(ctx context.Context, route *models.MPRoute) error
 
+	// GetByID retrieves a Mountain Project route by MP route ID.
+	// Returns nil if not found.
+	GetByID(ctx context.Context, mpRouteID int64) (*models.MPRoute, error)
+
+	// GetByIDs retrieves multiple Mountain Project routes by IDs in a single query.
+	// This eliminates N+1 query problems when loading multiple routes.
+	// Returns a map of route_id -> route. Missing routes are simply not in the map.
+	GetByIDs(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.MPRoute, error)
+
 	// GetAllIDsForLocation returns all route IDs associated with a location.
 	GetAllIDsForLocation(ctx context.Context, locationID int) ([]int64, error)
 
@@ -55,6 +64,10 @@ type RoutesRepository interface {
 
 	// GetIDsForArea retrieves all route IDs currently in an area.
 	GetIDsForArea(ctx context.Context, mpAreaID string) ([]string, error)
+
+	// GetWithGPSByArea retrieves all routes in an area (including subareas) that have GPS coordinates.
+	// Uses recursive CTE to traverse area hierarchy.
+	GetWithGPSByArea(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error)
 
 	// UpsertRoute inserts or updates a route (compatibility with mountainprojectsync).
 	UpsertRoute(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error
