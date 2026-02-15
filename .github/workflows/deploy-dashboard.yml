@@ -30,6 +30,9 @@ jobs:
 
       - name: Deploy dashboard to server
         run: |
+          # Ensure static directory exists
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "mkdir -p /opt/woulder/static"
+          
           # Upload dashboard file
           scp -i ~/.ssh/id_ed25519 backend/static/jtrack.html root@${{ secrets.VPS_HOST }}:/opt/woulder/static/jtrack.html
           
