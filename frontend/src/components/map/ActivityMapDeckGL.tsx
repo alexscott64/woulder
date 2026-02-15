@@ -66,7 +66,25 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
   });
   
   const [viewMode, setViewMode] = useState<ViewMode>(loadMapViewMode());
+  
+  // Check if mobile on mount - legend collapsed by default on mobile
+  const [isMobile, setIsMobile] = useState(false);
   const [legendExpanded, setLegendExpanded] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      // Only set legend state on initial load
+      if (!legendExpanded) {
+        setLegendExpanded(!mobile);
+      }
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Save view mode to localStorage when it changes
   useEffect(() => {
@@ -267,16 +285,18 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
   }
 
   return (
-    <div className="h-full w-full relative">
+    <div className="h-full w-full relative" style={{ minHeight: '400px' }}>
       <DeckGL
         initialViewState={viewState}
         controller={true}
         layers={layers}
         onViewStateChange={({ viewState }: any) => setViewState(viewState)}
         getTooltip={() => null}
+        style={{ position: 'absolute', top: '0', left: '0', right: '0', bottom: '0' }}
       >
         <Map
           mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+          style={{ width: '100%', height: '100%' }}
         />
       </DeckGL>
 
@@ -349,11 +369,11 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
       )}
 
       {/* View Mode Toggle */}
-      <div className="absolute top-4 right-4 z-10 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+      <div className="absolute top-2 sm:top-4 right-2 sm:right-4 z-10 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-1 p-1">
           <button
             onClick={() => setViewMode('hexagon')}
-            className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
+            className={`px-2 sm:px-3 py-1.5 sm:py-2 rounded text-xs sm:text-sm font-medium transition-colors ${
               viewMode === 'hexagon'
                 ? 'bg-blue-600 text-white'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -364,7 +384,7 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
           </button>
           <button
             onClick={() => setViewMode('scatter')}
-            className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
+            className={`px-2 sm:px-3 py-1.5 sm:py-2 rounded text-xs sm:text-sm font-medium transition-colors ${
               viewMode === 'scatter'
                 ? 'bg-blue-600 text-white'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -377,53 +397,53 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
       </div>
 
       {/* Legend */}
-      <div className={`absolute bottom-6 left-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300 z-10`}>
+      <div className={`absolute bottom-2 sm:bottom-6 left-2 sm:left-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300 z-10 max-w-[calc(100vw-1rem)] sm:max-w-sm`}>
         <button
           onClick={() => setLegendExpanded(!legendExpanded)}
-          className="flex items-center justify-between w-full px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg transition-colors"
+          className="flex items-center justify-between w-full px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg transition-colors"
         >
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1">
-              <div className="w-2 h-2 rounded-full bg-red-500" />
-              <div className="w-2 h-2 rounded-full bg-orange-500" />
-              <div className="w-2 h-2 rounded-full bg-yellow-500" />
-              <div className="w-2 h-2 rounded-full bg-blue-500" />
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="flex gap-0.5 sm:gap-1">
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-red-500" />
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-orange-500" />
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-yellow-500" />
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-blue-500" />
             </div>
             <span className="text-xs font-medium text-gray-900 dark:text-white">Legend</span>
           </div>
           {legendExpanded ? (
-            <ChevronDown className="w-4 h-4 text-gray-500" />
+            <ChevronDown className="w-3 h-3 sm:w-4 sm:h-4 text-gray-500" />
           ) : (
-            <ChevronUp className="w-4 h-4 text-gray-500" />
+            <ChevronUp className="w-3 h-3 sm:w-4 sm:h-4 text-gray-500" />
           )}
         </button>
         
         {legendExpanded && (
-          <div className="px-3 pb-3 pt-1 border-t border-gray-200 dark:border-gray-700">
+          <div className="px-2 sm:px-3 pb-2 sm:pb-3 pt-1 border-t border-gray-200 dark:border-gray-700">
             {viewMode === 'scatter' ? (
               // Individual points mode - show recency colors
-              <div className="space-y-1.5 mt-2">
-                <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Point Color = Recency</div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-red-500" />
+              <div className="space-y-1 sm:space-y-1.5 mt-1.5 sm:mt-2">
+                <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 sm:mb-2">Point Color = Recency</div>
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-red-500 flex-shrink-0" />
                   <span className="text-xs text-gray-700 dark:text-gray-300">
                     {dateRangeInfo.oldestDays <= 7 ? 'Most Recent' : 'Last Week'}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-orange-500" />
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-orange-500 flex-shrink-0" />
                   <span className="text-xs text-gray-700 dark:text-gray-300">
                     {dateRangeInfo.oldestDays <= 30 ? '7+ Days Ago' : 'Last Month'}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-yellow-500 flex-shrink-0" />
                   <span className="text-xs text-gray-700 dark:text-gray-300">
                     {dateRangeInfo.oldestDays <= 90 ? '30+ Days Ago' : 'Last 3 Months'}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-blue-500" />
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-blue-500 flex-shrink-0" />
                   <span className="text-xs text-gray-700 dark:text-gray-300">
                     {dateRangeInfo.oldestDays <= 90 ? '90+ Days Ago' : 'Older'}
                   </span>
@@ -431,38 +451,38 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
               </div>
             ) : (
               // Cluster mode - show activity level gradient
-              <div className="space-y-1.5 mt-2">
-                <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Cluster Color = Activity Level</div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-red-500" />
+              <div className="space-y-1 sm:space-y-1.5 mt-1.5 sm:mt-2">
+                <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 sm:mb-2">Cluster Color = Activity Level</div>
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-red-500 flex-shrink-0" />
                   <span className="text-xs text-gray-700 dark:text-gray-300">Very High Activity</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-orange-500" />
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-orange-500 flex-shrink-0" />
                   <span className="text-xs text-gray-700 dark:text-gray-300">High Activity</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-yellow-500 flex-shrink-0" />
                   <span className="text-xs text-gray-700 dark:text-gray-300">Medium Activity</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-blue-500" />
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-blue-500 flex-shrink-0" />
                   <span className="text-xs text-gray-700 dark:text-gray-300">Low Activity</span>
                 </div>
-                <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-xs text-gray-600 dark:text-gray-400">
+                <div className="mt-2 sm:mt-3 p-1.5 sm:p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-xs text-gray-600 dark:text-gray-400">
                   💡 <span className="font-medium">Click cluster</span> to see all areas
                 </div>
               </div>
             )}
-            <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
-              <p className="text-xs text-gray-600 dark:text-gray-400">
+            <div className="mt-1.5 sm:mt-2 pt-1.5 sm:pt-2 border-t border-gray-200 dark:border-gray-600">
+              <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">
                 <span className="font-medium">Size:</span> {viewMode === 'scatter' ? 'Activity Score' : 'Area Count'}
               </p>
-              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 sm:mt-1 leading-relaxed">
                 <span className="font-medium">Mode:</span> {viewMode === 'hexagon' ? 'Clustered' : 'Individual'}
               </p>
               {dateRangeInfo.oldestDays > 0 && (
-                <p className="text-xs text-gray-500 dark:text-gray-500 mt-1 italic">
+                <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5 sm:mt-1 italic leading-relaxed">
                   Data: {dateRangeInfo.newestDays === 0 ? 'today' : `${dateRangeInfo.newestDays}d ago`} to {dateRangeInfo.oldestDays}d ago
                 </p>
               )}

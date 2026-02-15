@@ -150,9 +150,9 @@ export function HeatMapPage() {
 
               {/* Activity Threshold */}
               <div className="flex items-center gap-2 ml-auto">
-                <Activity className="w-5 h-5 text-gray-500" />
-                <label className="text-xs sm:text-sm text-gray-700 dark:text-gray-300 hidden sm:inline">
-                  Min:
+                <Activity className="w-5 h-5 text-gray-500 hidden sm:block" />
+                <label className="text-xs sm:text-sm text-gray-700 dark:text-gray-300" title="Minimum number of ticks required to show an area">
+                  Min ticks:
                 </label>
                 <input
                   type="range"
@@ -161,6 +161,7 @@ export function HeatMapPage() {
                   value={minActivity}
                   onChange={(e) => setMinActivity(Number(e.target.value))}
                   className="w-20 sm:w-32"
+                  title={`Minimum ${minActivity} ticks`}
                 />
                 <span className="text-sm font-medium text-gray-900 dark:text-white w-8">
                   {minActivity}
@@ -200,32 +201,57 @@ export function HeatMapPage() {
 
         {/* Summary Stats - Only show in list view */}
         {viewMode === 'list' && data && sortedPoints.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
-                <TrendingUp className="w-5 h-5" />
-                <span className="text-sm">Total {data.count === 1 ? 'Area' : 'Areas'}</span>
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 sm:p-4">
+            {/* Mobile: Single compact row */}
+            <div className="flex items-center justify-around gap-2 sm:hidden">
+              <div className="text-center flex-1">
+                <div className="text-xs text-gray-500 dark:text-gray-400">Areas</div>
+                <div className="text-lg font-bold text-gray-900 dark:text-white">
+                  {data.count.toLocaleString()}
+                </div>
               </div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                {data.count.toLocaleString()}
+              <div className="text-center flex-1 border-x border-gray-200 dark:border-gray-700">
+                <div className="text-xs text-gray-500 dark:text-gray-400">Ticks</div>
+                <div className="text-lg font-bold text-gray-900 dark:text-white">
+                  {sortedPoints.reduce((sum: number, p: HeatMapPoint) => sum + p.total_ticks, 0).toLocaleString()}
+                </div>
+              </div>
+              <div className="text-center flex-1">
+                <div className="text-xs text-gray-500 dark:text-gray-400">Climbers</div>
+                <div className="text-lg font-bold text-gray-900 dark:text-white">
+                  {sortedPoints.reduce((sum: number, p: HeatMapPoint) => sum + p.unique_climbers, 0).toLocaleString()}
+                </div>
               </div>
             </div>
-            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
-                <Activity className="w-5 h-5" />
-                <span className="text-sm">Total {sortedPoints.reduce((sum: number, p: HeatMapPoint) => sum + p.total_ticks, 0) === 1 ? 'Tick' : 'Ticks'}</span>
+            
+            {/* Desktop: Three column grid */}
+            <div className="hidden sm:grid sm:grid-cols-3 gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
+                  <TrendingUp className="w-5 h-5" />
+                  <span className="text-sm">Total {data.count === 1 ? 'Area' : 'Areas'}</span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {data.count.toLocaleString()}
+                </div>
               </div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                {sortedPoints.reduce((sum: number, p: HeatMapPoint) => sum + p.total_ticks, 0).toLocaleString()}
+              <div>
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
+                  <Activity className="w-5 h-5" />
+                  <span className="text-sm">Total {sortedPoints.reduce((sum: number, p: HeatMapPoint) => sum + p.total_ticks, 0) === 1 ? 'Tick' : 'Ticks'}</span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {sortedPoints.reduce((sum: number, p: HeatMapPoint) => sum + p.total_ticks, 0).toLocaleString()}
+                </div>
               </div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
-                <Users className="w-5 h-5" />
-                <span className="text-sm">Unique {sortedPoints.reduce((sum: number, p: HeatMapPoint) => sum + p.unique_climbers, 0) === 1 ? 'Climber' : 'Climbers'}</span>
-              </div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                {sortedPoints.reduce((sum: number, p: HeatMapPoint) => sum + p.unique_climbers, 0).toLocaleString()}
+              <div>
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
+                  <Users className="w-5 h-5" />
+                  <span className="text-sm">Unique {sortedPoints.reduce((sum: number, p: HeatMapPoint) => sum + p.unique_climbers, 0) === 1 ? 'Climber' : 'Climbers'}</span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {sortedPoints.reduce((sum: number, p: HeatMapPoint) => sum + p.unique_climbers, 0).toLocaleString()}
+                </div>
               </div>
             </div>
           </div>
@@ -263,20 +289,22 @@ export function HeatMapPage() {
 
       {/* Map View */}
       {!isLoading && !error && viewMode === 'map' && sortedPoints.length > 0 && (
-        <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pb-4 flex-1">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden h-full relative">
-            <ActivityMapDeckGL
-              points={sortedPoints}
-              onAreaClick={(areaId) => {
-                setShowClusterDrawer(false);
-                setSelectedAreaId(areaId);
-              }}
-              selectedAreaId={selectedAreaId}
-              onShowCluster={(areas) => {
-                setClusterAreas(areas);
-                setShowClusterDrawer(true);
-              }}
-            />
+        <div className="max-w-7xl mx-auto w-full px-2 sm:px-4 lg:px-8 pb-2 sm:pb-4 flex-1 min-h-0">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden h-full w-full relative">
+            <div className="h-full w-full">
+              <ActivityMapDeckGL
+                points={sortedPoints}
+                onAreaClick={(areaId) => {
+                  setShowClusterDrawer(false);
+                  setSelectedAreaId(areaId);
+                }}
+                selectedAreaId={selectedAreaId}
+                onShowCluster={(areas) => {
+                  setClusterAreas(areas);
+                  setShowClusterDrawer(true);
+                }}
+              />
+            </div>
           </div>
           
           {/* Cluster Drawer */}
@@ -314,13 +342,13 @@ export function HeatMapPage() {
 
       {/* List View */}
       {!isLoading && !error && viewMode === 'list' && sortedPoints.length > 0 && (
-        <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pb-4 overflow-y-auto">
+        <div className="max-w-7xl mx-auto w-full px-2 sm:px-4 lg:px-8 pb-4 overflow-y-auto">
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+            <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
                 Most Active Areas
               </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
                 Showing top {sortedPoints.length} areas with recent climbing activity
               </p>
             </div>
@@ -341,13 +369,58 @@ export function HeatMapPage() {
                 return (
                   <div
                     key={point.mp_area_id}
-                    className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+                    className="px-3 sm:px-6 py-3 sm:py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
                     onClick={() => {
                       setSelectedAreaId(point.mp_area_id);
                       setViewMode('map');
                     }}
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    {/* Mobile Layout */}
+                    <div className="sm:hidden">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-start gap-2 flex-1 min-w-0">
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 flex-shrink-0 mt-0.5">
+                            #{index + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                              {point.name}
+                            </h4>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <span className={`w-1.5 h-1.5 rounded-full ${getRecencyColor()} flex-shrink-0`} />
+                              <span className="text-xs text-gray-600 dark:text-gray-400">
+                                {daysSince === 0 ? 'Today' :
+                                 daysSince === 1 ? 'Yesterday' :
+                                 `${daysSince}d ago`}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-3 ml-7">
+                        <div className="flex-1">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Score</div>
+                          <div className="text-base font-bold text-blue-600 dark:text-blue-400">
+                            {point.activity_score}
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Ticks</div>
+                          <div className="text-base font-bold text-gray-900 dark:text-white">
+                            {point.total_ticks}
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Climbers</div>
+                          <div className="text-base font-bold text-gray-900 dark:text-white">
+                            {point.unique_climbers}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Desktop Layout */}
+                    <div className="hidden sm:flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <span className="text-sm font-medium text-gray-500 dark:text-gray-400 w-8">
@@ -360,8 +433,8 @@ export function HeatMapPage() {
                             <div className="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-gray-400">
                               <span className={`w-2 h-2 rounded-full ${getRecencyColor()}`} />
                               <span>
-                                {daysSince === 0 ? 'Today' : 
-                                 daysSince === 1 ? 'Yesterday' : 
+                                {daysSince === 0 ? 'Today' :
+                                 daysSince === 1 ? 'Yesterday' :
                                  `${daysSince} days ago`}
                               </span>
                             </div>

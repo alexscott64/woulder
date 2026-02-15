@@ -49,7 +49,7 @@ export function RouteTypeFilter({ selectedTypes, onChange }: RouteTypeFilterProp
           </button>
         </div>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1">
         {ROUTE_TYPES.map((routeType) => {
           const isSelected = selectedTypes.includes(routeType.value);
           return (
@@ -57,7 +57,7 @@ export function RouteTypeFilter({ selectedTypes, onChange }: RouteTypeFilterProp
               key={routeType.value}
               onClick={() => toggleType(routeType.value)}
               className={`
-                px-3 py-1.5 rounded-lg text-sm font-medium transition-all
+                flex-shrink-0 px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap
                 ${
                   isSelected
                     ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-2 border-blue-500'
