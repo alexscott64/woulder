@@ -1,6 +1,9 @@
 package main
 
+// Trigger Air recompilation to test checkpoint recovery
+
 import (
+	"context"
 	"log"
 	"time"
 
@@ -42,6 +45,11 @@ func main() {
 	// Initialize services with dependency injection
 	locationService := service.NewLocationService(db.Locations(), db.Areas())
 	climbTrackingService := service.NewClimbTrackingService(db.MountainProject(), db.Climbing(), mpClient, jobMonitor)
+
+	// Recover any interrupted jobs from previous run (before starting new background jobs)
+	log.Println("Checking for interrupted jobs from previous run...")
+	recoverInterruptedJobs(jobMonitor, climbTrackingService)
+
 	weatherServiceLayer := service.NewWeatherService(db.Weather(), db.Locations(), db.Rocks(), weatherClient, climbTrackingService)
 	riverServiceLayer := service.NewRiverService(db.Rivers(), riverClient)
 	boulderDryingService := service.NewBoulderDryingService(db.Boulders(), db.Weather(), db.Locations(), db.Rocks(), db.MountainProject(), weatherClient)
@@ -134,5 +142,53 @@ func main() {
 	log.Printf("Starting Woulder API server on port %s", cfg.Server.Port)
 	if err := router.Run(":" + cfg.Server.Port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
+	}
+}
+
+// recoverInterruptedJobs checks for jobs that were running when server stopped
+// and automatically resumes them
+func recoverInterruptedJobs(
+	jobMonitor *monitoring.JobMonitor,
+	climbService *service.ClimbTrackingService,
+) {
+	ctx := context.Background()
+
+	// Find jobs interrupted in the last 24 hours
+	interrupted, err := jobMonitor.RecoverInterruptedJobs(ctx, 24*time.Hour)
+	if err != nil {
+		log.Printf("Error checking for interrupted jobs: %v", err)
+		return
+	}
+
+	if len(interrupted) == 0 {
+		log.Println("No interrupted jobs found - starting clean")
+		return
+	}
+
+	log.Printf("Found %d interrupted job(s), attempting to resume...", len(interrupted))
+
+	for _, job := range interrupted {
+		log.Printf("  - %s (ID: %d, started: %v, status: %s)",
+			job.JobName, job.ID, job.StartedAt, job.Status)
+
+		// Resume based on job type
+		switch job.JobName {
+		case "route_sync_all_states":
+			// Don't start in goroutine - resumes automatically when background scheduler runs
+			log.Printf("Route sync job will be resumed by StartBackgroundRouteSync")
+
+		case "location_tick_sync":
+			// Don't start in goroutine - resumes automatically when background scheduler runs
+			log.Printf("Location tick sync job will be resumed by StartLocationRouteSync")
+
+		case "location_comment_sync":
+			// Don't start in goroutine - resumes automatically when background scheduler runs
+			log.Printf("Location comment sync job will be resumed by StartLocationRouteSync")
+
+		default:
+			// Priority-based sync jobs (high_priority_tick_sync, medium_priority_tick_sync, etc.)
+			// will also resume automatically when their schedulers run
+			log.Printf("Job %s will be resumed by its scheduled background sync", job.JobName)
+		}
 	}
 }

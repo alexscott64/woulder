@@ -415,3 +415,121 @@ func (r *ProgressReporter) FlushProgress(ctx context.Context) error {
 func (r *ProgressReporter) GetProgress() (processed, succeeded, failed int) {
 	return r.processed, r.succeeded, r.failed
 }
+
+// SaveCheckpoint updates job metadata with checkpoint data
+func (m *JobMonitor) SaveCheckpoint(ctx context.Context, jobID int64, checkpoint map[string]interface{}) error {
+	// Get existing metadata
+	var metadataJSON []byte
+	query := `SELECT metadata FROM woulder.job_executions WHERE id = $1`
+	err := m.db.QueryRowContext(ctx, query, jobID).Scan(&metadataJSON)
+	if err != nil {
+		return fmt.Errorf("failed to get metadata: %w", err)
+	}
+
+	// Parse and merge
+	var metadata map[string]interface{}
+	if len(metadataJSON) > 0 {
+		if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
+			metadata = make(map[string]interface{})
+		}
+	} else {
+		metadata = make(map[string]interface{})
+	}
+
+	// Update checkpoint
+	metadata["checkpoint"] = checkpoint
+	metadata["last_checkpoint_time"] = time.Now().Format(time.RFC3339)
+
+	// Save back
+	updatedJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	updateQuery := `
+		UPDATE woulder.job_executions
+		SET metadata = $1, updated_at = NOW()
+		WHERE id = $2
+	`
+	_, err = m.db.ExecContext(ctx, updateQuery, updatedJSON, jobID)
+	if err != nil {
+		return fmt.Errorf("failed to update checkpoint: %w", err)
+	}
+
+	return nil
+}
+
+// GetInterruptedJob finds the most recent interrupted job for a job name
+func (m *JobMonitor) GetInterruptedJob(ctx context.Context, jobName string) (*JobExecution, error) {
+	query := `
+		SELECT id, job_name, job_type, status, total_items, items_processed,
+		       items_succeeded, items_failed, error_message, started_at,
+		       completed_at, updated_at, metadata
+		FROM woulder.job_executions
+		WHERE job_name = $1
+		  AND status IN ('running', 'paused')
+		  AND started_at > NOW() - INTERVAL '24 hours'
+		ORDER BY started_at DESC
+		LIMIT 1
+	`
+
+	row := m.db.QueryRowContext(ctx, query, jobName)
+	job, err := scanJobExecution(row)
+	if err != nil {
+		if err.Error() == "job not found" {
+			return nil, nil // No interrupted job, this is OK
+		}
+		return nil, err
+	}
+	return job, nil
+}
+
+// MarkJobPaused marks a job as paused (for graceful shutdown)
+func (m *JobMonitor) MarkJobPaused(ctx context.Context, jobID int64) error {
+	query := `
+		UPDATE woulder.job_executions
+		SET status = 'paused', updated_at = NOW()
+		WHERE id = $1 AND status = 'running'
+	`
+	result, err := m.db.ExecContext(ctx, query, jobID)
+	if err != nil {
+		return fmt.Errorf("failed to pause job: %w", err)
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("job not found or not running")
+	}
+	return nil
+}
+
+// RecoverInterruptedJobs finds all jobs interrupted in the last maxAge duration
+func (m *JobMonitor) RecoverInterruptedJobs(ctx context.Context, maxAge time.Duration) ([]*JobExecution, error) {
+	query := `
+		SELECT id, job_name, job_type, status, total_items, items_processed,
+		       items_succeeded, items_failed, error_message, started_at,
+		       completed_at, updated_at, metadata
+		FROM woulder.job_executions
+		WHERE status IN ('running', 'paused')
+		  AND started_at > $1
+		ORDER BY started_at DESC
+	`
+
+	cutoff := time.Now().Add(-maxAge)
+	rows, err := m.db.QueryContext(ctx, query, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query interrupted jobs: %w", err)
+	}
+	defer rows.Close()
+
+	var jobs []*JobExecution
+	for rows.Next() {
+		job, err := scanJobExecution(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, nil
+}
