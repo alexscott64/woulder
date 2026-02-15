@@ -223,6 +223,14 @@
             border-color: #fca5a5;
         }
 
+        .status-warning {
+            background: #fef3c7;
+            color: #92400e;
+            border-color: #fbbf24;
+            display: flex;
+            align-items: center;
+        }
+
         /* Progress Bar */
         .progress-section {
             margin: 16px 0;
@@ -596,8 +604,8 @@
                 // API returns {jobs: [...]}
                 const jobs = data.jobs || [];
                 
-                // Filter for sync jobs only
-                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc'];
+                // Filter for sync jobs only (include location sync jobs)
+                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc', 'location_tick_sync', 'location_comment_sync'];
                 const syncJobs = jobs.filter(job => syncTypes.includes(job.job_type));
                 
                 renderActiveJobs(syncJobs);
@@ -615,8 +623,8 @@
                 // API returns {jobs: [...]}
                 const jobs = data.jobs || [];
                 
-                // Filter for sync jobs only
-                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc'];
+                // Filter for sync jobs only (include location sync jobs)
+                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc', 'location_tick_sync', 'location_comment_sync'];
                 const syncJobs = jobs.filter(job => syncTypes.includes(job.job_type));
                 
                 renderHistory(syncJobs);
@@ -637,7 +645,9 @@
             const typeLabels = {
                 'tick_sync': 'Tick Sync',
                 'comment_sync': 'Comment Sync',
-                'priority_recalc': 'Priority Recalculation'
+                'priority_recalc': 'Priority Recalculation',
+                'location_tick_sync': 'Location Tick Sync',
+                'location_comment_sync': 'Location Comment Sync'
             };
 
             container.innerHTML = summary.map(item => `
@@ -733,6 +743,12 @@
             const currentRating = job.metadata?.current_rating;
             const currentRouteID = job.metadata?.current_route_id;
             const cardId = `job-${job.id}`;
+            
+            // Check if job is stuck (no update in last 5 minutes)
+            const updatedAt = new Date(job.updated_at);
+            const now = new Date();
+            const minutesSinceUpdate = (now - updatedAt) / (1000 * 60);
+            const isStuck = minutesSinceUpdate > 5 && progress < 100;
 
             // Parse metadata for aggregate stats
             const metadata = job.metadata || {};
@@ -762,7 +778,14 @@
                                     </div>
                                 ` : ''}
                             </div>
-                            <div class="job-status-badge status-running">Running</div>
+                            <div class="job-status-badge ${isStuck ? 'status-warning' : 'status-running'}">
+                                ${isStuck ? `
+                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                                    </svg>
+                                ` : ''}
+                                ${isStuck ? 'Stuck' : 'Running'}
+                            </div>
                         </div>
                         ${job.total_items ? `
                             <div class="progress-section">
@@ -779,6 +802,15 @@
                                         ${job.failed_items ? `<span class="failed">✗ ${job.failed_items} failed</span>` : ''}
                                     </div>
                                 ` : ''}
+                            </div>
+                        ` : ''}
+                        
+                        ${isStuck ? `
+                            <div style="margin-top: 12px; padding: 10px; background: #fef3c7; border: 1px solid #fbbf24; border-radius: 8px; font-size: 13px; color: #92400e;">
+                                <strong>⚠️ Warning:</strong> Job hasn't updated in ${Math.round(minutesSinceUpdate)} minutes. It may be stuck or experiencing errors.
+                                <div style="margin-top: 4px; font-size: 12px; color: #78350f;">
+                                    Last update: ${formatRelativeTime(job.updated_at)}
+                                </div>
                             </div>
                         ` : ''}
                         
@@ -815,6 +847,10 @@
                                     <div class="aggregate-item">
                                         <div class="aggregate-item-label">Total Items</div>
                                         <div class="aggregate-item-value">${(job.total_items || 0).toLocaleString()}</div>
+                                    </div>
+                                    <div class="aggregate-item">
+                                        <div class="aggregate-item-label">Last Updated</div>
+                                        <div class="aggregate-item-value">${formatRelativeTime(job.updated_at)}</div>
                                     </div>
                                 </div>
                             </div>
