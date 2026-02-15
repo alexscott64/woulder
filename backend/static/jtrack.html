@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync Dashboard - Woulder</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(to bottom right, #f9fafb, #e5e7eb);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+
+        /* Header */
+        .header {
+            margin-bottom: 32px;
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .header .subtitle {
+            color: #6b7280;
+            font-size: 16px;
+        }
+
+        .refresh-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #374151;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .refresh-btn:hover {
+            background: #f9fafb;
+            border-color: #d1d5db;
+        }
+
+        /* Summary Cards */
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .summary-card {
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            padding: 24px;
+            transition: box-shadow 0.2s;
+        }
+
+        .summary-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        .summary-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .summary-card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #6b7280;
+        }
+
+        .summary-card-icon {
+            width: 48px;
+            height: 48px;
+            background: #eff6ff;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .summary-card-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 12px;
+        }
+
+        .summary-card-stats {
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .stat-success { color: #10b981; }
+        .stat-failed { color: #ef4444; }
+        .stat-running { color: #3b82f6; }
+
+        /* Active Jobs Section */
+        .section {
+            margin-bottom: 32px;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .badge {
+            padding: 4px 12px;
+            background: #3b82f6;
+            color: white;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        /* Job Cards */
+        .job-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .job-card-header {
+            padding: 20px 24px;
+        }
+
+        .job-card-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .job-info {
+            flex: 1;
+        }
+
+        .job-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+
+        .job-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .job-status-badge {
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            border: 1px solid;
+        }
+
+        .status-running {
+            background: #dbeafe;
+            color: #1e40af;
+            border-color: #93c5fd;
+        }
+
+        .status-completed {
+            background: #d1fae5;
+            color: #065f46;
+            border-color: #6ee7b7;
+        }
+
+        .status-failed {
+            background: #fee2e2;
+            color: #991b1b;
+            border-color: #fca5a5;
+        }
+
+        /* Progress Bar */
+        .progress-section {
+            margin: 16px 0;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .progress-items {
+            color: #6b7280;
+            font-weight: 500;
+        }
+
+        .progress-percent {
+            color: #3b82f6;
+            font-weight: 700;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #f3f4f6;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #2563eb);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        .progress-stats {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            font-size: 12px;
+        }
+
+        .progress-stats span {
+            color: #10b981;
+        }
+
+        .progress-stats .failed {
+            color: #ef4444;
+        }
+
+        /* Job Details */
+        .job-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+            padding: 16px 24px;
+            background: #f9fafb;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .detail-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        /* History Section */
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .history-filter {
+            padding: 8px 16px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #374151;
+            cursor: pointer;
+        }
+
+        /* Expandable Job Card */
+        .job-card-expandable {
+            cursor: pointer;
+        }
+
+        .job-card-expandable:hover {
+            border-color: #d1d5db;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        }
+
+        .expand-icon {
+            display: inline-block;
+            transition: transform 0.2s;
+            color: #9ca3af;
+        }
+
+        .expand-icon.expanded {
+            transform: rotate(180deg);
+        }
+
+        .job-expanded {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .job-expanded.expanded {
+            max-height: 800px;
+        }
+
+        /* Aggregate Data Section */
+        .aggregate-data {
+            padding: 20px 24px;
+            background: #f9fafb;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .aggregate-section {
+            margin-bottom: 20px;
+        }
+
+        .aggregate-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .aggregate-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #374151;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .aggregate-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .aggregate-item {
+            background: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            font-size: 13px;
+        }
+
+        .aggregate-item-label {
+            color: #6b7280;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .aggregate-item-value {
+            color: #111827;
+            font-weight: 600;
+        }
+
+        .state-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .state-tag {
+            background: white;
+            border: 1px solid #e5e7eb;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #374151;
+            font-weight: 500;
+        }
+
+        .expand-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            background: #f3f4f6;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #374151;
+            cursor: pointer;
+            transition: all 0.15s;
+            margin-top: 12px;
+        }
+
+        .expand-button:hover {
+            background: #e5e7eb;
+        }
+
+        .expand-button svg {
+            transition: transform 0.2s;
+        }
+
+        .expand-button.expanded svg {
+            transform: rotate(180deg);
+        }
+
+        .job-expanded.show {
+            max-height: 500px;
+        }
+
+        .error-message {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 24px;
+        }
+
+        .error-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #991b1b;
+            margin-bottom: 8px;
+        }
+
+        .error-text {
+            font-size: 13px;
+            color: #7f1d1d;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Empty State */
+        .empty-state {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 80px 40px;
+            text-align: center;
+        }
+
+        .empty-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 24px;
+            opacity: 0.3;
+        }
+
+        .empty-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+
+        .empty-text {
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        /* Loading State */
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 80px 40px;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #e5e7eb;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 16px;
+            font-size: 14px;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-top">
+                <div>
+                    <h1>Sync Dashboard</h1>
+                    <p class="subtitle">Monitor Mountain Project data synchronization</p>
+                </div>
+                <button class="refresh-btn" onclick="refreshAll()">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Active Jobs -->
+        <div class="section" id="active-section">
+            <div class="section-header">
+                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="color: #3b82f6;">
+                    <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <h2 class="section-title">Active Jobs</h2>
+                <span class="badge" id="active-count">0</span>
+            </div>
+            <div id="active-jobs"></div>
+        </div>
+
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let refreshInterval = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadActiveJobs();
+            startAutoRefresh();
+        });
+
+        function startAutoRefresh() {
+            if (refreshInterval) clearInterval(refreshInterval);
+            refreshInterval = setInterval(() => {
+                loadActiveJobs();
+            }, 3000); // Refresh active jobs every 3 seconds
+        }
+
+        function refreshAll() {
+            loadActiveJobs();
+        }
+
+        async function loadActiveJobs() {
+            try {
+                const response = await fetch(`${API_BASE}/api/monitoring/jobs/active`);
+                const data = await response.json();
+                
+                // API returns {jobs: [...]}
+                const jobs = data.jobs || [];
+                
+                // Filter for sync jobs only
+                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc'];
+                const syncJobs = jobs.filter(job => syncTypes.includes(job.job_type));
+                
+                renderActiveJobs(syncJobs);
+            } catch (error) {
+                console.error('Failed to load active jobs:', error);
+            }
+        }
+
+        async function loadHistory() {
+            try {
+                const limit = document.getElementById('history-limit').value;
+                const response = await fetch(`${API_BASE}/api/monitoring/jobs/history?limit=${limit}`);
+                const data = await response.json();
+                
+                // API returns {jobs: [...]}
+                const jobs = data.jobs || [];
+                
+                // Filter for sync jobs only
+                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc'];
+                const syncJobs = jobs.filter(job => syncTypes.includes(job.job_type));
+                
+                renderHistory(syncJobs);
+            } catch (error) {
+                console.error('Failed to load history:', error);
+                renderHistoryError();
+            }
+        }
+
+        function renderSummary(summary) {
+            const container = document.getElementById('summary-cards');
+            
+            if (!summary || summary.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            const typeLabels = {
+                'tick_sync': 'Tick Sync',
+                'comment_sync': 'Comment Sync',
+                'priority_recalc': 'Priority Recalculation'
+            };
+
+            container.innerHTML = summary.map(item => `
+                <div class="summary-card">
+                    <div class="summary-card-header">
+                        <div class="summary-card-title">${typeLabels[item.job_type] || item.job_type}</div>
+                        <div class="summary-card-icon">
+                            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: #3b82f6;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="summary-card-value">${item.total_executions || 0}</div>
+                    <div class="summary-card-stats">
+                        <div class="stat-item stat-success">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                            </svg>
+                            ${item.successful || 0}
+                        </div>
+                        <div class="stat-item stat-failed">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                            </svg>
+                            ${item.failed || 0}
+                        </div>
+                        ${item.running > 0 ? `
+                            <div class="stat-item stat-running">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="10"/>
+                                </svg>
+                                ${item.running}
+                            </div>
+                        ` : ''}
+                    </div>
+                    ${item.avg_duration_seconds ? `
+                        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
+                            Avg duration: ${Math.round(item.avg_duration_seconds)}s
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        }
+
+        function renderActiveJobs(jobs) {
+            const container = document.getElementById('active-jobs');
+            const badge = document.getElementById('active-count');
+            
+            // De-duplicate by job_name, keeping most recent (highest ID)
+            const uniqueJobs = {};
+            jobs.forEach(job => {
+                if (!uniqueJobs[job.job_name] || job.id > uniqueJobs[job.job_name].id) {
+                    uniqueJobs[job.job_name] = job;
+                }
+            });
+            
+            const dedupedJobs = Object.values(uniqueJobs);
+            badge.textContent = dedupedJobs.length;
+            
+            if (dedupedJobs.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div class="empty-title">No Active Sync Jobs</div>
+                        <div class="empty-text">All sync jobs are completed or idle</div>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = dedupedJobs.map(job => renderActiveJobCard(job)).join('');
+        }
+
+        function renderActiveJobCard(job) {
+            const progress = ((job.processed_items || 0) / (job.total_items || 1)) * 100;
+            const elapsed = formatDuration(new Date() - new Date(job.started_at));
+            const areaInfo = job.metadata?.area_name || job.metadata?.priority || '';
+            const currentRoute = job.metadata?.current_route_name;
+            const currentRouteType = job.metadata?.current_route_type;
+            const currentRating = job.metadata?.current_rating;
+
+            return `
+                <div class="job-card">
+                    <div class="job-card-header">
+                        <div class="job-card-top">
+                            <div class="job-info">
+                                <div class="job-name">${job.job_name}</div>
+                                <div class="job-meta">
+                                    <span>${formatJobType(job.job_type)}</span>
+                                    ${areaInfo ? `<span>• ${areaInfo}</span>` : ''}
+                                    <span>• Started ${formatRelativeTime(job.started_at)}</span>
+                                </div>
+                                ${currentRoute ? `
+                                    <div class="job-meta" style="margin-top: 6px; color: #3b82f6; font-weight: 500;">
+                                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display: inline-block; vertical-align: middle; margin-right: 4px;">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                                        </svg>
+                                        Currently syncing: ${currentRoute}
+                                        ${currentRating ? ` (${currentRating})` : ''}
+                                        ${currentRouteType ? ` - ${currentRouteType}` : ''}
+                                    </div>
+                                ` : ''}
+                            </div>
+                            <div class="job-status-badge status-running">Running</div>
+                        </div>
+                        ${job.total_items ? `
+                            <div class="progress-section">
+                                <div class="progress-header">
+                                    <span class="progress-items">${(job.processed_items || 0).toLocaleString()} / ${job.total_items.toLocaleString()} items</span>
+                                    <span class="progress-percent">${progress.toFixed(1)}%</span>
+                                </div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: ${progress}%"></div>
+                                </div>
+                                ${job.successful_items !== undefined ? `
+                                    <div class="progress-stats">
+                                        <span>✓ ${job.successful_items} successful</span>
+                                        ${job.failed_items ? `<span class="failed">✗ ${job.failed_items} failed</span>` : ''}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div class="job-details">
+                        <div class="detail-item">
+                            <div class="detail-label">Duration</div>
+                            <div class="detail-value">${elapsed}</div>
+                        </div>
+                        ${job.total_items ? `
+                            <div class="detail-item">
+                                <div class="detail-label">Progress</div>
+                                <div class="detail-value">${progress.toFixed(0)}%</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderHistory(jobs) {
+            const container = document.getElementById('history-jobs');
+            
+            if (!jobs || jobs.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+                        </svg>
+                        <div class="empty-title">No sync jobs found</div>
+                        <div class="empty-text">Jobs will appear here as they run</div>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = jobs.map((job, index) => renderHistoryJobCard(job, index)).join('');
+        }
+
+        function renderHistoryJobCard(job, index) {
+            const progress = ((job.processed_items || 0) / (job.total_items || 1)) * 100;
+            const duration = job.completed_at 
+                ? formatDuration(new Date(job.completed_at) - new Date(job.started_at))
+                : formatDuration(new Date() - new Date(job.started_at));
+            const areaInfo = job.metadata?.area_name || job.metadata?.priority || '';
+            const statusClass = job.status === 'completed' ? 'status-completed' : job.status === 'failed' ? 'status-failed' : 'status-running';
+            const statusLabel = job.status.charAt(0).toUpperCase() + job.status.slice(1);
+
+            return `
+                <div class="job-card job-card-expandable" onclick="toggleExpand(${index})">
+                    <div class="job-card-header">
+                        <div class="job-card-top">
+                            <div class="job-info">
+                                <div class="job-name">${job.job_name}</div>
+                                <div class="job-meta">
+                                    <span>${formatJobType(job.job_type)}</span>
+                                    ${areaInfo ? `<span>• ${areaInfo}</span>` : ''}
+                                    ${job.total_items ? `<span>• ${job.total_items.toLocaleString()} items</span>` : ''}
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div class="job-status-badge ${statusClass}">${statusLabel}</div>
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" class="expand-icon" id="expand-${index}">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="job-expanded" id="expanded-${index}">
+                        <div class="job-details">
+                            <div class="detail-item">
+                                <div class="detail-label">Started</div>
+                                <div class="detail-value" style="font-size: 12px;">${formatTimestamp(job.started_at)}</div>
+                            </div>
+                            ${job.completed_at ? `
+                                <div class="detail-item">
+                                    <div class="detail-label">Completed</div>
+                                    <div class="detail-value" style="font-size: 12px;">${formatTimestamp(job.completed_at)}</div>
+                                </div>
+                            ` : ''}
+                            <div class="detail-item">
+                                <div class="detail-label">Duration</div>
+                                <div class="detail-value">${duration}</div>
+                            </div>
+                            ${job.total_items ? `
+                                <div class="detail-item">
+                                    <div class="detail-label">Progress</div>
+                                    <div class="detail-value">${job.items_processed || 0}/${job.total_items} (${progress.toFixed(0)}%)</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label">Success Rate</div>
+                                    <div class="detail-value">${job.items_succeeded || 0}/${job.items_processed || 0}</div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        ${job.error_message ? `
+                            <div class="error-message">
+                                <div class="error-title">
+                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                                    </svg>
+                                    Error
+                                </div>
+                                <div class="error-text">${job.error_message}</div>
+                            </div>
+                        ` : ''}
+                        ${job.metadata && Object.keys(job.metadata).length > 0 ? `
+                            <div class="job-details">
+                                <div class="detail-item" style="grid-column: 1 / -1;">
+                                    <div class="detail-label">Metadata</div>
+                                    <div class="detail-value" style="font-size: 11px; font-family: 'Courier New', monospace;">
+                                        ${JSON.stringify(job.metadata, null, 2)}
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderHistoryError() {
+            document.getElementById('history-jobs').innerHTML = `
+                <div class="empty-state">
+                    <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: #ef4444;">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <div class="empty-title">Failed to load history</div>
+                    <div class="empty-text">Check API connection and try again</div>
+                </div>
+            `;
+        }
+
+        function toggleExpand(index) {
+            const expanded = document.getElementById(`expanded-${index}`);
+            const icon = document.getElementById(`expand-${index}`);
+            
+            expanded.classList.toggle('show');
+            icon.classList.toggle('expanded');
+        }
+
+        function formatJobType(type) {
+            const labels = {
+                'tick_sync': 'Tick Sync',
+                'comment_sync': 'Comment Sync',
+                'priority_recalc': 'Priority Recalculation'
+            };
+            return labels[type] || type;
+        }
+
+        function formatDuration(ms) {
+            const seconds = Math.floor(ms / 1000);
+            if (seconds < 60) return `${seconds}s`;
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+            const hours = Math.floor(minutes / 60);
+            return `${hours}h ${minutes % 60}m`;
+        }
+
+        function formatRelativeTime(timestamp) {
+            const ms = Date.now() - new Date(timestamp).getTime();
+            const seconds = Math.floor(ms / 1000);
+            if (seconds < 60) return `${seconds}s ago`;
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours}h ago`;
+            const days = Math.floor(hours / 24);
+            return `${days}d ago`;
+        }
+
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            });
+        }
+    </script>
+</body>
+</html>

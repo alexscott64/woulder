@@ -10,6 +10,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/api"
 	"github.com/alexscott64/woulder/backend/internal/config"
 	"github.com/alexscott64/woulder/backend/internal/database"
+	"github.com/alexscott64/woulder/backend/internal/monitoring"
 	"github.com/alexscott64/woulder/backend/internal/mountainproject"
 	"github.com/alexscott64/woulder/backend/internal/rivers"
 	"github.com/alexscott64/woulder/backend/internal/service"
@@ -35,16 +36,19 @@ func main() {
 	riverClient := rivers.NewUSGSClient()
 	mpClient := mountainproject.NewClient()
 
+	// Initialize job monitor
+	jobMonitor := monitoring.NewJobMonitor(db.Conn())
+
 	// Initialize services with dependency injection
 	locationService := service.NewLocationService(db.Locations(), db.Areas())
-	climbTrackingService := service.NewClimbTrackingService(db.MountainProject(), db.Climbing(), mpClient)
+	climbTrackingService := service.NewClimbTrackingService(db.MountainProject(), db.Climbing(), mpClient, jobMonitor)
 	weatherServiceLayer := service.NewWeatherService(db.Weather(), db.Locations(), db.Rocks(), weatherClient, climbTrackingService)
 	riverServiceLayer := service.NewRiverService(db.Rivers(), riverClient)
 	boulderDryingService := service.NewBoulderDryingService(db.Boulders(), db.Weather(), db.Locations(), db.Rocks(), db.MountainProject(), weatherClient)
 	heatMapService := service.NewHeatMapService(db.HeatMap())
 
 	// Initialize API handler with services
-	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService)
+	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService, jobMonitor)
 
 	// Start background weather refresh (every 1 hour)
 	// The refresh automatically checks if data is fresh and skips API calls if updated within the last hour
@@ -114,7 +118,17 @@ func main() {
 		apiGroup.GET("/heat-map/routes", handler.GetHeatMapRoutes)
 		apiGroup.GET("/heat-map/route/:route_id/ticks", handler.GetRouteTicksInDateRange)
 		apiGroup.POST("/heat-map/cluster/search-routes", handler.SearchClusterRoutes)
+
+		// Job monitoring routes
+		apiGroup.GET("/monitoring/jobs/active", handler.GetActiveJobs)
+		apiGroup.GET("/monitoring/jobs/history", handler.GetJobHistory)
+		apiGroup.GET("/monitoring/jobs/summary", handler.GetJobsSummary)
+		apiGroup.GET("/monitoring/jobs/:job_id", handler.GetJobStatus)
 	}
+
+	// Serve job monitoring dashboard at /jtrack
+	router.StaticFile("/jtrack", "./static/jtrack.html")
+	log.Printf("Job monitoring dashboard available at /jtrack")
 
 	// Start server
 	log.Printf("Starting Woulder API server on port %s", cfg.Server.Port)

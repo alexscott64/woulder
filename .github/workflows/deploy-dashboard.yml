@@ -1,0 +1,49 @@
+name: Deploy Job Monitor Dashboard
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'backend/static/jtrack.html'
+      - '.github/workflows/deploy-dashboard.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH || '/opt/woulder' }}
+            git pull origin main
+            if systemctl is-active --quiet woulder; then
+              sudo systemctl restart woulder
+              echo "Woulder service restarted"
+            else
+              echo "Woulder service not running, skipping restart"
+            fi
+            echo "Dashboard deployed successfully!"
+            echo "Access at: http://$(hostname)/jtrack"
+
+      - name: Notify deployment
+        if: success()
+        run: |
+          echo "✅ Dashboard deployed successfully!"
+          echo "📊 Access at: https://woulder.com/jtrack"
+          
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "❌ Dashboard deployment failed!"
+          echo "Check the logs above for details"

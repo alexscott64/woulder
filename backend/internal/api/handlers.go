@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/alexscott64/woulder/backend/internal/monitoring"
 	"github.com/alexscott64/woulder/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -18,6 +19,7 @@ type Handler struct {
 	climbTrackingService *service.ClimbTrackingService
 	boulderDryingService *service.BoulderDryingService
 	heatMapService       *service.HeatMapService
+	jobMonitor           *monitoring.JobMonitor
 }
 
 func NewHandler(
@@ -27,6 +29,7 @@ func NewHandler(
 	climbTrackingService *service.ClimbTrackingService,
 	boulderDryingService *service.BoulderDryingService,
 	heatMapService *service.HeatMapService,
+	jobMonitor *monitoring.JobMonitor,
 ) *Handler {
 	return &Handler{
 		locationService:      locationService,
@@ -35,6 +38,7 @@ func NewHandler(
 		climbTrackingService: climbTrackingService,
 		boulderDryingService: boulderDryingService,
 		heatMapService:       heatMapService,
+		jobMonitor:           jobMonitor,
 	}
 }
 

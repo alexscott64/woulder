@@ -103,6 +103,12 @@ func (db *Database) Ping(ctx context.Context) error {
 	return db.conn.PingContext(ctx)
 }
 
+// Conn returns the underlying database connection for direct SQL access.
+// Used by monitoring and other utilities that need raw database access.
+func (db *Database) Conn() *sql.DB {
+	return db.conn
+}
+
 // Domain Repository Accessors
 // These methods provide unified access to domain-specific repositories,
 // breaking import cycles by having the database package import domains
