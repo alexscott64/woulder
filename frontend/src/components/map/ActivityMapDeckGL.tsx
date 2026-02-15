@@ -32,6 +32,30 @@ function getRadiusByActivity(activityScore: number, maxScore: number): number {
 
 type ViewMode = 'scatter' | 'hexagon';
 
+const MAP_VIEW_STORAGE_KEY = 'activityMapViewMode';
+
+// Load map view mode from localStorage
+function loadMapViewMode(): ViewMode {
+  try {
+    const stored = localStorage.getItem(MAP_VIEW_STORAGE_KEY);
+    if (stored === 'scatter' || stored === 'hexagon') {
+      return stored;
+    }
+  } catch (error) {
+    console.error('Failed to load map view mode from localStorage:', error);
+  }
+  return 'hexagon'; // default
+}
+
+// Save map view mode to localStorage
+function saveMapViewMode(mode: ViewMode) {
+  try {
+    localStorage.setItem(MAP_VIEW_STORAGE_KEY, mode);
+  } catch (error) {
+    console.error('Failed to save map view mode to localStorage:', error);
+  }
+}
+
 export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowCluster }: ActivityMapDeckGLProps) {
   const [viewState, setViewState] = useState({
     longitude: -100.0,
@@ -41,8 +65,13 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
     bearing: 0,
   });
   
-  const [viewMode, setViewMode] = useState<ViewMode>('hexagon');
+  const [viewMode, setViewMode] = useState<ViewMode>(loadMapViewMode());
   const [legendExpanded, setLegendExpanded] = useState(false);
+
+  // Save view mode to localStorage when it changes
+  useEffect(() => {
+    saveMapViewMode(viewMode);
+  }, [viewMode]);
   const [hoveredObject, setHoveredObject] = useState<any>(null);
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number } | null>(null);
   const [isReady, setIsReady] = useState(false);

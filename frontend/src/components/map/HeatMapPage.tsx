@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { heatMapApi } from '../../services/api';
 import { HeatMapPoint } from '../../types/heatmap';
@@ -10,17 +10,69 @@ import { RouteTypeFilter } from './RouteTypeFilter';
 
 type ViewMode = 'map' | 'list';
 
+const STORAGE_KEY = 'heatMapFilters';
+
+interface StoredFilters {
+  routeTypes: string[];
+  minActivity: number;
+  timePeriodDays: number;
+  viewMode: ViewMode;
+}
+
+// Load filters from localStorage
+function loadFilters(): Partial<StoredFilters> {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error('Failed to load filters from localStorage:', error);
+  }
+  return {};
+}
+
+// Save filters to localStorage
+function saveFilters(filters: StoredFilters) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
+  } catch (error) {
+    console.error('Failed to save filters to localStorage:', error);
+  }
+}
+
 export function HeatMapPage() {
+  // Load saved filters or use defaults
+  const savedFilters = loadFilters();
+  const defaultTimePeriodDays = savedFilters.timePeriodDays || 90;
+  
   const [dateRange, setDateRange] = useState({
-    start: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000), // Last 90 days
+    start: new Date(Date.now() - defaultTimePeriodDays * 24 * 60 * 60 * 1000),
     end: new Date(),
   });
-  const [minActivity, setMinActivity] = useState(5);
-  const [viewMode, setViewMode] = useState<ViewMode>('map');
+  const [minActivity, setMinActivity] = useState(savedFilters.minActivity ?? 5);
+  const [viewMode, setViewMode] = useState<ViewMode>(savedFilters.viewMode || 'map');
   const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
-  const [selectedRouteTypes, setSelectedRouteTypes] = useState<string[]>(['Boulder', 'Sport', 'Trad', 'Ice']);
+  const [selectedRouteTypes, setSelectedRouteTypes] = useState<string[]>(
+    savedFilters.routeTypes || ['Boulder', 'Sport', 'Trad', 'Ice']
+  );
   const [clusterAreas, setClusterAreas] = useState<HeatMapPoint[]>([]);
   const [showClusterDrawer, setShowClusterDrawer] = useState(false);
+
+  // Calculate current time period in days
+  const timePeriodDays = Math.round(
+    (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  // Save filters to localStorage whenever they change
+  useEffect(() => {
+    saveFilters({
+      routeTypes: selectedRouteTypes,
+      minActivity,
+      timePeriodDays,
+      viewMode,
+    });
+  }, [selectedRouteTypes, minActivity, timePeriodDays, viewMode]);
 
   // Fetch heat map data - full mode to get active_routes
   const { data, isLoading, error } = useQuery({
