@@ -10,19 +10,19 @@ import (
 
 // LocationService handles location-related business logic
 type LocationService struct {
-	repo database.Repository
+	db *database.Database
 }
 
 // NewLocationService creates a new LocationService
-func NewLocationService(repo database.Repository) *LocationService {
+func NewLocationService(db *database.Database) *LocationService {
 	return &LocationService{
-		repo: repo,
+		db: db,
 	}
 }
 
 // GetAllLocations retrieves all locations
 func (s *LocationService) GetAllLocations(ctx context.Context) ([]models.Location, error) {
-	locations, err := s.repo.GetAllLocations(ctx)
+	locations, err := s.db.Locations().GetAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all locations: %w", err)
 	}
@@ -31,7 +31,7 @@ func (s *LocationService) GetAllLocations(ctx context.Context) ([]models.Locatio
 
 // GetLocation retrieves a single location by ID
 func (s *LocationService) GetLocation(ctx context.Context, id int) (*models.Location, error) {
-	location, err := s.repo.GetLocation(ctx, id)
+	location, err := s.db.Locations().GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get location %d: %w", id, err)
 	}
@@ -40,7 +40,7 @@ func (s *LocationService) GetLocation(ctx context.Context, id int) (*models.Loca
 
 // GetLocationsByArea retrieves all locations in a specific area
 func (s *LocationService) GetLocationsByArea(ctx context.Context, areaID int) ([]models.Location, error) {
-	locations, err := s.repo.GetLocationsByArea(ctx, areaID)
+	locations, err := s.db.Locations().GetByArea(ctx, areaID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get locations for area %d: %w", areaID, err)
 	}
@@ -49,7 +49,7 @@ func (s *LocationService) GetLocationsByArea(ctx context.Context, areaID int) ([
 
 // GetAllAreas retrieves all areas
 func (s *LocationService) GetAllAreas(ctx context.Context) ([]models.Area, error) {
-	areas, err := s.repo.GetAllAreas(ctx)
+	areas, err := s.db.Areas().GetAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all areas: %w", err)
 	}
@@ -58,7 +58,7 @@ func (s *LocationService) GetAllAreas(ctx context.Context) ([]models.Area, error
 
 // GetAreasWithLocationCounts retrieves areas with their location counts
 func (s *LocationService) GetAreasWithLocationCounts(ctx context.Context) ([]models.AreaWithLocationCount, error) {
-	areas, err := s.repo.GetAreasWithLocationCounts(ctx)
+	areas, err := s.db.Areas().GetAllWithLocationCounts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get areas with counts: %w", err)
 	}
@@ -67,7 +67,7 @@ func (s *LocationService) GetAreasWithLocationCounts(ctx context.Context) ([]mod
 
 // GetAreaByID retrieves a specific area by ID
 func (s *LocationService) GetAreaByID(ctx context.Context, id int) (*models.Area, error) {
-	area, err := s.repo.GetAreaByID(ctx, id)
+	area, err := s.db.Areas().GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get area %d: %w", id, err)
 	}

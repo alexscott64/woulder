@@ -6,15 +6,16 @@ import (
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/database"
+	"github.com/alexscott64/woulder/backend/internal/database/heatmap"
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
 type HeatMapService struct {
-	repo database.Repository
+	db *database.Database
 }
 
-func NewHeatMapService(repo database.Repository) *HeatMapService {
-	return &HeatMapService{repo: repo}
+func NewHeatMapService(db *database.Database) *HeatMapService {
+	return &HeatMapService{db: db}
 }
 
 // GetHeatMapData retrieves aggregated activity data for the map
@@ -47,7 +48,16 @@ func (s *HeatMapService) GetHeatMapData(
 	}
 
 	// Fetch raw data with route type filtering and lightweight option
-	points, err := s.repo.GetHeatMapData(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight)
+	var heatmapBounds *heatmap.GeoBounds
+	if bounds != nil {
+		heatmapBounds = &heatmap.GeoBounds{
+			MinLat: bounds.MinLat,
+			MaxLat: bounds.MaxLat,
+			MinLon: bounds.MinLon,
+			MaxLon: bounds.MaxLon,
+		}
+	}
+	points, err := s.db.HeatMap().GetHeatMapData(ctx, startDate, endDate, heatmapBounds, minActivity, limit, routeTypes, lightweight)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch heat map data: %w", err)
 	}
@@ -98,7 +108,7 @@ func (s *HeatMapService) GetAreaActivityDetail(
 		return nil, fmt.Errorf("start_date must be before end_date")
 	}
 
-	detail, err := s.repo.GetAreaActivityDetail(ctx, areaID, startDate, endDate)
+	detail, err := s.db.HeatMap().GetAreaActivityDetail(ctx, areaID, startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch area detail: %w", err)
 	}
@@ -125,7 +135,15 @@ func (s *HeatMapService) GetRoutesByBounds(
 		limit = 100 // Default to 100 for routes
 	}
 
-	routes, err := s.repo.GetRoutesByBounds(ctx, bounds, startDate, endDate, limit)
+	// Convert database.GeoBounds to heatmap.GeoBounds
+	heatmapBounds := heatmap.GeoBounds{
+		MinLat: bounds.MinLat,
+		MaxLat: bounds.MaxLat,
+		MinLon: bounds.MinLon,
+		MaxLon: bounds.MaxLon,
+	}
+
+	routes, err := s.db.HeatMap().GetRoutesByBounds(ctx, heatmapBounds, startDate, endDate, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch routes: %w", err)
 	}
@@ -152,7 +170,7 @@ func (s *HeatMapService) GetRouteTicksInDateRange(
 		limit = 100 // Default to 100 for route ticks
 	}
 
-	ticks, err := s.repo.GetRouteTicksInDateRange(ctx, routeID, startDate, endDate, limit)
+	ticks, err := s.db.HeatMap().GetRouteTicksInDateRange(ctx, routeID, startDate, endDate, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch route ticks: %w", err)
 	}
@@ -184,7 +202,7 @@ func (s *HeatMapService) SearchRoutesInAreas(
 		limit = 100 // Default to 100 for route search
 	}
 
-	routes, err := s.repo.SearchRoutesInAreas(ctx, areaIDs, searchQuery, startDate, endDate, limit)
+	routes, err := s.db.HeatMap().SearchRoutesInAreas(ctx, areaIDs, searchQuery, startDate, endDate, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search routes: %w", err)
 	}

@@ -17,7 +17,7 @@ import (
 )
 
 type WeatherService struct {
-	repo                 database.Repository
+	db                   *database.Database
 	weatherClient        *weather.WeatherService
 	rockCalculator       *rock_drying.Calculator
 	pestAnalyzer         *pests.PestAnalyzer
@@ -29,9 +29,9 @@ type WeatherService struct {
 	isRefreshing bool
 }
 
-func NewWeatherService(repo database.Repository, client *weather.WeatherService, climbService *ClimbTrackingService) *WeatherService {
+func NewWeatherService(db *database.Database, client *weather.WeatherService, climbService *ClimbTrackingService) *WeatherService {
 	return &WeatherService{
-		repo:                 repo,
+		db:                   db,
 		weatherClient:        client,
 		rockCalculator:       &rock_drying.Calculator{},
 		pestAnalyzer:         &pests.PestAnalyzer{},
@@ -43,7 +43,7 @@ func NewWeatherService(repo database.Repository, client *weather.WeatherService,
 // Uses cached data from database if available and fresh (< 1 hour old)
 func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int) (*models.WeatherForecast, error) {
 	// 1. Get location
-	location, err := s.repo.GetLocation(ctx, locationID)
+	location, err := s.db.Locations().GetByID(ctx, locationID)
 	if err != nil {
 		return nil, fmt.Errorf("location not found: %w", err)
 	}
@@ -53,7 +53,7 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 	var hourlyForecast []models.WeatherData
 	var sunTimes *client.SunTimes
 
-	cachedCurrent, err := s.repo.GetCurrentWeather(ctx, locationID)
+	cachedCurrent, err := s.db.Weather().GetCurrent(ctx, locationID)
 	if err == nil && cachedCurrent != nil {
 		// Check if cached data is fresh (less than 1 hour old)
 		age := time.Since(cachedCurrent.Timestamp)
@@ -62,7 +62,7 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 			current = cachedCurrent
 
 			// Also get cached forecast data (next 7 days)
-			hourlyForecast, err = s.repo.GetForecastWeather(ctx, locationID, 168) // 7 days
+			hourlyForecast, err = s.db.Weather().GetForecast(ctx, locationID, 168) // 7 days
 			if err != nil {
 				log.Printf("Warning: failed to get forecast from cache: %v", err)
 				hourlyForecast = []models.WeatherData{}
@@ -100,7 +100,7 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 
 	// 3. Get historical data from database for rock drying and snow calculation
 	// Get 7 days (168 hours) for better snow accumulation tracking
-	historical, err := s.repo.GetHistoricalWeather(ctx, locationID, 168)
+	historical, err := s.db.Weather().GetHistorical(ctx, locationID, 7) // 7 days
 	if err != nil {
 		log.Printf("Warning: failed to get historical weather: %v", err)
 		historical = []models.WeatherData{}
@@ -260,13 +260,13 @@ func (s *WeatherService) calculateRockDryingStatus(
 	snowDepth *float64,
 ) (*models.RockDryingStatus, error) {
 	// Get rock types
-	rockTypes, err := s.repo.GetRockTypesByLocation(ctx, location.ID)
+	rockTypes, err := s.db.Rocks().GetRockTypesByLocation(ctx, location.ID)
 	if err != nil || len(rockTypes) == 0 {
 		return nil, fmt.Errorf("no rock types for location")
 	}
 
 	// Get sun exposure
-	sunExposure, _ := s.repo.GetSunExposureByLocation(ctx, location.ID)
+	sunExposure, _ := s.db.Rocks().GetSunExposureByLocation(ctx, location.ID)
 
 	// Calculate with full rock type data
 	status := s.rockCalculator.CalculateDryingStatus(
@@ -283,14 +283,14 @@ func (s *WeatherService) calculateRockDryingStatus(
 
 // IsWeatherDataFresh checks if weather data is less than the specified duration old
 func (s *WeatherService) IsWeatherDataFresh(ctx context.Context, maxAge time.Duration) (bool, error) {
-	locations, err := s.repo.GetAllLocations(ctx)
+	locations, err := s.db.Locations().GetAll(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get locations: %w", err)
 	}
 
 	// Check if all locations have recent weather data
 	for _, loc := range locations {
-		weather, err := s.repo.GetCurrentWeather(ctx, loc.ID)
+		weather, err := s.db.Weather().GetCurrent(ctx, loc.ID)
 		if err != nil || weather == nil {
 			// No weather data exists for this location
 			return false, nil
@@ -343,7 +343,7 @@ func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, force
 		s.refreshMutex.Unlock()
 	}()
 
-	locations, err := s.repo.GetAllLocations(ctx)
+	locations, err := s.db.Locations().GetAll(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get locations: %w", err)
 	}
@@ -360,7 +360,7 @@ func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, force
 			// Delete old historical data (older than 7 days) to prevent stale precipitation data
 			// This ensures only fresh API data is used for rain calculations
 			log.Printf("Deleting old weather data for location %d (keeping last 7 days)", loc.ID)
-			if err := s.repo.DeleteOldWeatherData(ctx, loc.ID, 7); err != nil {
+			if err := s.db.Weather().DeleteOldForLocation(ctx, loc.ID, 7); err != nil {
 				log.Printf("ERROR: failed to delete old weather data for location %d: %v", loc.ID, err)
 			} else {
 				log.Printf("Successfully deleted old weather data for location %d", loc.ID)
@@ -369,7 +369,7 @@ func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, force
 			// Save historical data to database
 			for i := range historical {
 				historical[i].LocationID = loc.ID
-				if err := s.repo.SaveWeatherData(ctx, &historical[i]); err != nil {
+				if err := s.db.Weather().Save(ctx, &historical[i]); err != nil {
 					log.Printf("Failed to save historical weather for location %d: %v", loc.ID, err)
 				}
 			}
@@ -385,7 +385,7 @@ func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, force
 			// Save forecast data to database
 			for i := range forecast {
 				forecast[i].LocationID = loc.ID
-				if err := s.repo.SaveWeatherData(ctx, &forecast[i]); err != nil {
+				if err := s.db.Weather().Save(ctx, &forecast[i]); err != nil {
 					log.Printf("Failed to save forecast weather for location %d: %v", loc.ID, err)
 				}
 			}
@@ -449,9 +449,9 @@ func (s *WeatherService) GetAllWeather(ctx context.Context, areaID *int) ([]mode
 	var err error
 
 	if areaID != nil {
-		locations, err = s.repo.GetLocationsByArea(ctx, *areaID)
+		locations, err = s.db.Locations().GetByArea(ctx, *areaID)
 	} else {
-		locations, err = s.repo.GetAllLocations(ctx)
+		locations, err = s.db.Locations().GetAll(ctx)
 	}
 
 	if err != nil {

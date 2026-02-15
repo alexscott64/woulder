@@ -10,20 +10,20 @@ import (
 )
 
 type RiverService struct {
-	repo        database.Repository
+	db          *database.Database
 	riverClient *rivers.USGSClient
 }
 
-func NewRiverService(repo database.Repository, client *rivers.USGSClient) *RiverService {
+func NewRiverService(db *database.Database, client *rivers.USGSClient) *RiverService {
 	return &RiverService{
-		repo:        repo,
+		db:          db,
 		riverClient: client,
 	}
 }
 
 func (s *RiverService) GetRiverDataForLocation(ctx context.Context, locationID int) ([]models.RiverData, error) {
 	// 1. Get rivers from database
-	locationRivers, err := s.repo.GetRiversByLocation(ctx, locationID)
+	locationRivers, err := s.db.Rivers().GetByLocation(ctx, locationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get rivers for location %d: %w", locationID, err)
 	}
@@ -71,7 +71,7 @@ func (s *RiverService) GetRiverDataForLocation(ctx context.Context, locationID i
 }
 
 func (s *RiverService) GetRiverDataByID(ctx context.Context, riverID int) (*models.RiverData, error) {
-	river, err := s.repo.GetRiverByID(ctx, riverID)
+	river, err := s.db.Rivers().GetByID(ctx, riverID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get river %d: %w", riverID, err)
 	}

@@ -29,7 +29,7 @@ var _ MPClientInterface = (*mountainproject.Client)(nil)
 
 // ClimbTrackingService handles Mountain Project data synchronization and retrieval
 type ClimbTrackingService struct {
-	repo         database.Repository
+	db           *database.Database
 	mpClient     MPClientInterface
 	syncMutex    sync.Mutex
 	lastSyncTime time.Time
@@ -38,11 +38,11 @@ type ClimbTrackingService struct {
 
 // NewClimbTrackingService creates a new climb tracking service
 func NewClimbTrackingService(
-	repo database.Repository,
+	db *database.Database,
 	mpClient MPClientInterface,
 ) *ClimbTrackingService {
 	return &ClimbTrackingService{
-		repo:     repo,
+		db:       db,
 		mpClient: mpClient,
 	}
 }
@@ -169,7 +169,7 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 			log.Printf("Area GPS: %.4f, %.4f", latitude, longitude)
 		}
 
-		if err := s.repo.SaveMPArea(ctx, area); err != nil {
+		if err := s.db.MountainProject().Areas().SaveArea(ctx, area); err != nil {
 			log.Printf("Error saving area %s: %v", item.mpAreaID, err)
 			continue
 		}
@@ -225,7 +225,7 @@ func (s *ClimbTrackingService) SyncAreaRecursive(
 					LocationID: item.locationID,
 				}
 
-				if err := s.repo.SaveMPRoute(ctx, route); err != nil {
+				if err := s.db.MountainProject().Routes().SaveRoute(ctx, route); err != nil {
 					log.Printf("Error saving route %s: %v", childIDStr, err)
 					continue
 				}
@@ -329,7 +329,7 @@ func (s *ClimbTrackingService) syncRouteTicks(ctx context.Context, routeID strin
 			}
 		}
 
-		if err := s.repo.SaveMPTick(ctx, tickModel); err != nil {
+		if err := s.db.MountainProject().Ticks().SaveTick(ctx, tickModel); err != nil {
 			log.Printf("Error saving tick for route %s: %v", routeID, err)
 			continue
 		}
@@ -362,7 +362,7 @@ func (s *ClimbTrackingService) syncAreaComments(ctx context.Context, areaID stri
 		commentedAt := time.Unix(comment.Created, 0)
 		userName := comment.GetUserInfo()
 
-		if err := s.repo.SaveAreaComment(ctx, int64(comment.ID), areaIDInt64, userName, comment.Message, commentedAt); err != nil {
+		if err := s.db.MountainProject().Comments().SaveAreaComment(ctx, int64(comment.ID), areaIDInt64, userName, comment.Message, commentedAt); err != nil {
 			log.Printf("Error saving area comment: %v", err)
 			continue
 		}
@@ -394,7 +394,7 @@ func (s *ClimbTrackingService) syncRouteComments(ctx context.Context, routeID st
 		commentedAt := time.Unix(comment.Created, 0)
 		userName := comment.GetUserInfo()
 
-		if err := s.repo.SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, comment.Message, commentedAt); err != nil {
+		if err := s.db.MountainProject().Comments().SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, comment.Message, commentedAt); err != nil {
 			log.Printf("Error saving route comment: %v", err)
 			continue
 		}
@@ -414,7 +414,7 @@ func (s *ClimbTrackingService) GetLastClimbedForLocation(
 	ctx context.Context,
 	locationID int,
 ) (*models.LastClimbedInfo, error) {
-	return s.repo.GetLastClimbedForLocation(ctx, locationID)
+	return s.db.Climbing().History().GetLastClimbedForLocation(ctx, locationID)
 }
 
 // GetClimbHistoryForLocation retrieves recent climb history for a location
@@ -423,7 +423,7 @@ func (s *ClimbTrackingService) GetClimbHistoryForLocation(
 	locationID int,
 	limit int,
 ) ([]models.ClimbHistoryEntry, error) {
-	return s.repo.GetClimbHistoryForLocation(ctx, locationID, limit)
+	return s.db.Climbing().History().GetClimbHistoryForLocation(ctx, locationID, limit)
 }
 
 // GetAreasOrderedByActivity retrieves areas ordered by most recent climb activity
@@ -431,7 +431,7 @@ func (s *ClimbTrackingService) GetAreasOrderedByActivity(
 	ctx context.Context,
 	locationID int,
 ) ([]models.AreaActivitySummary, error) {
-	return s.repo.GetAreasOrderedByActivity(ctx, locationID)
+	return s.db.Climbing().Activity().GetAreasOrderedByActivity(ctx, locationID)
 }
 
 // GetSubareasOrderedByActivity retrieves subareas of a parent area ordered by recent climb activity
@@ -440,7 +440,7 @@ func (s *ClimbTrackingService) GetSubareasOrderedByActivity(
 	parentAreaID int64,
 	locationID int,
 ) ([]models.AreaActivitySummary, error) {
-	return s.repo.GetSubareasOrderedByActivity(ctx, parentAreaID, locationID)
+	return s.db.Climbing().Activity().GetSubareasOrderedByActivity(ctx, parentAreaID, locationID)
 }
 
 // GetRoutesOrderedByActivity retrieves routes in an area ordered by recent climb activity
@@ -450,7 +450,7 @@ func (s *ClimbTrackingService) GetRoutesOrderedByActivity(
 	locationID int,
 	limit int,
 ) ([]models.RouteActivitySummary, error) {
-	return s.repo.GetRoutesOrderedByActivity(ctx, areaID, locationID, limit)
+	return s.db.Climbing().Activity().GetRoutesOrderedByActivity(ctx, areaID, locationID, limit)
 }
 
 // GetRecentTicksForRoute retrieves recent ticks for a specific route
@@ -459,7 +459,7 @@ func (s *ClimbTrackingService) GetRecentTicksForRoute(
 	routeID int64,
 	limit int,
 ) ([]models.ClimbHistoryEntry, error) {
-	return s.repo.GetRecentTicksForRoute(ctx, routeID, limit)
+	return s.db.Climbing().Activity().GetRecentTicksForRoute(ctx, routeID, limit)
 }
 
 // SearchInLocation searches all areas and routes in a location by name
@@ -469,7 +469,7 @@ func (s *ClimbTrackingService) SearchInLocation(
 	searchQuery string,
 	limit int,
 ) ([]models.SearchResult, error) {
-	return s.repo.SearchInLocation(ctx, locationID, searchQuery, limit)
+	return s.db.Climbing().Search().SearchInLocation(ctx, locationID, searchQuery, limit)
 }
 
 // SearchRoutesInLocation searches all routes in a location by name or grade
@@ -479,7 +479,7 @@ func (s *ClimbTrackingService) SearchRoutesInLocation(
 	searchQuery string,
 	limit int,
 ) ([]models.RouteActivitySummary, error) {
-	return s.repo.SearchRoutesInLocation(ctx, locationID, searchQuery, limit)
+	return s.db.Climbing().Search().SearchRoutesInLocation(ctx, locationID, searchQuery, limit)
 }
 
 // GetSyncStatus returns the current sync status
@@ -508,7 +508,7 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 	}()
 
 	// Get all route IDs for this location
-	routeIDs, err := s.repo.GetAllRouteIDsForLocation(ctx, locationID)
+	routeIDs, err := s.db.MountainProject().Routes().GetAllIDsForLocation(ctx, locationID)
 	if err != nil {
 		return fmt.Errorf("failed to get route IDs: %w", err)
 	}
@@ -539,7 +539,7 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 		}
 
 		// Get the timestamp of the last tick we have for this route
-		lastTickTime, err := s.repo.GetLastTickTimestampForRoute(ctx, routeID)
+		lastTickTime, err := s.db.MountainProject().Ticks().GetLastTimestampForRoute(ctx, routeID)
 		if err != nil {
 			log.Printf("Error getting last tick for route %d: %v", routeID, err)
 			continue
@@ -595,7 +595,7 @@ func (s *ClimbTrackingService) SyncNewTicksForLocation(ctx context.Context, loca
 				}
 			}
 
-			if err := s.repo.SaveMPTick(ctx, tickModel); err != nil {
+			if err := s.db.MountainProject().Ticks().SaveTick(ctx, tickModel); err != nil {
 				log.Printf("Error saving tick for route %d: %v", routeID, err)
 				continue
 			}
@@ -672,7 +672,7 @@ func (s *ClimbTrackingService) calculateBoulderGPS(
 	for i, routeID := range routeIDs {
 		pos := positions[i]
 
-		err := s.repo.UpdateRouteGPS(ctx, routeID, pos.Latitude, pos.Longitude, pos.Aspect)
+		err := s.db.MountainProject().Routes().UpdateGPS(ctx, routeID, pos.Latitude, pos.Longitude, pos.Aspect)
 		if err != nil {
 			log.Printf("Error updating GPS for route %d: %v", routeID, err)
 			continue
@@ -690,7 +690,7 @@ func (s *ClimbTrackingService) SyncNewRoutesForAllStates(ctx context.Context) er
 	log.Println("Starting new route sync for all states...")
 
 	// Get all state configurations
-	states, err := s.repo.GetAllStateConfigs(ctx)
+	states, err := s.db.MountainProject().Areas().GetAllStateConfigs(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get state configs: %w", err)
 	}
@@ -743,7 +743,7 @@ func (s *ClimbTrackingService) checkAreaForNewRoutes(ctx context.Context, areaID
 	}
 
 	// Get cached route count from database
-	cachedCount, err := s.repo.GetAreaRouteCount(ctx, areaID)
+	cachedCount, err := s.db.MountainProject().Areas().GetRouteCount(ctx, areaID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get cached count for area %s: %w", areaID, err)
 	}
@@ -757,7 +757,7 @@ func (s *ClimbTrackingService) checkAreaForNewRoutes(ctx context.Context, areaID
 	// If first time checking or counts match, update cache and return
 	if cachedCount == -1 {
 		// First time checking this area - just cache the count
-		if err := s.repo.UpdateAreaRouteCount(ctx, areaID, currentCount); err != nil {
+		if err := s.db.MountainProject().Areas().UpdateRouteCount(ctx, areaID, currentCount); err != nil {
 			log.Printf("Warning: failed to cache count for area %s: %v", areaID, err)
 		}
 		return 0, nil
@@ -765,7 +765,7 @@ func (s *ClimbTrackingService) checkAreaForNewRoutes(ctx context.Context, areaID
 
 	if cachedCount == currentCount {
 		// No change detected
-		if err := s.repo.UpdateAreaRouteCount(ctx, areaID, currentCount); err != nil {
+		if err := s.db.MountainProject().Areas().UpdateRouteCount(ctx, areaID, currentCount); err != nil {
 			log.Printf("Warning: failed to update check time for area %s: %v", areaID, err)
 		}
 		return 0, nil
@@ -775,7 +775,7 @@ func (s *ClimbTrackingService) checkAreaForNewRoutes(ctx context.Context, areaID
 	if currentCount < cachedCount {
 		// Route count decreased (route deleted) - just update cache
 		log.Printf("Area %s (%s): route count decreased from %d to %d (route deleted)", areaID, areaResp.Title, cachedCount, currentCount)
-		if err := s.repo.UpdateAreaRouteCount(ctx, areaID, currentCount); err != nil {
+		if err := s.db.MountainProject().Areas().UpdateRouteCount(ctx, areaID, currentCount); err != nil {
 			log.Printf("Warning: failed to update count for area %s: %v", areaID, err)
 		}
 		return 0, nil
@@ -786,7 +786,7 @@ func (s *ClimbTrackingService) checkAreaForNewRoutes(ctx context.Context, areaID
 	log.Printf("Area %s (%s): route count increased from %d to %d (+%d new route(s))", areaID, areaResp.Title, cachedCount, currentCount, newRouteCount)
 
 	// Update cached count
-	if err := s.repo.UpdateAreaRouteCount(ctx, areaID, currentCount); err != nil {
+	if err := s.db.MountainProject().Areas().UpdateRouteCount(ctx, areaID, currentCount); err != nil {
 		log.Printf("Warning: failed to update count for area %s: %v", areaID, err)
 	}
 
@@ -830,7 +830,7 @@ func (s *ClimbTrackingService) checkAreaForNewRoutes(ctx context.Context, areaID
 // syncNewRoutesInArea syncs new routes in a specific area
 func (s *ClimbTrackingService) syncNewRoutesInArea(ctx context.Context, areaID string, areaResp *mountainproject.AreaResponse) (int, error) {
 	// Get existing route IDs from database
-	existingRouteIDs, err := s.repo.GetRouteIDsForArea(ctx, areaID)
+	existingRouteIDs, err := s.db.MountainProject().Routes().GetIDsForArea(ctx, areaID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get existing routes for area %s: %w", areaID, err)
 	}
@@ -887,7 +887,7 @@ func (s *ClimbTrackingService) syncNewRoutesInArea(ctx context.Context, areaID s
 		}
 
 		// Insert route
-		err := s.repo.UpsertRoute(ctx, routeIDInt64, areaIDInt64, nil, route.Title, routeType, "", lat, lon, nil)
+		err := s.db.MountainProject().Routes().UpsertRoute(ctx, routeIDInt64, areaIDInt64, nil, route.Title, routeType, "", lat, lon, nil)
 		if err != nil {
 			log.Printf("Error syncing route %s: %v", routeID, err)
 			continue
@@ -926,7 +926,7 @@ func (s *ClimbTrackingService) syncNewRoutesInArea(ctx context.Context, areaID s
 				}
 
 				// Insert tick
-				if err := s.repo.UpsertTick(ctx, routeIDInt64, userName, tickDate, tick.Style, comment); err != nil {
+				if err := s.db.MountainProject().Ticks().UpsertTick(ctx, routeIDInt64, userName, tickDate, tick.Style, comment); err != nil {
 					log.Printf("Warning: failed to insert tick for route %s: %v", routeID, err)
 				}
 			}
@@ -943,7 +943,7 @@ func (s *ClimbTrackingService) syncNewRoutesInArea(ctx context.Context, areaID s
 				cleanedText := cleanCommentText(comment.Message)
 
 				commentID := int64(comment.ID)
-				if err := s.repo.UpsertRouteComment(ctx, commentID, routeIDInt64, userName, nil, cleanedText, commentTime); err != nil {
+				if err := s.db.MountainProject().Comments().UpsertRouteComment(ctx, commentID, routeIDInt64, userName, nil, cleanedText, commentTime); err != nil {
 					log.Printf("Warning: failed to insert comment for route %s: %v", routeID, err)
 				}
 			}
@@ -961,12 +961,12 @@ func (s *ClimbTrackingService) syncNewRoutesInArea(ctx context.Context, areaID s
 func (s *ClimbTrackingService) RecalculateAllPriorities(ctx context.Context) error {
 	log.Println("Recalculating route sync priorities (non-location routes only)...")
 
-	if err := s.repo.UpdateRouteSyncPriorities(ctx); err != nil {
+	if err := s.db.MountainProject().Sync().UpdateRoutePriorities(ctx); err != nil {
 		return fmt.Errorf("failed to recalculate priorities: %w", err)
 	}
 
 	// Query and log priority distribution
-	distribution, err := s.repo.GetPriorityDistribution(ctx)
+	distribution, err := s.db.MountainProject().Sync().GetPriorityDistribution(ctx)
 	if err != nil {
 		log.Printf("Warning: failed to get priority distribution: %v", err)
 	} else {
@@ -982,7 +982,7 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 	startTime := time.Now()
 
 	// Get ALL location routes due for tick sync
-	routeIDs, err := s.repo.GetLocationRoutesDueForSync(ctx, "ticks")
+	routeIDs, err := s.db.MountainProject().Sync().GetLocationRoutesDueForSync(ctx, "ticks")
 	if err != nil {
 		return fmt.Errorf("failed to get location routes for tick sync: %w", err)
 	}
@@ -1007,7 +1007,7 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 	err = s.rateLimitedSync(ctx, routeIDs, func(routeID string) error {
 		// Get last tick timestamp for this route
 		routeIDInt64, _ := strconv.ParseInt(routeID, 10, 64)
-		lastTickTime, err := s.repo.GetLastTickTimestampForRoute(ctx, routeIDInt64)
+		lastTickTime, err := s.db.MountainProject().Ticks().GetLastTimestampForRoute(ctx, routeIDInt64)
 		if err != nil {
 			return fmt.Errorf("failed to get last tick for route %s: %w", routeID, err)
 		}
@@ -1060,7 +1060,7 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 				}
 			}
 
-			if err := s.repo.SaveMPTick(ctx, tickModel); err != nil {
+			if err := s.db.MountainProject().Ticks().SaveTick(ctx, tickModel); err != nil {
 				log.Printf("Error saving tick for route %s: %v", routeID, err)
 				continue
 			}
@@ -1088,7 +1088,7 @@ func (s *ClimbTrackingService) SyncLocationRouteComments(ctx context.Context) er
 	startTime := time.Now()
 
 	// Get ALL location routes due for comment sync
-	routeIDs, err := s.repo.GetLocationRoutesDueForSync(ctx, "comments")
+	routeIDs, err := s.db.MountainProject().Sync().GetLocationRoutesDueForSync(ctx, "comments")
 	if err != nil {
 		return fmt.Errorf("failed to get location routes for comment sync: %w", err)
 	}
@@ -1119,7 +1119,7 @@ func (s *ClimbTrackingService) SyncLocationRouteComments(ctx context.Context) er
 			userName := comment.GetUserInfo()
 			cleanedText := cleanCommentText(comment.Message)
 
-			if err := s.repo.SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, cleanedText, commentedAt); err != nil {
+			if err := s.db.MountainProject().Comments().SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, cleanedText, commentedAt); err != nil {
 				log.Printf("Error saving comment for route %s: %v", routeID, err)
 				continue
 			}
@@ -1147,7 +1147,7 @@ func (s *ClimbTrackingService) SyncTicksByPriority(ctx context.Context, priority
 	startTime := time.Now()
 
 	// Get non-location routes due for tick sync at this priority
-	routeIDs, err := s.repo.GetRoutesDueForTickSync(ctx, priority)
+	routeIDs, err := s.db.MountainProject().Sync().GetRoutesDueForTickSync(ctx, priority)
 	if err != nil {
 		return fmt.Errorf("failed to get routes for priority %s tick sync: %w", priority, err)
 	}
@@ -1172,7 +1172,7 @@ func (s *ClimbTrackingService) SyncTicksByPriority(ctx context.Context, priority
 	err = s.rateLimitedSync(ctx, routeIDs, func(routeID string) error {
 		// Get last tick timestamp for this route
 		routeIDInt64, _ := strconv.ParseInt(routeID, 10, 64)
-		lastTickTime, err := s.repo.GetLastTickTimestampForRoute(ctx, routeIDInt64)
+		lastTickTime, err := s.db.MountainProject().Ticks().GetLastTimestampForRoute(ctx, routeIDInt64)
 		if err != nil {
 			return fmt.Errorf("failed to get last tick for route %s: %w", routeID, err)
 		}
@@ -1225,7 +1225,7 @@ func (s *ClimbTrackingService) SyncTicksByPriority(ctx context.Context, priority
 				}
 			}
 
-			if err := s.repo.SaveMPTick(ctx, tickModel); err != nil {
+			if err := s.db.MountainProject().Ticks().SaveTick(ctx, tickModel); err != nil {
 				log.Printf("Error saving tick for route %s: %v", routeID, err)
 				continue
 			}
@@ -1253,7 +1253,7 @@ func (s *ClimbTrackingService) SyncCommentsByPriority(ctx context.Context, prior
 	startTime := time.Now()
 
 	// Get non-location routes due for comment sync at this priority
-	routeIDs, err := s.repo.GetRoutesDueForCommentSync(ctx, priority)
+	routeIDs, err := s.db.MountainProject().Sync().GetRoutesDueForCommentSync(ctx, priority)
 	if err != nil {
 		return fmt.Errorf("failed to get routes for priority %s comment sync: %w", priority, err)
 	}
@@ -1284,7 +1284,7 @@ func (s *ClimbTrackingService) SyncCommentsByPriority(ctx context.Context, prior
 			userName := comment.GetUserInfo()
 			cleanedText := cleanCommentText(comment.Message)
 
-			if err := s.repo.SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, cleanedText, commentedAt); err != nil {
+			if err := s.db.MountainProject().Comments().SaveRouteComment(ctx, int64(comment.ID), routeIDInt64, userName, cleanedText, commentedAt); err != nil {
 				log.Printf("Error saving comment for route %s: %v", routeID, err)
 				continue
 			}
