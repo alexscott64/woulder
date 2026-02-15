@@ -478,16 +478,15 @@ func (db *Database) UpsertRouteComment(ctx context.Context, mpCommentID, mpRoute
 // that adapts to seasonal patterns, activity surges, and per-area population differences.
 //
 // Priority Signals (evaluated in order):
-// 1. Seasonal routes (Ice/Alpine/Snow/Mixed): HIGH if any activity in 90 days
-// 2. Activity surge: HIGH if recent activity (14d) after 90+ day gap (catches season starts)
-// 3. Per-area ranking: HIGH if top 10% in area (adjusts for population)
-// 4. Absolute threshold: HIGH if 20+ ticks in 90 days (very busy routes)
-// 5. New routes: HIGH if < 90 days old with activity
-// 6. MEDIUM if any activity or above-average for area
-// 7. LOW otherwise
+// 1. Seasonal routes (Ice/Alpine/Snow/Mixed): ALWAYS HIGH (need constant monitoring for conditions)
+// 2. Activity surge: HIGH if recent tick (14d) after 90+ day gap (catches season starts)
+// 3. Per-area ranking: HIGH if top 15% in area (popular routes in each area)
+// 4. Absolute threshold: HIGH if 5+ ticks in 90 days (busy routes)
+// 5. MEDIUM if any activity (1-4 ticks in 90d) or above-average for area (60th+ percentile)
+// 6. LOW otherwise (no activity and below 60th percentile)
 //
-// This system ensures we never miss seasonal starts (ice climbing, alpine) while
-// still optimizing API calls for the majority of routes.
+// Target distribution: ~50K high (daily sync), ~125K medium (weekly sync), ~100K low (monthly sync)
+// This system ensures seasonal routes are always monitored while optimizing API calls for most routes.
 func (db *Database) UpdateRouteSyncPriorities(ctx context.Context) error {
 	query := `
 		WITH route_metrics AS (
@@ -522,25 +521,22 @@ func (db *Database) UpdateRouteSyncPriorities(ctx context.Context) error {
 			days_since_last_tick = m.days_since_last_tick,
 			area_percentile = p.area_percentile,
 			sync_priority = CASE
-				-- Seasonal routes: ANY activity in 90 days = HIGH (catches ice/alpine seasons)
-				WHEN m.route_type IN ('Ice', 'Alpine', 'Snow', 'Mixed') AND m.tick_count_90d >= 1 THEN 'high'
+				-- Seasonal routes: ALWAYS HIGH (ice climbing, alpine, etc need constant monitoring)
+				WHEN m.route_type IN ('Ice', 'Alpine', 'Snow', 'Mixed') THEN 'high'
 
 				-- Activity surge: Recent ticks after long gap = HIGH (catches season starts)
 				WHEN m.tick_count_14d >= 1 AND m.days_since_last_tick > 90 THEN 'high'
 
-				-- Per-area top performers: Top 10% = HIGH (adjusts for population)
-				WHEN p.area_percentile >= 0.90 THEN 'high'
+				-- Per-area top performers: Top 15% = HIGH (popular routes in each area)
+				WHEN p.area_percentile >= 0.85 THEN 'high'
 
-				-- Absolute threshold: Very busy routes = HIGH (safety net)
-				WHEN m.tick_count_90d >= 20 THEN 'high'
+				-- Absolute threshold: Busy routes = HIGH (5+ ticks in 90 days)
+				WHEN m.tick_count_90d >= 5 THEN 'high'
 
-				-- New routes with activity = HIGH (catch new classics early)
-				WHEN m.route_age_days < 90 AND m.total_tick_count > 0 THEN 'high'
+				-- Medium: Any activity (1-4 ticks) OR above-average for area (60th+ percentile)
+				WHEN m.tick_count_90d >= 1 OR p.area_percentile >= 0.60 THEN 'medium'
 
-				-- Medium: Any activity OR above-average for area
-				WHEN m.tick_count_90d >= 1 OR p.area_percentile >= 0.50 THEN 'medium'
-
-				-- Low: Everything else
+				-- Low: Everything else (no activity and below 60th percentile)
 				ELSE 'low'
 			END,
 			updated_at = NOW()
@@ -555,6 +551,7 @@ func (db *Database) UpdateRouteSyncPriorities(ctx context.Context) error {
 
 // GetLocationRoutesDueForSync returns ALL routes with location_id that need syncing
 // These routes always sync daily regardless of activity
+// NOTE: No LIMIT - we need to sync ALL overdue location routes in each run
 func (db *Database) GetLocationRoutesDueForSync(ctx context.Context, syncType string) ([]int64, error) {
 	var query string
 
@@ -569,7 +566,6 @@ func (db *Database) GetLocationRoutesDueForSync(ctx context.Context, syncType st
 					OR last_tick_sync_at < NOW() - INTERVAL '24 hours'
 				)
 			ORDER BY last_tick_sync_at ASC NULLS FIRST
-			LIMIT 1000
 		`
 	} else if syncType == "comments" {
 		query = `
@@ -582,7 +578,6 @@ func (db *Database) GetLocationRoutesDueForSync(ctx context.Context, syncType st
 					OR last_comment_sync_at < NOW() - INTERVAL '24 hours'
 				)
 			ORDER BY last_comment_sync_at ASC NULLS FIRST
-			LIMIT 1000
 		`
 	} else {
 		return nil, fmt.Errorf("invalid syncType: %s (must be 'ticks' or 'comments')", syncType)
@@ -608,6 +603,7 @@ func (db *Database) GetLocationRoutesDueForSync(ctx context.Context, syncType st
 
 // GetRoutesDueForTickSync returns NON-LOCATION routes due for tick syncing based on priority
 // IMPORTANT: Only returns routes WHERE location_id IS NULL
+// NOTE: No LIMIT - we need to sync ALL overdue routes of the given priority in each run
 func (db *Database) GetRoutesDueForTickSync(ctx context.Context, priority string) ([]int64, error) {
 	var interval string
 	switch priority {
@@ -632,7 +628,6 @@ func (db *Database) GetRoutesDueForTickSync(ctx context.Context, priority string
 				OR last_tick_sync_at < NOW() - INTERVAL '%s'
 			)
 		ORDER BY last_tick_sync_at ASC NULLS FIRST
-		LIMIT 1000
 	`, interval)
 
 	rows, err := db.conn.QueryContext(ctx, query, priority)
@@ -655,6 +650,7 @@ func (db *Database) GetRoutesDueForTickSync(ctx context.Context, priority string
 
 // GetRoutesDueForCommentSync returns NON-LOCATION routes due for comment syncing based on priority
 // IMPORTANT: Only returns routes WHERE location_id IS NULL
+// NOTE: No LIMIT - we need to sync ALL overdue routes of the given priority in each run
 func (db *Database) GetRoutesDueForCommentSync(ctx context.Context, priority string) ([]int64, error) {
 	var interval string
 	switch priority {
@@ -679,7 +675,6 @@ func (db *Database) GetRoutesDueForCommentSync(ctx context.Context, priority str
 				OR last_comment_sync_at < NOW() - INTERVAL '%s'
 			)
 		ORDER BY last_comment_sync_at ASC NULLS FIRST
-		LIMIT 1000
 	`, interval)
 
 	rows, err := db.conn.QueryContext(ctx, query, priority)
