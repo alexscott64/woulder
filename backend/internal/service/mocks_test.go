@@ -10,7 +10,18 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
-// Mock repository implementations for testing
+// This file contains shared mock implementations used across service tests.
+// Mocks are grouped by domain (weather, locations, climbing, etc.) for clarity.
+//
+// DESIGN DECISION: We use a single shared mocks file rather than per-test mocks because:
+// 1. Reduces file proliferation - more maintainable
+// 2. Follows Go testing conventions (single _test.go package with shared test helpers)
+// 3. Mocks are simple and reusable across tests
+// 4. Still keeps mocks isolated from production code (in _test.go files)
+
+// ============================================================================
+// WEATHER REPOSITORY MOCKS
+// ============================================================================
 
 // MockWeatherRepository implements weather.Repository
 type MockWeatherRepository struct {
@@ -64,6 +75,10 @@ func (m *MockWeatherRepository) DeleteOldForLocation(ctx context.Context, locati
 	return nil
 }
 
+// ============================================================================
+// LOCATIONS REPOSITORY MOCKS
+// ============================================================================
+
 // MockLocationsRepository implements locations.Repository
 type MockLocationsRepository struct {
 	GetAllFn    func(ctx context.Context) ([]models.Location, error)
@@ -91,6 +106,10 @@ func (m *MockLocationsRepository) GetByArea(ctx context.Context, areaID int) ([]
 	}
 	return []models.Location{}, nil
 }
+
+// ============================================================================
+// ROCKS REPOSITORY MOCKS
+// ============================================================================
 
 // MockRocksRepository implements rocks.Repository
 type MockRocksRepository struct {
@@ -120,6 +139,10 @@ func (m *MockRocksRepository) GetSunExposureByLocation(ctx context.Context, loca
 	return nil, nil
 }
 
+// ============================================================================
+// RIVERS REPOSITORY MOCKS
+// ============================================================================
+
 // MockRiversRepository implements rivers.Repository
 type MockRiversRepository struct {
 	GetByLocationFn func(ctx context.Context, locationID int) ([]models.River, error)
@@ -139,6 +162,10 @@ func (m *MockRiversRepository) GetByID(ctx context.Context, id int) (*models.Riv
 	}
 	return nil, nil
 }
+
+// ============================================================================
+// AREAS REPOSITORY MOCKS
+// ============================================================================
 
 // MockAreasRepository implements areas.Repository
 type MockAreasRepository struct {
@@ -167,6 +194,10 @@ func (m *MockAreasRepository) GetAllWithLocationCounts(ctx context.Context) ([]m
 	}
 	return []models.AreaWithLocationCount{}, nil
 }
+
+// ============================================================================
+// MOUNTAIN PROJECT REPOSITORY MOCKS
+// ============================================================================
 
 // MockMountainProjectRepository implements mountainproject.Repository with sub-repositories
 type MockMountainProjectRepository struct {
@@ -435,6 +466,10 @@ func (m *MockMPSyncRepository) GetPriorityDistribution(ctx context.Context) (map
 	return map[string]int{}, nil
 }
 
+// ============================================================================
+// CLIMBING REPOSITORY MOCKS
+// ============================================================================
+
 // MockClimbingRepository implements climbing.Repository with sub-repositories
 type MockClimbingRepository struct {
 	history  *MockClimbingHistoryRepository
@@ -538,6 +573,10 @@ func (m *MockClimbingSearchRepository) SearchRoutesInLocation(ctx context.Contex
 	return []models.RouteActivitySummary{}, nil
 }
 
+// ============================================================================
+// BOULDERS REPOSITORY MOCKS
+// ============================================================================
+
 // MockBouldersRepository implements boulders.Repository
 type MockBouldersRepository struct {
 	GetProfileFn       func(ctx context.Context, mpRouteID int64) (*models.BoulderDryingProfile, error)
@@ -565,6 +604,10 @@ func (m *MockBouldersRepository) SaveProfile(ctx context.Context, profile *model
 	}
 	return nil
 }
+
+// ============================================================================
+// HEATMAP REPOSITORY MOCKS
+// ============================================================================
 
 // MockHeatMapRepository implements heatmap.Repository
 type MockHeatMapRepository struct {

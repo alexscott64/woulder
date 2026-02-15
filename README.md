@@ -64,6 +64,17 @@ Track comprehensive climbing conditions including weather, river crossings, pest
 - **Elevation Adjustment** - Lapse rate corrections (-3.5°F per 1,000 ft)
 - **Rain-on-Snow** - Compaction and melt modeling
 
+### Interactive Activity Heat Map
+- **Geographic Visualization** - DeckGL-powered 3D map showing climbing activity hotspots
+- **Time-Based Filtering** - View activity from last 7 days, 30 days, 90 days, or all time
+- **Route Type Filtering** - Filter by Boulder, Sport, Trad, Alpine, or combinations
+- **Activity Scoring** - Recent activity weighted more heavily (2x last week, 1.5x last month)
+- **Cluster Intelligence** - Automatically groups nearby routes, shows tick counts
+- **Area Deep Dive** - Click clusters to see detailed area statistics and top routes
+- **Route Details** - View individual routes with recent tick history
+- **Search Functionality** - Find specific routes across all areas
+- **Lightweight Mode** - Optimized data loading for smooth performance
+
 ### User Experience
 - **Dark Mode** - Persistent theme switching with localStorage
 - **Area Filtering** - Collapsible sidebar to filter locations by region
@@ -173,12 +184,27 @@ npm run test:coverage   # Generate coverage report
 
 ### Backend Tests
 
+woulder uses Go's built-in testing framework with a well-organized test structure:
+
 ```bash
 cd backend
-go test ./...           # Run all tests
+go test ./...           # Run all tests (82+ passing)
 go test -v ./...        # Verbose output
 go test -cover ./...    # With coverage
+go test ./internal/service/... # Test specific package
 ```
+
+**Test Organization:**
+- **Service Tests** (`internal/service/*_test.go`) - Business logic tests with function-based mocks
+- **Single Shared Mocks File** ([`internal/service/mocks_test.go`](backend/internal/service/mocks_test.go)) - Organized mock implementations by domain (weather, locations, boulders, climbing, etc.)
+- **Domain Tests** - Rock drying, boulder drying, pest activity, snow accumulation, conditions
+- **Repository Tests** - Database layer tests for each repository
+
+**Mock Design:**
+- Function-based mocks for flexible test setup
+- Organized with clear section headers by domain
+- Shared across all service tests (follows Go conventions)
+- No code duplication, easy to maintain
 
 ### Manual API Testing
 
@@ -278,6 +304,24 @@ curl "http://localhost:8080/api/boulder-drying/batch-area-stats?location_ids=1,2
 | GET | `/api/boulder-drying/area/:location_id/stats` | Area-wide boulder drying statistics |
 | GET | `/api/boulder-drying/batch-area-stats?location_ids=X,Y,Z` | Batch area statistics (efficient) |
 
+### Activity Heat Map Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/heatmap/data` | Get climbing activity heat map points with time/route filters |
+| GET | `/api/heatmap/area/:area_id` | Detailed area activity statistics |
+| GET | `/api/heatmap/routes` | Routes within geographic bounds with activity data |
+| GET | `/api/heatmap/route/:route_id/ticks` | Recent tick history for specific route |
+| GET | `/api/heatmap/search` | Search routes by name across areas |
+
+### Climb Tracking Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/climb-tracking/history/:location_id` | Climb history for location |
+| POST | `/api/climb-tracking/sync/:location_id` | Sync new ticks from Mountain Project |
+| GET | `/api/climb-tracking/sync-status/:location_id` | Check sync status |
+
 ---
 
 ## Project Structure
@@ -290,16 +334,35 @@ woulder/
 │   │       └── main.go           # Application entry point
 │   ├── internal/
 │   │   ├── api/                  # HTTP handlers and routes
-│   │   │   └── handlers.go       # Request handlers
-│   │   ├── database/             # Database layer
-│   │   │   ├── db.go             # Query methods
+│   │   │   ├── handlers.go       # Core request handlers
+│   │   │   ├── handlers_heat_map.go    # Heat map endpoints
+│   │   │   └── handlers_climb_tracking.go # Climb tracking endpoints
+│   │   ├── database/             # Database layer (modular repositories)
+│   │   │   ├── repository.go     # Main repository interface
+│   │   │   ├── areas/            # Areas repository
+│   │   │   ├── boulders/         # Boulder drying profiles repository
+│   │   │   ├── climbing/         # Climbing history & activity repository
+│   │   │   ├── heatmap/          # Heat map data repository
+│   │   │   ├── locations/        # Locations repository
+│   │   │   ├── mountainproject/  # Mountain Project sync repository
+│   │   │   ├── rivers/           # River crossings repository
+│   │   │   ├── rocks/            # Rock types & sun exposure repository
+│   │   │   ├── weather/          # Weather data repository
 │   │   │   └── migrations/       # SQL migrations
 │   │   ├── models/               # Data structures
-│   │   │   ├── location.go       # Location, River, Weather models
+│   │   │   ├── location.go       # Location & River models
 │   │   │   ├── rock_type.go      # Rock type & sun exposure models
-│   │   │   └── area.go           # Area model
+│   │   │   ├── area.go           # Area models
+│   │   │   ├── heat_map.go       # Heat map & activity models
+│   │   │   └── mountain_project.go # Mountain Project sync models
 │   │   ├── service/              # Business logic layer
-│   │   │   └── weather_service.go # Weather service orchestration
+│   │   │   ├── weather_service.go        # Weather orchestration
+│   │   │   ├── boulder_drying_service.go # Boulder drying service
+│   │   │   ├── heat_map_service.go       # Heat map service
+│   │   │   ├── climb_tracking_service.go # Climb tracking service
+│   │   │   ├── location_service.go       # Location service
+│   │   │   ├── river_service.go          # River service
+│   │   │   └── mocks_test.go             # Shared test mocks (organized by domain)
 │   │   ├── weather/              # Weather domain
 │   │   │   ├── client/
 │   │   │   │   └── openmeteo.go  # Open-Meteo API client
