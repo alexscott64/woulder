@@ -569,6 +569,7 @@
     <script>
         const API_BASE = window.location.origin;
         let refreshInterval = null;
+        let expandedCards = new Set(); // Track which cards are expanded
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
@@ -710,18 +711,37 @@
             }
 
             container.innerHTML = dedupedJobs.map(job => renderActiveJobCard(job)).join('');
+            
+            // Restore expanded state after re-render
+            expandedCards.forEach(cardId => {
+                const expandedSection = document.getElementById(`${cardId}-expanded`);
+                const button = document.querySelector(`#${cardId} .expand-button`);
+                if (expandedSection && button) {
+                    expandedSection.classList.add('expanded');
+                    button.classList.add('expanded');
+                    button.querySelector('span').textContent = 'Hide Details';
+                }
+            });
         }
 
         function renderActiveJobCard(job) {
-            const progress = ((job.processed_items || 0) / (job.total_items || 1)) * 100;
+            const progress = ((job.items_processed || 0) / (job.total_items || 1)) * 100;
             const elapsed = formatDuration(new Date() - new Date(job.started_at));
             const areaInfo = job.metadata?.area_name || job.metadata?.priority || '';
             const currentRoute = job.metadata?.current_route_name;
             const currentRouteType = job.metadata?.current_route_type;
             const currentRating = job.metadata?.current_rating;
+            const currentRouteID = job.metadata?.current_route_id;
+            const cardId = `job-${job.id}`;
+
+            // Parse metadata for aggregate stats
+            const metadata = job.metadata || {};
+            const statesSynced = metadata.states_synced || [];
+            const areasProcessed = metadata.areas_processed || 0;
+            const routesFound = metadata.routes_found || 0;
 
             return `
-                <div class="job-card">
+                <div class="job-card" id="${cardId}">
                     <div class="job-card-header">
                         <div class="job-card-top">
                             <div class="job-info">
@@ -747,7 +767,7 @@
                         ${job.total_items ? `
                             <div class="progress-section">
                                 <div class="progress-header">
-                                    <span class="progress-items">${(job.processed_items || 0).toLocaleString()} / ${job.total_items.toLocaleString()} items</span>
+                                    <span class="progress-items">${(job.items_processed || 0).toLocaleString()} / ${job.total_items.toLocaleString()} items</span>
                                     <span class="progress-percent">${progress.toFixed(1)}%</span>
                                 </div>
                                 <div class="progress-bar">
@@ -761,21 +781,116 @@
                                 ` : ''}
                             </div>
                         ` : ''}
+                        
+                        <button class="expand-button" onclick="toggleJobExpand('${cardId}')">
+                            <span>View Details</span>
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
                     </div>
-                    <div class="job-details">
-                        <div class="detail-item">
-                            <div class="detail-label">Duration</div>
-                            <div class="detail-value">${elapsed}</div>
-                        </div>
-                        ${job.total_items ? `
-                            <div class="detail-item">
-                                <div class="detail-label">Progress</div>
-                                <div class="detail-value">${progress.toFixed(0)}%</div>
+                    
+                    <div class="job-expanded" id="${cardId}-expanded">
+                        <div class="aggregate-data">
+                            <div class="aggregate-section">
+                                <div class="aggregate-title">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                    </svg>
+                                    Job Summary
+                                </div>
+                                <div class="aggregate-content">
+                                    <div class="aggregate-item">
+                                        <div class="aggregate-item-label">Duration</div>
+                                        <div class="aggregate-item-value">${elapsed}</div>
+                                    </div>
+                                    <div class="aggregate-item">
+                                        <div class="aggregate-item-label">Progress</div>
+                                        <div class="aggregate-item-value">${progress.toFixed(1)}%</div>
+                                    </div>
+                                    <div class="aggregate-item">
+                                        <div class="aggregate-item-label">Items Processed</div>
+                                        <div class="aggregate-item-value">${(job.items_processed || 0).toLocaleString()}</div>
+                                    </div>
+                                    <div class="aggregate-item">
+                                        <div class="aggregate-item-label">Total Items</div>
+                                        <div class="aggregate-item-value">${(job.total_items || 0).toLocaleString()}</div>
+                                    </div>
+                                </div>
                             </div>
-                        ` : ''}
+                            
+                            ${currentRoute || currentRouteID ? `
+                                <div class="aggregate-section">
+                                    <div class="aggregate-title">
+                                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                        </svg>
+                                        Current Route
+                                    </div>
+                                    <div class="aggregate-content">
+                                        ${currentRoute ? `
+                                            <div class="aggregate-item">
+                                                <div class="aggregate-item-label">Route Name</div>
+                                                <div class="aggregate-item-value">${currentRoute}</div>
+                                            </div>
+                                        ` : ''}
+                                        ${currentRating ? `
+                                            <div class="aggregate-item">
+                                                <div class="aggregate-item-label">Rating</div>
+                                                <div class="aggregate-item-value">${currentRating}</div>
+                                            </div>
+                                        ` : ''}
+                                        ${currentRouteType ? `
+                                            <div class="aggregate-item">
+                                                <div class="aggregate-item-label">Type</div>
+                                                <div class="aggregate-item-value">${currentRouteType}</div>
+                                            </div>
+                                        ` : ''}
+                                        ${currentRouteID ? `
+                                            <div class="aggregate-item">
+                                                <div class="aggregate-item-label">Route ID</div>
+                                                <div class="aggregate-item-value">${currentRouteID}</div>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            ` : ''}
+                            
+                            ${statesSynced.length > 0 ? `
+                                <div class="aggregate-section">
+                                    <div class="aggregate-title">
+                                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        States/Regions Synced
+                                    </div>
+                                    <div class="state-list">
+                                        ${statesSynced.map(state => `<div class="state-tag">${state}</div>`).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
                     </div>
                 </div>
             `;
+        }
+
+        function toggleJobExpand(cardId) {
+            const expandedSection = document.getElementById(`${cardId}-expanded`);
+            const button = document.querySelector(`#${cardId} .expand-button`);
+            
+            if (expandedSection.classList.contains('expanded')) {
+                expandedSection.classList.remove('expanded');
+                button.classList.remove('expanded');
+                button.querySelector('span').textContent = 'View Details';
+                expandedCards.delete(cardId); // Remove from expanded set
+            } else {
+                expandedSection.classList.add('expanded');
+                button.classList.add('expanded');
+                button.querySelector('span').textContent = 'Hide Details';
+                expandedCards.add(cardId); // Add to expanded set
+            }
         }
 
         function renderHistory(jobs) {
@@ -798,8 +913,8 @@
         }
 
         function renderHistoryJobCard(job, index) {
-            const progress = ((job.processed_items || 0) / (job.total_items || 1)) * 100;
-            const duration = job.completed_at 
+            const progress = ((job.items_processed || 0) / (job.total_items || 1)) * 100;
+            const duration = job.completed_at
                 ? formatDuration(new Date(job.completed_at) - new Date(job.started_at))
                 : formatDuration(new Date() - new Date(job.started_at));
             const areaInfo = job.metadata?.area_name || job.metadata?.priority || '';
