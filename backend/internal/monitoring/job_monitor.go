@@ -192,14 +192,22 @@ func (m *JobMonitor) FailJob(ctx context.Context, jobID int64, errorMsg string) 
 	return nil
 }
 
-// GetActiveJobs returns all currently running jobs
+// GetActiveJobs returns the most recent running job for each job_name
 func (m *JobMonitor) GetActiveJobs(ctx context.Context) ([]*JobExecution, error) {
 	query := `
+		WITH ranked_jobs AS (
+			SELECT id, job_name, job_type, status, total_items, items_processed,
+			       items_succeeded, items_failed, error_message, started_at,
+			       completed_at, updated_at, metadata,
+			       ROW_NUMBER() OVER (PARTITION BY job_name ORDER BY started_at DESC) as rn
+			FROM woulder.job_executions
+			WHERE status = $1
+		)
 		SELECT id, job_name, job_type, status, total_items, items_processed,
 		       items_succeeded, items_failed, error_message, started_at,
 		       completed_at, updated_at, metadata
-		FROM woulder.job_executions
-		WHERE status = $1
+		FROM ranked_jobs
+		WHERE rn = 1
 		ORDER BY started_at DESC
 	`
 
@@ -400,6 +408,13 @@ func (r *ProgressReporter) Increment(ctx context.Context, success bool) error {
 	}
 
 	return nil
+}
+
+// SetInitialProgress sets the initial progress counters (used when resuming jobs)
+func (r *ProgressReporter) SetInitialProgress(processed, succeeded, failed int) {
+	r.processed = processed
+	r.succeeded = succeeded
+	r.failed = failed
 }
 
 // FlushProgress forces an immediate progress update to the database

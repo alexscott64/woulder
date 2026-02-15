@@ -1163,6 +1163,10 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 	var reporter *monitoring.ProgressReporter
 	if jobExec != nil {
 		reporter = monitoring.NewProgressReporter(s.jobMonitor, jobExec.ID, len(routeIDs), 10)
+		// If resuming, set the initial progress to account for already-completed routes
+		if startIndex > 0 {
+			reporter.SetInitialProgress(startIndex, startIndex, 0)
+		}
 		defer func() {
 			// Final flush to ensure last progress is saved
 			reporter.FlushProgress(ctx)
