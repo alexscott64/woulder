@@ -499,8 +499,9 @@ func (m *MockClimbingRepository) Search() climbing.SearchRepository {
 
 // MockClimbingHistoryRepository provides climb history methods
 type MockClimbingHistoryRepository struct {
-	GetLastClimbedForLocationFn  func(ctx context.Context, locationID int) (*models.LastClimbedInfo, error)
-	GetClimbHistoryForLocationFn func(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
+	GetLastClimbedForLocationFn   func(ctx context.Context, locationID int) (*models.LastClimbedInfo, error)
+	GetClimbHistoryForLocationFn  func(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
+	GetClimbHistoryForLocationsFn func(ctx context.Context, locationIDs []int, limit int) (map[int][]models.ClimbHistoryEntry, error)
 }
 
 func (m *MockClimbingHistoryRepository) GetLastClimbedForLocation(ctx context.Context, locationID int) (*models.LastClimbedInfo, error) {
@@ -515,6 +516,13 @@ func (m *MockClimbingHistoryRepository) GetClimbHistoryForLocation(ctx context.C
 		return m.GetClimbHistoryForLocationFn(ctx, locationID, limit)
 	}
 	return []models.ClimbHistoryEntry{}, nil
+}
+
+func (m *MockClimbingHistoryRepository) GetClimbHistoryForLocations(ctx context.Context, locationIDs []int, limit int) (map[int][]models.ClimbHistoryEntry, error) {
+	if m.GetClimbHistoryForLocationsFn != nil {
+		return m.GetClimbHistoryForLocationsFn(ctx, locationIDs, limit)
+	}
+	return map[int][]models.ClimbHistoryEntry{}, nil
 }
 
 // MockClimbingActivityRepository provides climbing activity methods
@@ -651,4 +659,16 @@ func (m *MockHeatMapRepository) SearchRoutesInAreas(ctx context.Context, areaIDs
 		return m.SearchRoutesInAreasFn(ctx, areaIDs, searchQuery, startDate, endDate, limit)
 	}
 	return []models.RouteActivity{}, nil
+}
+
+// MockClimbTrackingService implements the ClimbTrackingService interface for testing
+type MockClimbTrackingService struct {
+	GetClimbHistoryForLocationsFn func(ctx context.Context, locationIDs []int, limit int) (map[int][]models.ClimbHistoryEntry, error)
+}
+
+func (m *MockClimbTrackingService) GetClimbHistoryForLocations(ctx context.Context, locationIDs []int, limit int) (map[int][]models.ClimbHistoryEntry, error) {
+	if m.GetClimbHistoryForLocationsFn != nil {
+		return m.GetClimbHistoryForLocationsFn(ctx, locationIDs, limit)
+	}
+	return map[int][]models.ClimbHistoryEntry{}, nil
 }

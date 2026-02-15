@@ -265,7 +265,7 @@ function Dashboard() {
 
           {/* Last Updated */}
           {lastUpdated && (
-            <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 text-center">
+            <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 text-left">
               Last updated: {format(lastUpdated, 'MMM d, yyyy h:mm:ss a')} {new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' }).formatToParts(lastUpdated).find(part => part.type === 'timeZoneName')?.value}
             </div>
           )}

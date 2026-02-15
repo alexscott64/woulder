@@ -37,6 +37,11 @@ type HistoryRepository interface {
 	// - Only shows climbs from the past 2 years
 	// Results ordered by climbed_at descending (most recent first).
 	GetClimbHistoryForLocation(ctx context.Context, locationID int, limit int) ([]models.ClimbHistoryEntry, error)
+
+	// GetClimbHistoryForLocations retrieves recent climb history for multiple locations in a single query.
+	// More efficient than calling GetClimbHistoryForLocation multiple times.
+	// Returns a map of locationID -> climb history entries.
+	GetClimbHistoryForLocations(ctx context.Context, locationIDs []int, limit int) (map[int][]models.ClimbHistoryEntry, error)
 }
 
 // ActivityRepository handles area and route activity queries.

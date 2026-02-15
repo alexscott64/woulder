@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/lib/pq"
 )
 
 // PostgresRepository implements Repository using PostgreSQL.
@@ -96,6 +97,70 @@ func (r *PostgresRepository) GetClimbHistoryForLocation(ctx context.Context, loc
 	}
 
 	return history, nil
+}
+
+// GetClimbHistoryForLocations retrieves recent climb history for multiple locations in a single query.
+// Returns a map of locationID -> []ClimbHistoryEntry for efficient batch fetching.
+func (r *PostgresRepository) GetClimbHistoryForLocations(ctx context.Context, locationIDs []int, limit int) (map[int][]models.ClimbHistoryEntry, error) {
+	if len(locationIDs) == 0 {
+		return make(map[int][]models.ClimbHistoryEntry), nil
+	}
+
+	// Convert to int64 array for PostgreSQL compatibility
+	int64IDs := make([]int64, len(locationIDs))
+	for i, id := range locationIDs {
+		int64IDs[i] = int64(id)
+	}
+
+	// Use pq.Array to properly pass array parameter to PostgreSQL
+	rows, err := r.db.QueryContext(ctx, queryGetClimbHistoryForLocations, pq.Array(int64IDs), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Pre-allocate the result map
+	result := make(map[int][]models.ClimbHistoryEntry, len(locationIDs))
+
+	for rows.Next() {
+		var locationID int
+		var entry models.ClimbHistoryEntry
+		var climbedBy, style sql.NullString
+		var comment sql.NullString
+
+		err := rows.Scan(
+			&locationID,
+			&entry.MPRouteID,
+			&entry.RouteName,
+			&entry.RouteRating,
+			&entry.MPAreaID,
+			&entry.AreaName,
+			&entry.ClimbedAt,
+			&climbedBy,
+			&style,
+			&comment,
+			&entry.DaysSinceClimb,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Handle nullable fields
+		entry.ClimbedBy = climbedBy.String // Will be empty string if NULL
+		entry.Style = style.String         // Will be empty string if NULL
+		if comment.Valid {
+			entry.Comment = &comment.String
+		}
+
+		// Append to the slice for this location
+		result[locationID] = append(result[locationID], entry)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // ====================

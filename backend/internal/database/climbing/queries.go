@@ -68,6 +68,79 @@ const (
 		LIMIT $2
 	`
 
+	// queryGetClimbHistoryForLocations retrieves recent climb history for multiple locations in a single query.
+	// PERFORMANCE CRITICAL: Use LATERAL join to limit ticks per route early in the query
+	queryGetClimbHistoryForLocations = `
+		WITH location_routes AS (
+			-- Step 1: Get all route_ids for these locations (fast with idx_mp_routes_location_id)
+			SELECT mp_route_id, location_id, name AS route_name, rating AS route_rating, mp_area_id
+			FROM woulder.mp_routes
+			WHERE location_id = ANY($1)
+		),
+		recent_ticks AS (
+			-- Step 2: For each route, get only the most recent tick (LATERAL join limits rows early)
+			SELECT
+				lr.location_id,
+				lr.mp_route_id,
+				lr.route_name,
+				lr.route_rating,
+				lr.mp_area_id,
+				-- Smart date adjustment: if date is 350-380 days in future, subtract 1 year
+				CASE
+					WHEN t.climbed_at > NOW() + INTERVAL '350 days'
+					     AND t.climbed_at < NOW() + INTERVAL '380 days'
+					THEN t.climbed_at - INTERVAL '1 year'
+					ELSE t.climbed_at
+				END AS climbed_at,
+				t.user_name AS climbed_by,
+				t.style,
+				t.comment
+			FROM location_routes lr
+			CROSS JOIN LATERAL (
+				SELECT user_name, climbed_at, style, comment
+				FROM woulder.mp_ticks
+				WHERE mp_route_id = lr.mp_route_id
+					AND climbed_at <= NOW() + INTERVAL '30 days'
+					AND climbed_at >= NOW() - INTERVAL '2 years'
+				ORDER BY climbed_at DESC
+				LIMIT 1
+			) t
+		),
+		ranked_ticks AS (
+			-- Step 3: Rank ticks per location and add area names
+			SELECT
+				rt.location_id,
+				rt.mp_route_id,
+				rt.route_name,
+				rt.route_rating,
+				rt.mp_area_id,
+				a.name AS area_name,
+				rt.climbed_at,
+				rt.climbed_by,
+				rt.style,
+				rt.comment,
+				EXTRACT(DAY FROM (NOW() - rt.climbed_at))::int AS days_since_climb,
+				ROW_NUMBER() OVER (PARTITION BY rt.location_id ORDER BY rt.climbed_at DESC) AS rn
+			FROM recent_ticks rt
+			JOIN woulder.mp_areas a ON rt.mp_area_id = a.mp_area_id
+		)
+		SELECT
+			location_id,
+			mp_route_id,
+			route_name,
+			route_rating,
+			mp_area_id,
+			area_name,
+			climbed_at,
+			climbed_by,
+			style,
+			comment,
+			days_since_climb
+		FROM ranked_ticks
+		WHERE rn <= $2
+		ORDER BY location_id, climbed_at DESC
+	`
+
 	// queryGetAreasOrderedByActivity retrieves top-level areas with aggregated activity.
 	// Complex recursive query that:
 	// 1. Finds virtual root areas for the location

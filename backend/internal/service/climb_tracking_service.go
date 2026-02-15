@@ -434,6 +434,17 @@ func (s *ClimbTrackingService) GetClimbHistoryForLocation(
 	return s.climbingRepo.History().GetClimbHistoryForLocation(ctx, locationID, limit)
 }
 
+// GetClimbHistoryForLocations retrieves recent climb history for multiple locations in a single query.
+// This is a performance optimization to avoid N+1 query problems when fetching weather for multiple locations.
+// Returns a map of locationID -> []ClimbHistoryEntry for efficient lookup.
+func (s *ClimbTrackingService) GetClimbHistoryForLocations(
+	ctx context.Context,
+	locationIDs []int,
+	limit int,
+) (map[int][]models.ClimbHistoryEntry, error) {
+	return s.climbingRepo.History().GetClimbHistoryForLocations(ctx, locationIDs, limit)
+}
+
 // GetAreasOrderedByActivity retrieves areas ordered by most recent climb activity
 func (s *ClimbTrackingService) GetAreasOrderedByActivity(
 	ctx context.Context,
@@ -826,7 +837,7 @@ func (s *ClimbTrackingService) SyncNewRoutesForAllStates(ctx context.Context) er
 		if failCount > 0 {
 			errMsg := fmt.Sprintf("sync completed with %d failures", failCount)
 			s.jobMonitor.FailJob(ctx, jobExec.ID, errMsg)
-			return fmt.Errorf(errMsg)
+			return fmt.Errorf("sync completed with %d failures", failCount)
 		}
 		s.jobMonitor.CompleteJob(ctx, jobExec.ID)
 	}

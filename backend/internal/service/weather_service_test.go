@@ -326,6 +326,87 @@ func TestWeatherService_RefreshAllWeather_ConcurrentCalls(t *testing.T) {
 	assert.Contains(t, err.Error(), "already in progress")
 }
 
+// TestWeatherService_GetAllWeather_IncludesClimbHistory ensures climb_history
+// is populated when climb tracking service is available (regression test)
+func TestWeatherService_GetAllWeather_IncludesClimbHistory(t *testing.T) {
+	mockWeatherRepo := &MockWeatherRepository{
+		SaveFn: func(ctx context.Context, data *models.WeatherData) error {
+			return nil
+		},
+		GetHistoricalFn: func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error) {
+			return []models.WeatherData{}, nil
+		},
+	}
+
+	mockLocationsRepo := &MockLocationsRepository{
+		GetAllFn: func(ctx context.Context) ([]models.Location, error) {
+			return []models.Location{
+				{ID: 1, Name: "Location 1", Latitude: 45.0, Longitude: -122.0},
+				{ID: 2, Name: "Location 2", Latitude: 46.0, Longitude: -123.0},
+			}, nil
+		},
+		GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
+			return &models.Location{
+				ID:        id,
+				Name:      "Test",
+				Latitude:  45.0,
+				Longitude: -122.0,
+			}, nil
+		},
+	}
+
+	mockRocksRepo := &MockRocksRepository{
+		GetRockTypesByLocationFn: func(ctx context.Context, locationID int) ([]models.RockType, error) {
+			return []models.RockType{}, nil
+		},
+		GetSunExposureByLocationFn: func(ctx context.Context, locationID int) (*models.LocationSunExposure, error) {
+			return nil, errors.New("no sun exposure")
+		},
+	}
+
+	// Create mock climb repository with batch method that returns climb history
+	mockClimbingHistoryRepo := &MockClimbingHistoryRepository{
+		GetClimbHistoryForLocationsFn: func(ctx context.Context, locationIDs []int, limit int) (map[int][]models.ClimbHistoryEntry, error) {
+			// Return climb history for both locations
+			return map[int][]models.ClimbHistoryEntry{
+				1: {
+					{MPRouteID: 1, RouteName: "Test Route 1", RouteRating: "5.10a", ClimbedAt: time.Now()},
+					{MPRouteID: 2, RouteName: "Test Route 2", RouteRating: "5.11b", ClimbedAt: time.Now()},
+				},
+				2: {
+					{MPRouteID: 3, RouteName: "Test Route 3", RouteRating: "V5", ClimbedAt: time.Now()},
+				},
+			}, nil
+		},
+	}
+
+	mockClimbingRepo := &MockClimbingRepository{
+		history: mockClimbingHistoryRepo,
+	}
+
+	mockMountainProjectRepo := &MockMountainProjectRepository{}
+
+	// Create climb tracking service with the mock repositories
+	mockClimbService := NewClimbTrackingService(mockMountainProjectRepo, mockClimbingRepo, nil, nil)
+
+	client := weather.NewWeatherService("test_api_key")
+	service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, client, mockClimbService)
+
+	forecasts, err := service.GetAllWeather(context.Background(), nil)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, forecasts)
+
+	// Critical: Verify all forecasts have climb_history populated
+	for _, forecast := range forecasts {
+		assert.NotNil(t, forecast.ClimbHistory, "climb_history must not be nil for location %d", forecast.LocationID)
+		// At least one location should have history
+		if forecast.LocationID == 1 || forecast.LocationID == 2 {
+			assert.NotEmpty(t, forecast.ClimbHistory, "climb_history must be populated for location %d", forecast.LocationID)
+		}
+	}
+}
+
 // Helper function
 func intPtr(i int) *int {
 	return &i

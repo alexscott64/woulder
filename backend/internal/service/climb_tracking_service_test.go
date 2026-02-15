@@ -124,7 +124,7 @@ func TestClimbTrackingService_GetClimbHistoryForLocation(t *testing.T) {
 			mockClimbingRepo := NewMockClimbingRepository()
 			mockClimbingRepo.history.GetClimbHistoryForLocationFn = tt.mockFn
 
-			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, &MockMPClient{})
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, &MockMPClient{}, nil)
 			history, err := service.GetClimbHistoryForLocation(context.Background(), tt.locID, tt.limit)
 
 			if tt.wantErr {
@@ -239,7 +239,7 @@ func TestClimbTrackingService_SyncNewTicksForLocation(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
 			err := service.SyncNewTicksForLocation(context.Background(), tt.locationID)
 
 			if tt.wantErr {
@@ -257,7 +257,7 @@ func TestClimbTrackingService_GetSyncStatus(t *testing.T) {
 	mockClimbingRepo := NewMockClimbingRepository()
 	mockMPClient := &MockMPClient{}
 
-	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
+	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
 
 	// Initially not syncing
 	isSyncing, lastSync := service.GetSyncStatus()
@@ -293,7 +293,7 @@ func TestClimbTrackingService_ConcurrentSyncPrevention(t *testing.T) {
 	mockClimbingRepo := NewMockClimbingRepository()
 	mockMPClient := &MockMPClient{}
 
-	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
+	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
 
 	// Start first sync
 	go func() {
@@ -360,7 +360,7 @@ func TestClimbTrackingService_DateParsing(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
 			err := service.SyncNewTicksForLocation(context.Background(), 1)
 
 			assert.NoError(t, err)
@@ -431,7 +431,7 @@ func TestDateParsingWithTimezone(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
 			err := service.SyncNewTicksForLocation(context.Background(), 1)
 
 			assert.NoError(t, err)
@@ -528,7 +528,7 @@ func TestTimezoneConsistencyBetweenSyncs(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
 			err := service.SyncNewTicksForLocation(context.Background(), 1)
 
 			assert.NoError(t, err)
@@ -615,7 +615,7 @@ func TestFutureDateFiltering(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
 			err := service.SyncNewTicksForLocation(context.Background(), 1)
 
 			assert.NoError(t, err)
@@ -720,7 +720,7 @@ func TestCommentCleaning(t *testing.T) {
 				},
 			}
 
-			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
+			service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
 			err := service.SyncNewTicksForLocation(context.Background(), 1)
 
 			assert.NoError(t, err)
@@ -777,7 +777,7 @@ func TestJamieZeldaRailsScenario(t *testing.T) {
 		},
 	}
 
-	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient)
+	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
 	err := service.SyncNewTicksForLocation(context.Background(), 2) // Location 2 is Index, WA
 
 	assert.NoError(t, err)

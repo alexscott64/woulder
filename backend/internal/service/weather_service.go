@@ -53,7 +53,13 @@ func NewWeatherService(
 
 // GetLocationWeather retrieves complete weather forecast for a location
 // Uses cached data from database if available and fresh (< 1 hour old)
+// includeClimbHistory controls whether to fetch climb history (expensive query)
 func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int) (*models.WeatherForecast, error) {
+	return s.getLocationWeatherWithOptions(ctx, locationID, true)
+}
+
+// getLocationWeatherWithOptions is the internal implementation with configurable options
+func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, locationID int, includeClimbHistory bool) (*models.WeatherForecast, error) {
 	// 1. Get location
 	location, err := s.locationsRepo.GetByID(ctx, locationID)
 	if err != nil {
@@ -137,10 +143,10 @@ func (s *WeatherService) GetLocationWeather(ctx context.Context, locationID int)
 	// 7. Calculate pest conditions
 	pestConditions := s.calculatePestConditions(current, historical)
 
-	// 8. Fetch climb history from Mountain Project data
+	// 8. Fetch climb history from Mountain Project data (conditionally, as it's expensive)
 	var lastClimbedInfo *models.LastClimbedInfo
 	var climbHistory []models.ClimbHistoryEntry
-	if s.climbTrackingService != nil {
+	if includeClimbHistory && s.climbTrackingService != nil {
 		// Fetch last 5 climbs for timeline display
 		history, err := s.climbTrackingService.GetClimbHistoryForLocation(ctx, locationID, 5)
 		if err != nil {
@@ -457,6 +463,7 @@ func (s *WeatherService) GetWeatherByCoordinates(ctx context.Context, lat, lon f
 // GetAllWeather retrieves weather for all locations or filtered by area
 // Fetches weather data concurrently for better performance
 func (s *WeatherService) GetAllWeather(ctx context.Context, areaID *int) ([]models.WeatherForecast, error) {
+	start := time.Now()
 	var locations []models.Location
 	var err error
 
@@ -470,7 +477,35 @@ func (s *WeatherService) GetAllWeather(ctx context.Context, areaID *int) ([]mode
 		return nil, fmt.Errorf("failed to get locations: %w", err)
 	}
 
-	// Fetch weather concurrently for all locations
+	// Return empty if no locations
+	if len(locations) == 0 {
+		return []models.WeatherForecast{}, nil
+	}
+	log.Printf("GetAllWeather: Got %d locations in %v", len(locations), time.Since(start))
+
+	// PERFORMANCE OPTIMIZATION: Batch fetch climb history for all locations in a single query
+	// This replaces N separate queries with 1 batch query, significantly reducing database round trips
+	// Original: 9 locations × 1 query each = 9 database queries (slow!)
+	// Optimized: 1 batch query for all locations = 1 database query (fast!)
+	climbStart := time.Now()
+	climbHistoryMap := make(map[int][]models.ClimbHistoryEntry)
+	if s.climbTrackingService != nil {
+		locationIDs := make([]int, len(locations))
+		for i, loc := range locations {
+			locationIDs[i] = loc.ID
+		}
+		climbHistoryMap, err = s.climbTrackingService.GetClimbHistoryForLocations(ctx, locationIDs, 5)
+		if err != nil {
+			log.Printf("Warning: failed to batch fetch climb history: %v", err)
+			// Don't fail the whole request, just proceed without climb history
+			climbHistoryMap = make(map[int][]models.ClimbHistoryEntry)
+		}
+	}
+	log.Printf("GetAllWeather: Fetched climb history in %v", time.Since(climbStart))
+
+	// Build the forecasts concurrently with a limited number of workers
+	// to balance parallelism and database connection pressure
+	forecastStart := time.Now()
 	type result struct {
 		forecast *models.WeatherForecast
 		err      error
@@ -478,14 +513,20 @@ func (s *WeatherService) GetAllWeather(ctx context.Context, areaID *int) ([]mode
 
 	results := make(chan result, len(locations))
 	var wg sync.WaitGroup
+	// Use a semaphore to limit concurrent workers
+	// Since weather data is usually cached, we can be more aggressive with parallelism
+	sem := make(chan struct{}, 10) // Max 10 concurrent workers (covers all PNW locations)
 
 	for _, loc := range locations {
 		wg.Add(1)
-		go func(locationID int) {
+		go func(locationID int, climbHistory []models.ClimbHistoryEntry) {
 			defer wg.Done()
-			forecast, err := s.GetLocationWeather(ctx, locationID)
+			sem <- struct{}{}        // Acquire semaphore
+			defer func() { <-sem }() // Release semaphore
+
+			forecast, err := s.getLocationWeatherWithClimbHistory(ctx, locationID, climbHistory)
 			results <- result{forecast: forecast, err: err}
-		}(loc.ID)
+		}(loc.ID, climbHistoryMap[loc.ID])
 	}
 
 	// Close results channel when all goroutines complete
@@ -505,8 +546,39 @@ func (s *WeatherService) GetAllWeather(ctx context.Context, areaID *int) ([]mode
 			forecasts = append(forecasts, *res.forecast)
 		}
 	}
+	log.Printf("GetAllWeather: Built %d forecasts in %v", len(forecasts), time.Since(forecastStart))
+	log.Printf("GetAllWeather: Total time %v", time.Since(start))
 
 	return forecasts, nil
+}
+
+// getLocationWeatherWithClimbHistory is a helper that fetches weather with pre-fetched climb history
+// This is used by GetAllWeather to avoid N+1 queries when fetching multiple locations
+func (s *WeatherService) getLocationWeatherWithClimbHistory(ctx context.Context, locationID int, climbHistory []models.ClimbHistoryEntry) (*models.WeatherForecast, error) {
+	// Get all the weather data using the standard method without climb history
+	forecast, err := s.getLocationWeatherWithOptions(ctx, locationID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	// Inject the pre-fetched climb history
+	forecast.ClimbHistory = climbHistory
+
+	// Populate the deprecated lastClimbedInfo field for backwards compatibility
+	if len(climbHistory) > 0 {
+		first := climbHistory[0]
+		forecast.LastClimbedInfo = &models.LastClimbedInfo{
+			RouteName:      first.RouteName,
+			RouteRating:    first.RouteRating,
+			ClimbedAt:      first.ClimbedAt,
+			ClimbedBy:      first.ClimbedBy,
+			Style:          first.Style,
+			Comment:        first.Comment,
+			DaysSinceClimb: first.DaysSinceClimb,
+		}
+	}
+
+	return forecast, nil
 }
 
 // calculatePestConditions calculates pest activity levels based on current and historical weather
