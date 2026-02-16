@@ -38,8 +38,8 @@ func main() {
 	// Initialize Mountain Project client
 	mpClient := mountainproject.NewClient()
 
-	// Initialize climb tracking service
-	climbService := service.NewClimbTrackingService(db.MountainProject(), db.Climbing(), mpClient)
+	// Initialize climb tracking service (no job monitor for manual sync)
+	climbService := service.NewClimbTrackingService(db.MountainProject(), db.Climbing(), mpClient, nil)
 
 	// Define area mappings (location ID -> Mountain Project area IDs)
 	// IMPORTANT: These IDs must match the actual database location IDs

@@ -67,23 +67,13 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
   
   const [viewMode, setViewMode] = useState<ViewMode>(loadMapViewMode());
   
-  // Check if mobile on mount - legend collapsed by default on mobile
-  const [isMobile, setIsMobile] = useState(false);
+  // Legend collapsed by default on mobile
   const [legendExpanded, setLegendExpanded] = useState(false);
   
   useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-      // Only set legend state on initial load
-      if (!legendExpanded) {
-        setLegendExpanded(!mobile);
-      }
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    // Set initial legend state based on screen size
+    const isMobile = window.innerWidth < 768;
+    setLegendExpanded(!isMobile);
   }, []);
 
   // Save view mode to localStorage when it changes
