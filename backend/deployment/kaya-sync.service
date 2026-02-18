@@ -1,0 +1,30 @@
+# Kaya Sync - systemd Service and Timer
+
+[Unit]
+Description=Kaya Climbing Data Sync Service
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=your-username
+Group=your-username
+WorkingDirectory=/path/to/woulder/backend
+Environment="PATH=/usr/local/go/bin:/usr/bin:/bin"
+Environment="GOPATH=/home/your-username/go"
+
+# Load environment variables
+EnvironmentFile=/path/to/woulder/backend/.env
+
+# Run the sync job
+ExecStart=/usr/local/go/bin/go run cmd/sync_kaya_job/main.go --incremental --delay 3
+
+# Logging
+StandardOutput=append:/var/log/kaya-sync/sync.log
+StandardError=append:/var/log/kaya-sync/error.log
+
+# Restart on failure
+Restart=on-failure
+RestartSec=300
+
+[Install]
+WantedBy=multi-user.target

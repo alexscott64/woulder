@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"log"
@@ -28,7 +29,9 @@ func main() {
 	slugFlag := flag.String("slug", "", "Specific location slug to sync (e.g., 'Leavenworth-344933')")
 	recursiveFlag := flag.Bool("recursive", true, "Sync sub-locations recursively")
 	testFlag := flag.Bool("test", false, "Test mode: only sync Leavenworth")
+	allFlag := flag.Bool("all", false, "Sync all 105 official Kaya destinations from docs/kaya-destinations.txt")
 	tokenFlag := flag.String("token", "", "Kaya API JWT token (or set KAYA_AUTH_TOKEN env var)")
+	delayFlag := flag.Int("delay", 2, "Delay in seconds between syncing destinations (for --all mode)")
 	flag.Parse()
 
 	// Load environment variables from backend directory
@@ -75,18 +78,42 @@ func main() {
 	}
 
 	// Define location mappings
-	locationConfigs := []LocationConfig{
-		{
-			Name:      "Leavenworth",
-			Slug:      "Leavenworth-344933",
-			Recursive: true,
-		},
-	}
+	var locationConfigs []LocationConfig
 
-	// Test mode: only sync Leavenworth
-	if *testFlag {
+	// --all flag: load all 105 destinations
+	if *allFlag {
+		log.Println("ALL MODE: Loading all 105 official Kaya destinations...")
+		slugs, err := loadDestinationSlugs("../docs/kaya-destinations.txt")
+		if err != nil {
+			log.Fatalf("Failed to load destinations file: %v", err)
+		}
+		for _, slug := range slugs {
+			locationConfigs = append(locationConfigs, LocationConfig{
+				Name:      extractLocationName(slug),
+				Slug:      slug,
+				Recursive: *recursiveFlag,
+			})
+		}
+		log.Printf("✓ Loaded %d destinations from file", len(locationConfigs))
+	} else if *testFlag {
+		// Test mode: only sync Leavenworth
 		log.Println("TEST MODE: Only syncing Leavenworth")
-		locationConfigs = locationConfigs[:1]
+		locationConfigs = []LocationConfig{
+			{
+				Name:      "Leavenworth",
+				Slug:      "Leavenworth-344933",
+				Recursive: true,
+			},
+		}
+	} else {
+		// Default: sync Leavenworth only
+		locationConfigs = []LocationConfig{
+			{
+				Name:      "Leavenworth",
+				Slug:      "Leavenworth-344933",
+				Recursive: true,
+			},
+		}
 	}
 
 	totalLocations := len(locationConfigs)
@@ -104,11 +131,24 @@ func main() {
 		if err := syncLocation(ctx, kayaService, config.Slug, config.Recursive); err != nil {
 			log.Printf("ERROR syncing %s: %v", config.Name, err)
 			failCount++
+
+			// In --all mode, continue despite errors
+			if *allFlag {
+				log.Printf("Continuing to next destination...")
+				time.Sleep(time.Duration(*delayFlag) * time.Second)
+				continue
+			}
 			continue
 		}
 
 		successCount++
 		log.Printf("✓ Successfully synced %s", config.Name)
+
+		// Rate limiting: delay between destinations in --all mode
+		if *allFlag && i < len(locationConfigs)-1 {
+			log.Printf("Waiting %d seconds before next destination...", *delayFlag)
+			time.Sleep(time.Duration(*delayFlag) * time.Second)
+		}
 	}
 
 	elapsed := time.Since(startTime)
@@ -165,4 +205,50 @@ func isTransientError(err error) bool {
 		}
 	}
 	return false
+}
+
+// loadDestinationSlugs loads destination slugs from the destinations file
+func loadDestinationSlugs(filepath string) ([]string, error) {
+	file, err := os.Open(filepath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var slugs []string
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines, comments, and header lines
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "Total:") {
+			continue
+		}
+
+		// Valid slug format: "Name-ID"
+		if strings.Contains(line, "-") && !strings.HasPrefix(line, "Format:") {
+			slugs = append(slugs, line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return slugs, nil
+}
+
+// extractLocationName extracts human-readable name from slug
+// e.g., "Leavenworth-344933" -> "Leavenworth"
+func extractLocationName(slug string) string {
+	parts := strings.Split(slug, "-")
+	if len(parts) < 2 {
+		return slug
+	}
+
+	// Join all parts except the last one (which is the ID)
+	// This handles cases like "Red-Rocks-331387" -> "Red Rocks"
+	name := strings.Join(parts[:len(parts)-1], " ")
+	return strings.Replace(name, "-", " ", -1)
 }
