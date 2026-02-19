@@ -56,7 +56,7 @@ func main() {
 	heatMapService := service.NewHeatMapService(db.HeatMap())
 
 	// Initialize API handler with services
-	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService, jobMonitor)
+	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService, db.Kaya(), jobMonitor)
 
 	// Start background weather refresh (every 1 hour)
 	// The refresh automatically checks if data is fresh and skips API calls if updated within the last hour
@@ -126,6 +126,9 @@ func main() {
 		apiGroup.GET("/heat-map/routes", handler.GetHeatMapRoutes)
 		apiGroup.GET("/heat-map/route/:route_id/ticks", handler.GetRouteTicksInDateRange)
 		apiGroup.POST("/heat-map/cluster/search-routes", handler.SearchClusterRoutes)
+
+		// Kaya routes
+		apiGroup.GET("/kaya/location/:id/ascents", handler.GetKayaAscentsForLocation)
 
 		// Job monitoring routes
 		apiGroup.GET("/monitoring/jobs/active", handler.GetActiveJobs)

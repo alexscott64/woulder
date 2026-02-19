@@ -548,3 +548,33 @@ func (m *JobMonitor) RecoverInterruptedJobs(ctx context.Context, maxAge time.Dur
 
 	return jobs, nil
 }
+
+// WasJobCompletedRecently checks if a job was successfully completed within the given duration
+// Returns true if the job should be skipped (was completed recently)
+func (m *JobMonitor) WasJobCompletedRecently(ctx context.Context, jobName string, within time.Duration) (bool, error) {
+	query := `
+		SELECT completed_at
+		FROM woulder.job_executions
+		WHERE job_name = $1
+		  AND status = $2
+		  AND completed_at IS NOT NULL
+		  AND completed_at > $3
+		ORDER BY completed_at DESC
+		LIMIT 1
+	`
+
+	cutoff := time.Now().Add(-within)
+	var completedAt time.Time
+	err := m.db.QueryRowContext(ctx, query, jobName, StatusCompleted, cutoff).Scan(&completedAt)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No recent completion found - job should run
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check recent completion: %w", err)
+	}
+
+	// Job was completed recently - should be skipped
+	return true, nil
+}

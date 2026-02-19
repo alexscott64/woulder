@@ -1,8 +1,10 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -47,6 +49,20 @@ type KayaMatchResponse struct {
 	NameSimilarity *float64 `json:"name_similarity,omitempty"`
 	DistanceKM     *float64 `json:"distance_km,omitempty"`
 	IsVerified     bool     `json:"is_verified"`
+}
+
+// KayaAscentResponse represents a Kaya ascent for API responses (formatted like ClimbHistoryEntry)
+type KayaAscentResponse struct {
+	KayaAscentID   string  `json:"kaya_ascent_id"`
+	KayaClimbSlug  string  `json:"kaya_climb_slug"`
+	RouteName      string  `json:"route_name"`
+	RouteGrade     string  `json:"route_grade"`
+	AreaName       string  `json:"area_name"`
+	ClimbedAt      string  `json:"climbed_at"` // ISO 8601 timestamp
+	ClimbedBy      string  `json:"climbed_by"` // Username
+	Comment        *string `json:"comment,omitempty"`
+	DaysSinceClimb int     `json:"days_since_climb"`
+	Source         string  `json:"source"` // "kaya" to distinguish from MP
 }
 
 // GetKayaLocations returns a list of Kaya locations
@@ -190,6 +206,91 @@ func (h *Handler) GetKayaSyncStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, status)
+}
+
+// GetKayaAscentsForLocation returns recent Kaya ascents for climbs at a specific Woulder location
+// GET /api/kaya/location/:id/ascents?limit=100
+func (h *Handler) GetKayaAscentsForLocation(c *gin.Context) {
+	// Parse location ID from URL
+	locationIDStr := c.Param("id")
+	locationID, err := strconv.Atoi(locationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		return
+	}
+
+	// Parse limit parameter
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+
+	ctx := c.Request.Context()
+
+	// Get ascents from Kaya repository
+	kayaAscents, err := h.kayaRepo.Ascents().GetAscentsByWoulderLocation(ctx, locationID, limit)
+	if err != nil {
+		log.Printf("Error fetching Kaya ascents for location %d: %v", locationID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve Kaya ascent data"})
+		return
+	}
+
+	// Convert to response format with climb and user details
+	var ascents []KayaAscentResponse
+	for _, kayaAscent := range kayaAscents {
+		// Get climb details
+		climb, err := h.kayaRepo.Climbs().GetClimbBySlug(ctx, kayaAscent.KayaClimbSlug)
+		if err != nil || climb == nil {
+			log.Printf("Error fetching climb details for slug %s: %v", kayaAscent.KayaClimbSlug, err)
+			continue
+		}
+
+		// Get user details
+		user, err := h.kayaRepo.Users().GetUserByID(ctx, kayaAscent.KayaUserID)
+		if err != nil || user == nil {
+			log.Printf("Error fetching user details for ID %s: %v", kayaAscent.KayaUserID, err)
+			continue
+		}
+
+		// Calculate days since climb
+		daysSince := int(time.Since(kayaAscent.Date).Hours() / 24)
+
+		// Determine area name (prefer kaya_area_name, fallback to destination)
+		areaName := "Unknown Area"
+		if climb.KayaAreaName != nil && *climb.KayaAreaName != "" {
+			areaName = *climb.KayaAreaName
+		} else if climb.KayaDestinationName != nil && *climb.KayaDestinationName != "" {
+			areaName = *climb.KayaDestinationName
+		}
+
+		// Determine grade name
+		gradeName := ""
+		if climb.GradeName != nil {
+			gradeName = *climb.GradeName
+		}
+
+		ascent := KayaAscentResponse{
+			KayaAscentID:   kayaAscent.KayaAscentID,
+			KayaClimbSlug:  kayaAscent.KayaClimbSlug,
+			RouteName:      climb.Name,
+			RouteGrade:     gradeName,
+			AreaName:       areaName,
+			ClimbedAt:      kayaAscent.Date.Format(time.RFC3339),
+			ClimbedBy:      user.Username,
+			Comment:        kayaAscent.Comment,
+			DaysSinceClimb: daysSince,
+			Source:         "kaya",
+		}
+
+		ascents = append(ascents, ascent)
+	}
+
+	// Return empty array if no data found
+	if ascents == nil {
+		ascents = []KayaAscentResponse{}
+	}
+
+	c.JSON(http.StatusOK, ascents)
 }
 
 func strPtr(s string) *string {

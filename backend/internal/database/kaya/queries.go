@@ -291,6 +291,17 @@ const (
 		ORDER BY date DESC
 		LIMIT $1
 	`
+
+	queryGetAscentsByWoulderLocation = `
+		SELECT a.id, a.kaya_ascent_id, a.kaya_climb_slug, a.kaya_user_id, a.date, a.comment, a.rating,
+			a.stiffness, a.grade_id, a.grade_name, a.photo_url, a.photo_thumb_url,
+			a.video_url, a.video_thumb_url, a.created_at, a.updated_at
+		FROM woulder.kaya_ascents a
+		JOIN woulder.kaya_climbs c ON a.kaya_climb_slug = c.slug
+		WHERE c.woulder_location_id = $1
+		ORDER BY a.date DESC
+		LIMIT $2
+	`
 )
 
 // Posts queries

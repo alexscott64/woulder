@@ -29,9 +29,11 @@ func main() {
 	delayFlag := flag.Int("delay", 3, "Delay in seconds between destinations")
 	flag.Parse()
 
-	// Load environment variables
-	if err := godotenv.Load("../.env"); err != nil {
-		log.Printf("Warning: .env file not found, using system environment variables")
+	// Load environment variables - try current directory first, then parent
+	if err := godotenv.Load(".env"); err != nil {
+		if err := godotenv.Load("../.env"); err != nil {
+			log.Printf("Warning: .env file not found in . or .., using system environment variables")
+		}
 	}
 
 	// Initialize database

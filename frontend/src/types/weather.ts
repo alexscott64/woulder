@@ -65,7 +65,30 @@ export interface ClimbHistoryEntry {
   style: string;
   comment?: string;
   days_since_climb: number;
+  source?: string;           // "mp" (default) or "kaya"
 }
+
+// Kaya-specific ascent entry (from Kaya API)
+export interface KayaAscentEntry {
+  kaya_ascent_id: string;
+  kaya_climb_slug: string;
+  route_name: string;
+  route_grade: string;
+  area_name: string;
+  climbed_at: string;        // ISO 8601 timestamp
+  climbed_by: string;
+  comment?: string;
+  days_since_climb: number;
+  source: string;            // Always "kaya"
+}
+
+// Unified climb history entry that can be either MP or Kaya
+export type UnifiedClimbEntry = ClimbHistoryEntry | (Omit<KayaAscentEntry, 'route_grade' | 'kaya_ascent_id' | 'kaya_climb_slug'> & {
+  route_rating: string;
+  mp_route_id?: number;
+  mp_area_id?: number;
+  style?: string;
+});
 
 export interface AreaActivitySummary {
   mp_area_id: number;

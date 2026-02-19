@@ -86,6 +86,9 @@ type AscentsRepository interface {
 
 	// GetRecentAscents retrieves recent ascents across all climbs.
 	GetRecentAscents(ctx context.Context, limit int) ([]*models.KayaAscent, error)
+
+	// GetAscentsByWoulderLocation retrieves ascents for climbs at a Woulder location.
+	GetAscentsByWoulderLocation(ctx context.Context, woulderLocationID int, limit int) ([]*models.KayaAscent, error)
 }
 
 // PostsRepository handles Kaya post operations.

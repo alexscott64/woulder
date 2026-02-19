@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/alexscott64/woulder/backend/internal/database/kaya"
 	"github.com/alexscott64/woulder/backend/internal/monitoring"
 	"github.com/alexscott64/woulder/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,7 @@ type Handler struct {
 	climbTrackingService *service.ClimbTrackingService
 	boulderDryingService *service.BoulderDryingService
 	heatMapService       *service.HeatMapService
+	kayaRepo             kaya.Repository
 	jobMonitor           *monitoring.JobMonitor
 }
 
@@ -29,6 +31,7 @@ func NewHandler(
 	climbTrackingService *service.ClimbTrackingService,
 	boulderDryingService *service.BoulderDryingService,
 	heatMapService *service.HeatMapService,
+	kayaRepo kaya.Repository,
 	jobMonitor *monitoring.JobMonitor,
 ) *Handler {
 	return &Handler{
@@ -38,14 +41,45 @@ func NewHandler(
 		climbTrackingService: climbTrackingService,
 		boulderDryingService: boulderDryingService,
 		heatMapService:       heatMapService,
+		kayaRepo:             kayaRepo,
 		jobMonitor:           jobMonitor,
 	}
 }
 
+// shouldRunImmediately checks if a job should run immediately on startup
+// Returns false if the job was completed recently (within threshold)
+func (h *Handler) shouldRunImmediately(ctx context.Context, jobName string, threshold time.Duration) bool {
+	wasRecent, err := h.jobMonitor.WasJobCompletedRecently(ctx, jobName, threshold)
+	if err != nil {
+		log.Printf("Warning: failed to check recent completion for %s: %v (running anyway)", jobName, err)
+		return true
+	}
+
+	if wasRecent {
+		log.Printf("Skipping immediate run of %s (completed recently within %v)", jobName, threshold)
+		return false
+	}
+
+	return true
+}
+
 // StartBackgroundRefresh starts a goroutine that refreshes weather data periodically
 func (h *Handler) StartBackgroundRefresh(interval time.Duration) {
-	// Start periodic refresh using weather service
-	h.weatherService.StartBackgroundRefresh(interval)
+	go func() {
+		// Run immediately on startup if not completed recently
+		ctx := context.Background()
+		if h.shouldRunImmediately(ctx, "weather_refresh", 1*time.Hour) {
+			log.Println("Running initial weather refresh...")
+			refreshCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			if err := h.weatherService.RefreshAllWeather(refreshCtx); err != nil {
+				log.Printf("Error in initial weather refresh: %v", err)
+			}
+			cancel()
+		}
+
+		// Start periodic refresh using weather service
+		h.weatherService.StartBackgroundRefresh(interval)
+	}()
 	log.Printf("Background weather refresh scheduled every %v", interval)
 }
 
@@ -85,11 +119,13 @@ func (h *Handler) StartBackgroundRouteSync(interval time.Duration) {
 
 		log.Printf("Starting background route sync scheduler (every %v)", interval)
 
-		// Run immediately on startup
-		log.Println("Running initial route sync...")
+		// Run immediately on startup if not completed recently
 		ctx := context.Background()
-		if err := h.climbTrackingService.SyncNewRoutesForAllStates(ctx); err != nil {
-			log.Printf("Error in initial route sync: %v", err)
+		if h.shouldRunImmediately(ctx, "background_route_sync", 1*time.Hour) {
+			log.Println("Running initial route sync...")
+			if err := h.climbTrackingService.SyncNewRoutesForAllStates(ctx); err != nil {
+				log.Printf("Error in initial route sync: %v", err)
+			}
 		}
 
 		// Then run on schedule
@@ -114,10 +150,13 @@ func (h *Handler) StartPriorityRecalculation(interval time.Duration) {
 
 		log.Printf("Starting priority recalculation scheduler (every %v)", interval)
 
-		// Run immediately on startup (before first sync)
+		// Run immediately on startup (before first sync) if not completed recently
 		ctx := context.Background()
-		if err := h.climbTrackingService.RecalculateAllPriorities(ctx); err != nil {
-			log.Printf("Error in initial priority calculation: %v", err)
+		if h.shouldRunImmediately(ctx, "priority_recalculation", 1*time.Hour) {
+			log.Println("Running initial priority recalculation...")
+			if err := h.climbTrackingService.RecalculateAllPriorities(ctx); err != nil {
+				log.Printf("Error in initial priority calculation: %v", err)
+			}
 		}
 
 		// Then run on schedule
@@ -140,8 +179,11 @@ func (h *Handler) StartLocationRouteSync(interval time.Duration) {
 
 		log.Printf("Starting location route sync scheduler (every %v)", interval)
 
-		// Run immediately on startup (most critical - these are woulder locations)
-		h.runLocationRouteSync()
+		// Run immediately on startup (most critical - these are woulder locations) if not completed recently
+		ctx := context.Background()
+		if h.shouldRunImmediately(ctx, "location_route_sync", 1*time.Hour) {
+			h.runLocationRouteSync()
+		}
 
 		// Then run on schedule
 		for range ticker.C {
@@ -175,8 +217,11 @@ func (h *Handler) StartHighPrioritySync(interval time.Duration) {
 
 		log.Printf("Starting high-priority sync scheduler (every %v)", interval)
 
-		// Run immediately on startup
-		h.runHighPrioritySync()
+		// Run immediately on startup if not completed recently
+		ctx := context.Background()
+		if h.shouldRunImmediately(ctx, "high_priority_sync", 1*time.Hour) {
+			h.runHighPrioritySync()
+		}
 
 		// Then run on schedule
 		for range ticker.C {
@@ -210,8 +255,11 @@ func (h *Handler) StartMediumPrioritySync(interval time.Duration) {
 
 		log.Printf("Starting medium-priority sync scheduler (every %v)", interval)
 
-		// Run immediately on startup
-		h.runMediumPrioritySync()
+		// Run immediately on startup if not completed recently
+		ctx := context.Background()
+		if h.shouldRunImmediately(ctx, "medium_priority_sync", 1*time.Hour) {
+			h.runMediumPrioritySync()
+		}
 
 		// Then run on schedule
 		for range ticker.C {
@@ -245,8 +293,11 @@ func (h *Handler) StartLowPrioritySync(interval time.Duration) {
 
 		log.Printf("Starting low-priority sync scheduler (every %v)", interval)
 
-		// Run immediately on startup
-		h.runLowPrioritySync()
+		// Run immediately on startup if not completed recently
+		ctx := context.Background()
+		if h.shouldRunImmediately(ctx, "low_priority_sync", 1*time.Hour) {
+			h.runLowPrioritySync()
+		}
 
 		// Then run on schedule
 		for range ticker.C {

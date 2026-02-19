@@ -584,6 +584,16 @@ func (r *PostgresRepository) GetRecentAscents(ctx context.Context, limit int) ([
 	return r.scanAscents(rows)
 }
 
+func (r *PostgresRepository) GetAscentsByWoulderLocation(ctx context.Context, woulderLocationID int, limit int) ([]*models.KayaAscent, error) {
+	rows, err := r.db.QueryContext(ctx, queryGetAscentsByWoulderLocation, woulderLocationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return r.scanAscents(rows)
+}
+
 func (r *PostgresRepository) scanAscents(rows *sql.Rows) ([]*models.KayaAscent, error) {
 	var ascents []*models.KayaAscent
 	for rows.Next() {
