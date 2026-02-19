@@ -15,17 +15,22 @@ import (
 )
 
 type Migration struct {
-	Version int
-	Name    string
-	UpPath  string
+	Version  int
+	Name     string
+	UpPath   string
 	DownPath string
 }
 
 func main() {
 	// Load .env file if it exists
-	envPath := filepath.Join("..", "..", ".env")
+	// Try loading from backend/.env first (when running from backend/cmd/migrate)
+	envPath := ".env"
 	if err := godotenv.Load(envPath); err != nil {
-		log.Println("Warning: .env file not found, using environment variables")
+		// Try loading from project root (when running from backend directory)
+		envPath = filepath.Join("..", ".env")
+		if err := godotenv.Load(envPath); err != nil {
+			log.Println("Warning: .env file not found, using environment variables")
+		}
 	}
 
 	// Get database connection details from environment
@@ -252,24 +257,42 @@ func migrateUp(db *sql.DB, migrationsPath string) error {
 			return fmt.Errorf("failed to read migration file: %v", err)
 		}
 
-		// Execute migration in a transaction
-		tx, err := db.Begin()
-		if err != nil {
-			return err
-		}
+		sqlString := string(sqlContent)
 
-		if _, err := tx.Exec(string(sqlContent)); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("migration %d failed: %v", migration.Version, err)
-		}
+		// Check if migration contains CONCURRENTLY (cannot run in transaction)
+		usesConcurrently := strings.Contains(strings.ToUpper(sqlString), "CONCURRENTLY")
 
-		if _, err := tx.Exec("INSERT INTO schema_migrations (version) VALUES ($1)", migration.Version); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to record migration: %v", err)
-		}
+		if usesConcurrently {
+			// Execute without transaction for CONCURRENT operations
+			log.Printf("  (running without transaction due to CONCURRENTLY)")
 
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("failed to commit migration: %v", err)
+			if _, err := db.Exec(sqlString); err != nil {
+				return fmt.Errorf("migration %d failed: %v", migration.Version, err)
+			}
+
+			if _, err := db.Exec("INSERT INTO schema_migrations (version) VALUES ($1)", migration.Version); err != nil {
+				return fmt.Errorf("failed to record migration: %v", err)
+			}
+		} else {
+			// Execute migration in a transaction (normal case)
+			tx, err := db.Begin()
+			if err != nil {
+				return err
+			}
+
+			if _, err := tx.Exec(sqlString); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d failed: %v", migration.Version, err)
+			}
+
+			if _, err := tx.Exec("INSERT INTO schema_migrations (version) VALUES ($1)", migration.Version); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("failed to record migration: %v", err)
+			}
+
+			if err := tx.Commit(); err != nil {
+				return fmt.Errorf("failed to commit migration: %v", err)
+			}
 		}
 
 		log.Printf("✓ Applied migration %d", migration.Version)
@@ -321,24 +344,42 @@ func migrateDown(db *sql.DB, migrationsPath string) error {
 			return fmt.Errorf("failed to read migration file: %v", err)
 		}
 
-		// Execute rollback in a transaction
-		tx, err := db.Begin()
-		if err != nil {
-			return err
-		}
+		sqlString := string(sqlContent)
 
-		if _, err := tx.Exec(string(sqlContent)); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("rollback %d failed: %v", migration.Version, err)
-		}
+		// Check if rollback contains CONCURRENTLY (cannot run in transaction)
+		usesConcurrently := strings.Contains(strings.ToUpper(sqlString), "CONCURRENTLY")
 
-		if _, err := tx.Exec("DELETE FROM schema_migrations WHERE version = $1", migration.Version); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to remove migration record: %v", err)
-		}
+		if usesConcurrently {
+			// Execute without transaction for CONCURRENT operations
+			log.Printf("  (running without transaction due to CONCURRENTLY)")
 
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("failed to commit rollback: %v", err)
+			if _, err := db.Exec(sqlString); err != nil {
+				return fmt.Errorf("rollback %d failed: %v", migration.Version, err)
+			}
+
+			if _, err := db.Exec("DELETE FROM schema_migrations WHERE version = $1", migration.Version); err != nil {
+				return fmt.Errorf("failed to remove migration record: %v", err)
+			}
+		} else {
+			// Execute rollback in a transaction (normal case)
+			tx, err := db.Begin()
+			if err != nil {
+				return err
+			}
+
+			if _, err := tx.Exec(sqlString); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("rollback %d failed: %v", migration.Version, err)
+			}
+
+			if _, err := tx.Exec("DELETE FROM schema_migrations WHERE version = $1", migration.Version); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("failed to remove migration record: %v", err)
+			}
+
+			if err := tx.Commit(); err != nil {
+				return fmt.Errorf("failed to commit rollback: %v", err)
+			}
 		}
 
 		log.Printf("✓ Rolled back migration %d", migration.Version)
