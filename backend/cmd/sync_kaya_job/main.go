@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"database/sql"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/database"
@@ -163,26 +161,112 @@ func runSync(db *database.Database, jobMonitor *monitoring.JobMonitor, jobID int
 }
 
 func loadDestinations() ([]string, error) {
-	// Load from kaya-destinations.txt
-	file, err := os.Open("../docs/kaya-destinations.txt")
-	if err != nil {
-		return nil, err
+	// Embedded list of all 105 Kaya official destinations
+	// Source: https://kayaclimb.com/explore (extracted 2026-02-18)
+	destinations := []string{
+		"Squamish-295658",
+		"Red-Rocks-331387",
+		"Bishop-316882",
+		"Joshua-Tree-317008",
+		"Hueco-Tanks-339538",
+		"Joes-Valley-340826",
+		"Vancouver-Island-295813",
+		"Clear-Creek-Canyon-323872",
+		"Ogden-1153006",
+		"Lincoln-Lake-5272477",
+		"Guanella-Pass-323792",
+		"Tahoe-317136",
+		"Little-Cottonwood-Canyon-986245",
+		"New-River-Gorge-347179",
+		"Coopers-Rock-347182",
+		"Smith-Rock-336540",
+		"Black-Mountain-317072",
+		"Leavenworth-344933",
+		"Kelowna-296013",
+		"Hatcher-Pass-314961",
+		"Devils-Lake-348323",
+		"Lake-Ramona-10400507",
+		"RMNP-323755",
+		"Tramway-317070",
+		"Vancouver-296037",
+		"Ibex-341212",
+		"Stone-Fort-999671",
+		"Mount-Woodson-2192166",
+		"Red-Feather-324534",
+		"Flagstaff-Mountain-323839",
+		"Big-Cottonwood-Canyon-BCC-341957",
+		"Fraser-Valley-3340725",
+		"Reimers-Ranch-339808",
+		"Horseshoe-Canyon-Ranch-316278",
+		"Tulsa-OK-10116402",
+		"Mineral-King-15161231",
+		"Rumbling-Bald-335837",
+		"Rocktown-327484",
+		"Horse-Pens-40-983782",
+		"Malibu-838425",
+		"Santa-Barbara-317853",
+		"Doyle-322152",
+		"Comox-Valley-Vancouver-Island-BC-7882675",
+		"NYC-Bouldering-8736175",
+		"Moes-Valley-340851",
+		"Gold-Bar-344983",
+		"The-Nooks-3899367",
+		"Adirondacks-335103",
+		"Stoney-Point-317772",
+		"Treasury-2106513",
+		"Eldorado-Canyon-323915",
+		"Uintas-1394571",
+		"holy-boulders-1016922",
+		"Gunpowder-Falls-1395399",
+		"Boat-Rock-327557",
+		"Reynolds-Creek-328023",
+		"Triassic-341357",
+		"Needle-Peak-658063",
+		"Box-Springs-Mountain-Reserve-5727203",
+		"Horse-Flats-317843",
+		"Mt-Evans-323773",
+		"Smugglers-Notch-344705",
+		"Rock-shop-348813",
+		"Morpheus-345195",
+		"Berkeley-316984",
+		"Mount-Rubidoux-321790",
+		"Index-345070",
+		"purgatory-851804",
+		"Vernon-4132330",
+		"Exit-38-345299",
+		"Castle-Rock-State-Park-328014",
+		"Sams-Throne-316415",
+		"Patapsco-Valley-State-Park-8555804",
+		"Porcupine-Hills-6234426",
+		"Cowell-316321",
+		"Dixon-School-Road-335964",
+		"Barton-Creek-Greenbelt-339852",
+		"Utah-Hills-341651",
+		"Price-1361664",
+		"Big-Rock-291216",
+		"Rogers-Park-339768",
+		"Salt-Point-317575",
+		"The-Citadel-295573",
+		"Sierra-Buttes-318225",
+		"Hammond-Pond-330274",
+		"Nut-Tree-990859",
+		"Santee-Boulders-2376083",
+		"Indian-Rock-3199690",
+		"Juan-De-Fuca-7846367",
+		"Richland-Creek-15036518",
+		"Lost-Ledges-345403",
+		"Lions-Den-334501",
+		"Conejo-Mountain-9502266",
+		"Mckinney-Falls-1493881",
+		"Wadi-Rum-389777",
+		"Rocks-State-Park-330207",
+		"Sawmill-330569",
+		"Mt-Tamalpais-318183",
+		"Rock-Creek-317075",
+		"Sugarloaf-Ridge-State-Park-1770584",
 	}
-	defer file.Close()
 
-	var slugs []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "Total:") {
-			continue
-		}
-		if strings.Contains(line, "-") && !strings.HasPrefix(line, "Format:") {
-			slugs = append(slugs, line)
-		}
-	}
-
-	return slugs, scanner.Err()
+	return destinations, nil
 }
 
 func shouldSyncLocation(ctx context.Context, db *database.Database, slug string) (bool, error) {
