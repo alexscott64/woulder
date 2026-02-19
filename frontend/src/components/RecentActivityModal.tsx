@@ -219,7 +219,7 @@ export function RecentActivityModal({
     const fetchKayaAscents = async () => {
       try {
         setIsLoadingKaya(true);
-        const ascents = await climbActivityApi.getKayaAscentsForLocation(locationId, 100);
+        const ascents = await climbActivityApi.getKayaAscentsForLocation(locationId, 5);
         setKayaAscents(ascents);
       } catch (error) {
         console.error('Failed to fetch Kaya ascents:', error);
@@ -232,9 +232,9 @@ export function RecentActivityModal({
     fetchKayaAscents();
   }, [locationId]);
 
-  // Merge and sort all climbs (MP + Kaya)
+  // Merge and sort all climbs (MP: 5 most recent + Kaya: 5 most recent)
   const allClimbs: UnifiedClimbEntry[] = [
-    ...climbHistory.map(convertMPToUnified),
+    ...climbHistory.slice(0, 5).map(convertMPToUnified),
     ...kayaAscents.map(convertKayaToUnified),
   ].sort((a, b) => {
     // Sort by date descending (most recent first)
@@ -266,7 +266,7 @@ export function RecentActivityModal({
                   {isLoadingKaya && <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">(Loading Kaya...)</span>}
                 </h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                  {locationName} • {allClimbs.length} total climbs ({climbHistory.length} MP, {kayaAscents.length} Kaya)
+                  {locationName}
                 </p>
               </div>
             </div>
