@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/gin-gonic/gin"
@@ -68,7 +69,7 @@ func (h *Handler) GetAreasOrderedByActivity(c *gin.Context) {
 		return
 	}
 
-	// Fetch areas ordered by activity
+	// Fetch areas ordered by activity (based on MP data)
 	areas, err := h.climbTrackingService.GetAreasOrderedByActivity(c.Request.Context(), locationID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve area activity data"})
@@ -78,6 +79,24 @@ func (h *Handler) GetAreasOrderedByActivity(c *gin.Context) {
 	// Return empty array if no data found
 	if areas == nil {
 		areas = []models.AreaActivitySummary{}
+	}
+
+	// Update area activity with Kaya data if newer
+	// For each area, check if any matched Kaya climbs have more recent activity
+	for i := range areas {
+		area := &areas[i]
+
+		// Fetch matched Kaya climbs for this area
+		kayaClimbs, err := h.kayaRepo.Climbs().GetMatchedClimbsForArea(c.Request.Context(), area.MPAreaID, 1)
+		if err != nil || len(kayaClimbs) == 0 {
+			continue
+		}
+
+		// If Kaya has more recent activity, update the area's last activity
+		if kayaClimbs[0].LastClimbAt.After(area.LastClimbAt) {
+			area.LastClimbAt = kayaClimbs[0].LastClimbAt
+			area.DaysSinceClimb = kayaClimbs[0].DaysSinceClimb
+		}
 	}
 
 	c.JSON(http.StatusOK, areas)
@@ -116,6 +135,23 @@ func (h *Handler) GetSubareasOrderedByActivity(c *gin.Context) {
 	// Return empty array if no data found
 	if subareas == nil {
 		subareas = []models.AreaActivitySummary{}
+	}
+
+	// Update subarea activity with Kaya data if newer (same logic as areas)
+	for i := range subareas {
+		subarea := &subareas[i]
+
+		// Fetch matched Kaya climbs for this subarea
+		kayaClimbs, err := h.kayaRepo.Climbs().GetMatchedClimbsForArea(c.Request.Context(), subarea.MPAreaID, 1)
+		if err != nil || len(kayaClimbs) == 0 {
+			continue
+		}
+
+		// If Kaya has more recent activity, update the subarea's last activity
+		if kayaClimbs[0].LastClimbAt.After(subarea.LastClimbAt) {
+			subarea.LastClimbAt = kayaClimbs[0].LastClimbAt
+			subarea.DaysSinceClimb = kayaClimbs[0].DaysSinceClimb
+		}
 	}
 
 	c.JSON(http.StatusOK, subareas)
@@ -177,6 +213,130 @@ func (h *Handler) GetRoutesOrderedByActivity(c *gin.Context) {
 	c.JSON(http.StatusOK, routes)
 }
 
+// GetUnifiedRoutesOrderedByActivity retrieves both MP routes and Kaya climbs ordered by activity
+// GET /api/climbs/location/:id/areas/:area_id/unified-routes?limit=200
+func (h *Handler) GetUnifiedRoutesOrderedByActivity(c *gin.Context) {
+	// Parse location ID and area ID from URL
+	locationIDStr := c.Param("id")
+	locationID, err := strconv.Atoi(locationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		return
+	}
+
+	areaIDStr := c.Param("area_id")
+	if areaIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Area ID is required"})
+		return
+	}
+
+	areaID, err := strconv.ParseInt(areaIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area ID"})
+		return
+	}
+
+	// Parse optional limit query parameter (default 200, max 200)
+	limit := 200
+	if limitStr := c.Query("limit"); limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid limit parameter"})
+			return
+		}
+		if parsedLimit < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Limit must be at least 1"})
+			return
+		}
+		if parsedLimit > 200 {
+			parsedLimit = 200
+		}
+		limit = parsedLimit
+	}
+
+	// Fetch MP routes for this specific area
+	mpRoutes, err := h.climbTrackingService.GetRoutesOrderedByActivity(c.Request.Context(), areaID, locationID, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve MP route activity data"})
+		return
+	}
+
+	// Convert MP routes to unified format
+	unifiedRoutes := make([]models.UnifiedRouteActivitySummary, 0, len(mpRoutes)+50)
+	for _, route := range mpRoutes {
+		mpRouteID := route.MPRouteID
+		mpAreaID := route.MPAreaID
+		unified := models.UnifiedRouteActivitySummary{
+			ID:             fmt.Sprintf("mp-%d", route.MPRouteID),
+			Name:           route.Name,
+			Rating:         route.Rating,
+			AreaName:       "", // Will be populated from most recent tick if available
+			LastClimbAt:    route.LastClimbAt,
+			DaysSinceClimb: route.DaysSinceClimb,
+			Source:         "mp",
+			MPRouteID:      &mpRouteID,
+			MPAreaID:       &mpAreaID,
+			MostRecentTick: route.MostRecentTick,
+		}
+		if route.MostRecentTick != nil {
+			unified.AreaName = route.MostRecentTick.AreaName
+		}
+		unifiedRoutes = append(unifiedRoutes, unified)
+	}
+
+	// Create a map of MP route ID -> index in unifiedRoutes for quick lookup
+	mpRouteMap := make(map[int64]int)
+	for i, route := range unifiedRoutes {
+		if route.MPRouteID != nil {
+			mpRouteMap[*route.MPRouteID] = i
+		}
+	}
+
+	// Fetch Kaya climbs that have been matched to MP routes in this area
+	kayaClimbs, err := h.kayaRepo.Climbs().GetMatchedClimbsForArea(c.Request.Context(), areaID, limit)
+	if err == nil {
+		for _, kayaClimb := range kayaClimbs {
+			if kayaClimb.MPRouteID != nil {
+				// If this Kaya climb matches an existing MP route, update the MP route
+				// with the more recent activity if Kaya has newer data
+				if idx, exists := mpRouteMap[*kayaClimb.MPRouteID]; exists {
+					mpRoute := &unifiedRoutes[idx]
+					// Update if Kaya has more recent activity
+					if kayaClimb.LastClimbAt.After(mpRoute.LastClimbAt) {
+						mpRoute.LastClimbAt = kayaClimb.LastClimbAt
+						mpRoute.DaysSinceClimb = kayaClimb.DaysSinceClimb
+						// Keep the MP route but note that most recent activity is from Kaya
+						if kayaClimb.MostRecentAscent != nil {
+							// We could add a field to indicate latest source, but for now just update the date
+						}
+					}
+					// Don't add as separate entry - we updated the existing MP route
+					continue
+				}
+			}
+			// Add Kaya climbs that don't match any MP route
+			unifiedRoutes = append(unifiedRoutes, kayaClimb)
+		}
+	}
+
+	// Sort all results by most recent activity
+	// Sort in place by LastClimbAt descending
+	for i := 0; i < len(unifiedRoutes); i++ {
+		for j := i + 1; j < len(unifiedRoutes); j++ {
+			if unifiedRoutes[j].LastClimbAt.After(unifiedRoutes[i].LastClimbAt) {
+				unifiedRoutes[i], unifiedRoutes[j] = unifiedRoutes[j], unifiedRoutes[i]
+			}
+		}
+	}
+
+	// Trim to limit
+	if len(unifiedRoutes) > limit {
+		unifiedRoutes = unifiedRoutes[:limit]
+	}
+
+	c.JSON(http.StatusOK, unifiedRoutes)
+}
+
 // GetRecentTicksForRoute retrieves recent ticks for a specific route
 // GET /api/climbs/routes/:route_id/ticks?limit=5
 func (h *Handler) GetRecentTicksForRoute(c *gin.Context) {
@@ -211,19 +371,63 @@ func (h *Handler) GetRecentTicksForRoute(c *gin.Context) {
 		limit = parsedLimit
 	}
 
-	// Fetch recent ticks for route
-	ticks, err := h.climbTrackingService.GetRecentTicksForRoute(c.Request.Context(), routeID, limit)
+	// Fetch recent MP ticks for route
+	mpTicks, err := h.climbTrackingService.GetRecentTicksForRoute(c.Request.Context(), routeID, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve tick data"})
 		return
 	}
 
-	// Return empty array if no data found
-	if ticks == nil {
-		ticks = []models.ClimbHistoryEntry{}
+	// Initialize combined ticks with MP data and set source
+	allTicks := []models.ClimbHistoryEntry{}
+	if mpTicks != nil {
+		// Set source field for all MP ticks
+		for i := range mpTicks {
+			mpTicks[i].Source = "mp"
+		}
+		allTicks = mpTicks
 	}
 
-	c.JSON(http.StatusOK, ticks)
+	// Try to fetch Kaya ascents for matched route
+	kayaAscents, err := h.kayaRepo.Ascents().GetAscentsForMatchedRoute(c.Request.Context(), routeID, limit)
+	if err == nil {
+		// Convert Kaya ascents to ClimbHistoryEntry format and add them
+		// Populate ALL fields so frontend doesn't need to handle source differences
+		for _, ascent := range kayaAscents {
+			daysSince := int(time.Since(ascent.Date).Hours() / 24)
+
+			entry := models.ClimbHistoryEntry{
+				MPRouteID:      routeID, // Use the MP route ID since they're matched
+				RouteName:      ascent.ClimbName,
+				RouteRating:    *ascent.ClimbGrade,
+				MPAreaID:       0, // We don't have MP area ID for Kaya
+				AreaName:       ascent.AreaName,
+				ClimbedAt:      ascent.Date,
+				ClimbedBy:      ascent.Username,
+				Style:          "", // Kaya doesn't have style (Flash/Redpoint/etc)
+				Comment:        ascent.Comment,
+				DaysSinceClimb: daysSince,
+				Source:         "kaya",
+			}
+			allTicks = append(allTicks, entry)
+		}
+	}
+
+	// Sort combined ticks by date descending
+	for i := 0; i < len(allTicks); i++ {
+		for j := i + 1; j < len(allTicks); j++ {
+			if allTicks[j].ClimbedAt.After(allTicks[i].ClimbedAt) {
+				allTicks[i], allTicks[j] = allTicks[j], allTicks[i]
+			}
+		}
+	}
+
+	// Trim to limit after combining
+	if len(allTicks) > limit {
+		allTicks = allTicks[:limit]
+	}
+
+	c.JSON(http.StatusOK, allTicks)
 }
 
 // SearchInLocation searches all areas and routes in a location by name
@@ -327,7 +531,6 @@ func (h *Handler) SearchRoutesInLocation(c *gin.Context) {
 
 	c.JSON(http.StatusOK, routes)
 }
-
 
 // GetBatchBoulderDryingStatus calculates boulder-specific drying status for multiple routes
 // GET /api/climbs/routes/batch-drying-status?route_ids=id1,id2,id3
@@ -492,4 +695,3 @@ func (h *Handler) GetBatchAreaDryingStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, stats)
 }
-

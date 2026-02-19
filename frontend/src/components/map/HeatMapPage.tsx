@@ -296,12 +296,15 @@ export function HeatMapPage() {
                 points={sortedPoints}
                 onAreaClick={(areaId) => {
                   setShowClusterDrawer(false);
+                  setClusterAreas([]); // Clear old cluster
                   setSelectedAreaId(areaId);
                 }}
                 selectedAreaId={selectedAreaId}
                 onShowCluster={(areas) => {
-                  setClusterAreas(areas);
-                  setShowClusterDrawer(true);
+                  setSelectedAreaId(null); // Close area drawer first
+                  setShowClusterDrawer(false); // Close old cluster drawer
+                  setClusterAreas(areas); // Set new cluster
+                  setShowClusterDrawer(true); // Open new cluster drawer
                 }}
               />
             </div>
@@ -316,6 +319,7 @@ export function HeatMapPage() {
               setClusterAreas([]);
             }}
             onAreaClick={(areaId: number) => {
+              setShowClusterDrawer(false);
               setSelectedAreaId(areaId);
             }}
             dateRange={dateRange}

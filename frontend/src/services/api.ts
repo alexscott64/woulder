@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Location, WeatherForecast, AllWeatherResponse, AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus, AreaDryingStats } from '../types/weather';
+import { Location, WeatherForecast, AllWeatherResponse, AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus, AreaDryingStats, KayaAscentEntry, UnifiedRouteActivitySummary } from '../types/weather';
 import { Area, AreaWithLocations } from '../types/area';
 import { HeatMapActivityResponse, AreaActivityDetail, RoutesResponse, RouteTicksResponse, GeoBounds } from '../types/heatmap';
 
@@ -79,6 +79,14 @@ export const climbActivityApi = {
     return response.data;
   },
 
+  // Get unified routes (MP + Kaya) in an area ordered by recent activity
+  getUnifiedRoutesOrderedByActivity: async (locationId: number, areaId: number, limit = 200): Promise<UnifiedRouteActivitySummary[]> => {
+    const response = await api.get(`/climbs/location/${locationId}/areas/${areaId}/unified-routes`, {
+      params: { limit }
+    });
+    return response.data;
+  },
+
   // Get recent ticks for a specific route
   getRecentTicksForRoute: async (routeId: number, limit = 5): Promise<ClimbHistoryEntry[]> => {
     const response = await api.get(`/climbs/routes/${routeId}/ticks`, {
@@ -135,6 +143,14 @@ export const climbActivityApi = {
     const response = await api.get(`/climbs/location/${locationId}/batch-area-drying-stats`, {
       params: { area_ids: areaIds.join(',') },
       timeout: 30000, // Longer timeout for batch request
+    });
+    return response.data;
+  },
+
+  // Get Kaya ascents for a location
+  getKayaAscentsForLocation: async (locationId: number, limit = 100): Promise<KayaAscentEntry[]> => {
+    const response = await api.get(`/kaya/location/${locationId}/ascents`, {
+      params: { limit }
     });
     return response.data;
   },

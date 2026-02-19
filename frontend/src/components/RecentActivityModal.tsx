@@ -1,15 +1,32 @@
-import { X, Footprints, ExternalLink, Calendar, User, MapPin, List, FolderTree, Search } from 'lucide-react';
+import { X, Footprints, ExternalLink, Calendar, User, MapPin, List, FolderTree, Search, Mountain } from 'lucide-react';
 import { format } from 'date-fns';
-import { useState } from 'react';
-import { ClimbHistoryEntry } from '../types/weather';
+import { useState, useEffect } from 'react';
+import { ClimbHistoryEntry, KayaAscentEntry } from '../types/weather';
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { AreaDrillDownView } from './AreaDrillDownView';
+import { climbActivityApi } from '../services/api';
 
 interface RecentActivityModalProps {
   locationId: number;
   locationName: string;
   climbHistory: ClimbHistoryEntry[];
   onClose: () => void;
+}
+
+// Unified climb entry type for display
+interface UnifiedClimbEntry {
+  id: string; // Unique ID for React key
+  route_name: string;
+  route_rating: string;
+  area_name: string;
+  climbed_at: string;
+  climbed_by: string;
+  comment?: string;
+  days_since_climb: number;
+  source: 'mp' | 'kaya';
+  mp_route_id?: number;
+  mp_area_id?: number;
+  kaya_climb_slug?: string;
 }
 
 type View = 'recent' | 'areas';
@@ -43,18 +60,52 @@ function cleanComment(comment: string | undefined): string | null {
   return cleaned || null;
 }
 
+// Convert MP climb history to unified format
+function convertMPToUnified(mpClimb: ClimbHistoryEntry): UnifiedClimbEntry {
+  return {
+    id: `mp-${mpClimb.mp_route_id}-${mpClimb.climbed_at}`,
+    route_name: mpClimb.route_name,
+    route_rating: mpClimb.route_rating,
+    area_name: mpClimb.area_name,
+    climbed_at: mpClimb.climbed_at,
+    climbed_by: mpClimb.climbed_by,
+    comment: mpClimb.comment,
+    days_since_climb: mpClimb.days_since_climb,
+    source: 'mp',
+    mp_route_id: mpClimb.mp_route_id,
+    mp_area_id: mpClimb.mp_area_id,
+  };
+}
+
+// Convert Kaya ascent to unified format
+function convertKayaToUnified(kayaAscent: KayaAscentEntry): UnifiedClimbEntry {
+  return {
+    id: `kaya-${kayaAscent.kaya_ascent_id}`,
+    route_name: kayaAscent.route_name,
+    route_rating: kayaAscent.route_grade,
+    area_name: kayaAscent.area_name,
+    climbed_at: kayaAscent.climbed_at,
+    climbed_by: kayaAscent.climbed_by,
+    comment: kayaAscent.comment,
+    days_since_climb: kayaAscent.days_since_climb,
+    source: 'kaya',
+    kaya_climb_slug: kayaAscent.kaya_climb_slug,
+  };
+}
+
 // Recent Climbs View (extracted from original)
-function RecentClimbsView({ climbHistory }: { climbHistory: ClimbHistoryEntry[] }) {
+function RecentClimbsView({ climbHistory }: { climbHistory: UnifiedClimbEntry[] }) {
   return (
     <div className="space-y-3">
       {climbHistory.map((climb, index) => {
         const displayComment = cleanComment(climb.comment);
         const climbDate = new Date(climb.climbed_at);
         const dateStr = format(climbDate, 'MMM d, yyyy');
+        const isKaya = climb.source === 'kaya';
 
         return (
           <div
-            key={`${climb.mp_route_id}-${climb.climbed_at}`}
+            key={climb.id}
             className={`bg-white dark:bg-gray-900 border rounded-lg p-3 sm:p-4 hover:shadow-md transition-all ${
               index === 0
                 ? 'border-blue-200 dark:border-blue-800 shadow-sm'
@@ -62,32 +113,50 @@ function RecentClimbsView({ climbHistory }: { climbHistory: ClimbHistoryEntry[] 
             }`}
           >
             <div className="flex items-start justify-between gap-3 mb-2">
-              <a
-                href={`https://www.mountainproject.com/route/${climb.mp_route_id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 group flex-1 min-w-0"
-              >
-                <span className="text-sm sm:text-base font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-500 transition-colors truncate">
-                  {climb.route_name}
-                </span>
-                <ExternalLink className="h-3.5 w-3.5 text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-500 flex-shrink-0 transition-colors" />
-              </a>
+              {isKaya ? (
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  <span className="text-sm sm:text-base font-bold text-gray-900 dark:text-white truncate">
+                    {climb.route_name}
+                  </span>
+                </div>
+              ) : (
+                <a
+                  href={`https://www.mountainproject.com/route/${climb.mp_route_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 group flex-1 min-w-0"
+                >
+                  <span className="text-sm sm:text-base font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-500 transition-colors truncate">
+                    {climb.route_name}
+                  </span>
+                  <ExternalLink className="h-3.5 w-3.5 text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-500 flex-shrink-0 transition-colors" />
+                </a>
+              )}
               <span className="text-xs sm:text-sm font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded flex-shrink-0">
                 {climb.route_rating}
               </span>
             </div>
 
-            <a
-              href={`https://www.mountainproject.com/area/${climb.mp_area_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-500 transition-colors mb-2 group"
-            >
+            <div className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 mb-2">
               <MapPin className="h-3 w-3" />
               <span>{climb.area_name}</span>
-              <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </a>
+              {isKaya && (
+                <span className="ml-1 px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium flex items-center gap-0.5">
+                  <Mountain className="h-3 w-3" />
+                  Kaya
+                </span>
+              )}
+              {!isKaya && climb.mp_area_id && (
+                <a
+                  href={`https://www.mountainproject.com/area/${climb.mp_area_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 hover:text-blue-600 dark:hover:text-blue-500 transition-colors group"
+                >
+                  <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </a>
+              )}
+            </div>
 
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
               {climb.climbed_by && climb.climbed_by.trim() !== '' && (
@@ -142,15 +211,44 @@ export function RecentActivityModal({
 }: RecentActivityModalProps) {
   const [view, setView] = useState<View>('recent');
   const [searchQuery, setSearchQuery] = useState('');
+  const [kayaAscents, setKayaAscents] = useState<KayaAscentEntry[]>([]);
+  const [isLoadingKaya, setIsLoadingKaya] = useState(true);
+
+  // Fetch Kaya ascents on mount
+  useEffect(() => {
+    const fetchKayaAscents = async () => {
+      try {
+        setIsLoadingKaya(true);
+        const ascents = await climbActivityApi.getKayaAscentsForLocation(locationId, 5);
+        setKayaAscents(ascents);
+      } catch (error) {
+        console.error('Failed to fetch Kaya ascents:', error);
+        setKayaAscents([]);
+      } finally {
+        setIsLoadingKaya(false);
+      }
+    };
+
+    fetchKayaAscents();
+  }, [locationId]);
+
+  // Merge and sort all climbs (MP: 5 most recent + Kaya: 5 most recent)
+  const allClimbs: UnifiedClimbEntry[] = [
+    ...climbHistory.slice(0, 5).map(convertMPToUnified),
+    ...kayaAscents.map(convertKayaToUnified),
+  ].sort((a, b) => {
+    // Sort by date descending (most recent first)
+    return new Date(b.climbed_at).getTime() - new Date(a.climbed_at).getTime();
+  });
 
   // Filter climb history based on search query
   const filteredClimbHistory = searchQuery
-    ? climbHistory.filter(climb =>
+    ? allClimbs.filter(climb =>
         climb.route_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         climb.area_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         climb.climbed_by.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : climbHistory;
+    : allClimbs;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
@@ -163,8 +261,13 @@ export function RecentActivityModal({
                 <Footprints className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
               </div>
               <div className="min-w-0 flex-1">
-                <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">Recent Activity</h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{locationName}</p>
+                <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
+                  Recent Activity
+                  {isLoadingKaya && <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">(Loading Kaya...)</span>}
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                  {locationName}
+                </p>
               </div>
             </div>
             <button

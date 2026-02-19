@@ -13,6 +13,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/database/boulders"
 	"github.com/alexscott64/woulder/backend/internal/database/climbing"
 	"github.com/alexscott64/woulder/backend/internal/database/heatmap"
+	"github.com/alexscott64/woulder/backend/internal/database/kaya"
 	"github.com/alexscott64/woulder/backend/internal/database/locations"
 	"github.com/alexscott64/woulder/backend/internal/database/mountainproject"
 	"github.com/alexscott64/woulder/backend/internal/database/rivers"
@@ -157,6 +158,11 @@ func (db *Database) Climbing() climbing.Repository {
 // MountainProject returns the Mountain Project repository for MP data operations.
 func (db *Database) MountainProject() mountainproject.Repository {
 	return mountainproject.NewPostgresRepository(db.conn)
+}
+
+// Kaya returns the Kaya repository for Kaya data operations.
+func (db *Database) Kaya() kaya.Repository {
+	return kaya.NewPostgresRepository(db.conn)
 }
 
 // Legacy wrapper methods for backward compatibility

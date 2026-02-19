@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { climbActivityApi } from '../services/api';
-import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus, AreaDryingStats } from '../types/weather';
+import type { AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus, AreaDryingStats, UnifiedRouteActivitySummary } from '../types/weather';
 
 /**
  * Hook to fetch areas ordered by recent climb activity for a location
@@ -40,6 +40,22 @@ export const useRoutesOrderedByActivity = (
   return useQuery<RouteActivitySummary[], Error>({
     queryKey: ['routes-activity', locationId, areaId, limit],
     queryFn: () => climbActivityApi.getRoutesOrderedByActivity(locationId, areaId!, limit),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    enabled: !!locationId && !!areaId,
+  });
+};
+
+/**
+ * Hook to fetch unified routes (MP + Kaya) ordered by recent climb activity
+ */
+export const useUnifiedRoutesOrderedByActivity = (
+  locationId: number,
+  areaId: number | null,
+  limit = 200
+) => {
+  return useQuery<UnifiedRouteActivitySummary[], Error>({
+    queryKey: ['unified-routes-activity', locationId, areaId, limit],
+    queryFn: () => climbActivityApi.getUnifiedRoutesOrderedByActivity(locationId, areaId!, limit),
     staleTime: 10 * 60 * 1000, // 10 minutes
     enabled: !!locationId && !!areaId,
   });

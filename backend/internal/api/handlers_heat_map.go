@@ -107,7 +107,8 @@ func (h *Handler) GetHeatMapActivity(c *gin.Context) {
 	points, err := h.heatMapService.GetHeatMapData(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch heat map data",
+			"error":   "Failed to fetch heat map data",
+			"details": err.Error(),
 		})
 		return
 	}
@@ -184,7 +185,8 @@ func (h *Handler) GetHeatMapAreaDetail(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch area detail",
+			"error":   "Failed to fetch area detail",
+			"details": err.Error(),
 		})
 		return
 	}

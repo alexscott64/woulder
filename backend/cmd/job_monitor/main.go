@@ -205,8 +205,7 @@ func (c *MonitorClient) showHistory(jobName string, limit int) {
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "Job Name", "Status", "Started", "Duration", "Items"})
-	table.SetBorder(true)
+	table.Append([]string{"ID", "Job Name", "Status", "Started", "Duration", "Items"})
 
 	for _, job := range result.Jobs {
 		duration := formatDuration(job.ElapsedSeconds)
@@ -243,9 +242,7 @@ func (c *MonitorClient) showSummary() {
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Job Name", "Status", "Last Run", "Duration", "Next Run"})
-	table.SetBorder(true)
-	table.SetRowLine(true)
+	table.Append([]string{"Job Name", "Status", "Last Run", "Duration", "Next Run"})
 
 	for jobName, item := range summary.Summary {
 		lastRun := "Never"
@@ -401,8 +398,6 @@ func makeProgressBar(percent float64, width int) string {
 }
 
 func formatDuration(seconds int64) string {
-	duration := time.Duration(seconds) * time.Second
-
 	if seconds < 60 {
 		return fmt.Sprintf("%ds", seconds)
 	} else if seconds < 3600 {
