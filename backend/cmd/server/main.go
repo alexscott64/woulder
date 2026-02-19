@@ -58,24 +58,31 @@ func main() {
 	// Initialize API handler with services
 	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService, db.Kaya(), jobMonitor)
 
-	// Start background weather refresh (every 1 hour)
-	// The refresh automatically checks if data is fresh and skips API calls if updated within the last hour
-	handler.StartBackgroundRefresh(1 * time.Hour)
+	// Start background syncs only if not disabled (e.g., in development)
+	if cfg.Server.DisableBackgroundSyncs {
+		log.Println("⚠️  Background syncs DISABLED via config (DISABLE_BACKGROUND_SYNCS=true)")
+	} else {
+		log.Println("✓ Starting background syncs...")
 
-	// Start dual-track sync system for Mountain Project ticks/comments
-	// Priority recalculation runs FIRST (populates priorities for non-location routes)
-	handler.StartPriorityRecalculation(24 * time.Hour)
-	// Location route sync runs SECOND (ensures woulder locations are fresh - most critical)
-	handler.StartLocationRouteSync(24 * time.Hour)
-	// High-priority sync runs THIRD (ensures popular non-location routes are fresh)
-	handler.StartHighPrioritySync(24 * time.Hour)
-	// Medium-priority sync runs weekly
-	handler.StartMediumPrioritySync(7 * 24 * time.Hour)
-	// Low-priority sync runs monthly
-	handler.StartLowPrioritySync(30 * 24 * time.Hour)
+		// Start background weather refresh (every 1 hour)
+		// The refresh automatically checks if data is fresh and skips API calls if updated within the last hour
+		handler.StartBackgroundRefresh(1 * time.Hour)
 
-	// Start background route sync (every 24 hours)
-	handler.StartBackgroundRouteSync(24 * time.Hour)
+		// Start dual-track sync system for Mountain Project ticks/comments
+		// Priority recalculation runs FIRST (populates priorities for non-location routes)
+		handler.StartPriorityRecalculation(24 * time.Hour)
+		// Location route sync runs SECOND (ensures woulder locations are fresh - most critical)
+		handler.StartLocationRouteSync(24 * time.Hour)
+		// High-priority sync runs THIRD (ensures popular non-location routes are fresh)
+		handler.StartHighPrioritySync(24 * time.Hour)
+		// Medium-priority sync runs weekly
+		handler.StartMediumPrioritySync(7 * 24 * time.Hour)
+		// Low-priority sync runs monthly
+		handler.StartLowPrioritySync(30 * 24 * time.Hour)
+
+		// Start background route sync (every 24 hours)
+		handler.StartBackgroundRouteSync(24 * time.Hour)
+	}
 
 	// Set Gin mode
 	gin.SetMode(cfg.Server.GinMode)

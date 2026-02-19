@@ -19,9 +19,10 @@ type Config struct {
 
 // ServerConfig holds server-related configuration
 type ServerConfig struct {
-	Port    string
-	GinMode string
-	CORS    CORSConfig
+	Port                   string
+	GinMode                string
+	CORS                   CORSConfig
+	DisableBackgroundSyncs bool
 }
 
 // CORSConfig holds CORS configuration
@@ -63,8 +64,9 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		Server: ServerConfig{
-			Port:    getEnv("PORT", "8080"),
-			GinMode: getEnv("GIN_MODE", "release"),
+			Port:                   getEnv("PORT", "8080"),
+			GinMode:                getEnv("GIN_MODE", "release"),
+			DisableBackgroundSyncs: getEnvAsBool("DISABLE_BACKGROUND_SYNCS", false),
 			CORS: CORSConfig{
 				AllowOrigins:     []string{"*"}, // TODO: Configure per environment
 				AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -138,6 +140,18 @@ func getEnvAsInt(key string, defaultValue int) int {
 		return defaultValue
 	}
 	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return defaultValue
+	}
+	return value
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+	valueStr := os.Getenv(key)
+	if valueStr == "" {
+		return defaultValue
+	}
+	value, err := strconv.ParseBool(valueStr)
 	if err != nil {
 		return defaultValue
 	}

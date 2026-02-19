@@ -300,6 +300,7 @@ type MockMPRoutesRepository struct {
 	GetIDsForAreaFn        func(ctx context.Context, mpAreaID string) ([]string, error)
 	GetWithGPSByAreaFn     func(ctx context.Context, mpAreaID int64) ([]*models.MPRoute, error)
 	UpsertRouteFn          func(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error
+	UpdateRouteDetailsFn   func(ctx context.Context, mpRouteID int64, difficulty *string, pitches *int, heightFeet *int, mpRating, popularity *float64, descriptionText, locationText, protectionText, safetyText *string) error
 }
 
 func (m *MockMPRoutesRepository) SaveRoute(ctx context.Context, route *models.MPRoute) error {
@@ -354,6 +355,13 @@ func (m *MockMPRoutesRepository) GetWithGPSByArea(ctx context.Context, mpAreaID 
 func (m *MockMPRoutesRepository) UpsertRoute(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error {
 	if m.UpsertRouteFn != nil {
 		return m.UpsertRouteFn(ctx, mpRouteID, mpAreaID, locationID, name, routeType, rating, lat, lon, aspect)
+	}
+	return nil
+}
+
+func (m *MockMPRoutesRepository) UpdateRouteDetails(ctx context.Context, mpRouteID int64, difficulty *string, pitches *int, heightFeet *int, mpRating, popularity *float64, descriptionText, locationText, protectionText, safetyText *string) error {
+	if m.UpdateRouteDetailsFn != nil {
+		return m.UpdateRouteDetailsFn(ctx, mpRouteID, difficulty, pitches, heightFeet, mpRating, popularity, descriptionText, locationText, protectionText, safetyText)
 	}
 	return nil
 }

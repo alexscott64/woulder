@@ -31,6 +31,7 @@ func createTickWithUser(date, userName, style string) mountainproject.Tick {
 // Mock Mountain Project Client
 type MockMPClient struct {
 	GetRouteTicksFn    func(routeID string) ([]mountainproject.Tick, error)
+	GetRouteFn         func(routeID string) (*mountainproject.RouteResponse, error)
 	GetAreaFn          func(areaID string) (*mountainproject.AreaResponse, error)
 	GetAreaCommentsFn  func(areaID string) ([]mountainproject.Comment, error)
 	GetRouteCommentsFn func(routeID string) ([]mountainproject.Comment, error)
@@ -39,6 +40,13 @@ type MockMPClient struct {
 func (m *MockMPClient) GetRouteTicks(routeID string) ([]mountainproject.Tick, error) {
 	if m.GetRouteTicksFn != nil {
 		return m.GetRouteTicksFn(routeID)
+	}
+	return nil, nil
+}
+
+func (m *MockMPClient) GetRoute(routeID string) (*mountainproject.RouteResponse, error) {
+	if m.GetRouteFn != nil {
+		return m.GetRouteFn(routeID)
 	}
 	return nil, nil
 }
