@@ -1,0 +1,92 @@
+name: Deploy Kaya Sync
+
+on:
+  workflow_dispatch:  # Manual trigger only
+    inputs:
+      deploy_systemd:
+        description: 'Also deploy/update systemd service files'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy-kaya-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Build Kaya sync binary for Linux
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build Kaya sync binary
+        run: |
+          cd backend
+          GOOS=linux GOARCH=amd64 go build -o kaya-sync-job ./cmd/sync_kaya_job
+          GOOS=linux GOARCH=amd64 go build -o kaya-match-routes ./cmd/match_kaya_mp
+
+      # Deploy to VPS
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy Kaya sync binaries
+        run: |
+          # Stop timer (doesn't stop a running job, but prevents new ones)
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "systemctl stop kaya-sync.timer || true"
+
+          # Upload binaries
+          scp -i ~/.ssh/id_ed25519 backend/kaya-sync-job root@${{ secrets.VPS_HOST }}:/opt/woulder/kaya-sync-job
+          scp -i ~/.ssh/id_ed25519 backend/kaya-match-routes root@${{ secrets.VPS_HOST }}:/opt/woulder/kaya-match-routes
+
+          # Make executable
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "chmod +x /opt/woulder/kaya-sync-job /opt/woulder/kaya-match-routes"
+
+          # Create log directory if it doesn't exist
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "mkdir -p /var/log/kaya-sync"
+
+      - name: Deploy systemd files (optional)
+        if: ${{ github.event.inputs.deploy_systemd == 'true' }}
+        run: |
+          # Upload systemd service and timer files
+          scp -i ~/.ssh/id_ed25519 backend/deployment/kaya-sync.service root@${{ secrets.VPS_HOST }}:/tmp/kaya-sync.service
+          scp -i ~/.ssh/id_ed25519 backend/deployment/kaya-sync.timer root@${{ secrets.VPS_HOST }}:/tmp/kaya-sync.timer
+
+          # Install and reload
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "
+            mv /tmp/kaya-sync.service /etc/systemd/system/kaya-sync.service &&
+            mv /tmp/kaya-sync.timer /etc/systemd/system/kaya-sync.timer &&
+            chmod 644 /etc/systemd/system/kaya-sync.service /etc/systemd/system/kaya-sync.timer &&
+            systemctl daemon-reload &&
+            systemctl enable kaya-sync.timer
+          "
+
+      - name: Start Kaya sync timer
+        run: |
+          # Start the timer
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "systemctl start kaya-sync.timer"
+
+          # Show status
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "systemctl status kaya-sync.timer --no-pager || true"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "systemctl list-timers kaya-sync.timer --no-pager || true"
+
+      - name: Verify deployment
+        run: |
+          echo "✅ Kaya sync binaries deployed to /opt/woulder/"
+          echo "📅 Timer status:"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "systemctl list-timers kaya-sync.timer --no-pager || echo 'Timer not found - run with deploy_systemd=true'"
+          echo ""
+          echo "🔧 Manual commands:"
+          echo "  - Test sync: ssh root@${{ secrets.VPS_HOST }} '/opt/woulder/kaya-sync-job --test'"
+          echo "  - Run now:   ssh root@${{ secrets.VPS_HOST }} 'systemctl start kaya-sync.service'"
+          echo "  - View logs: ssh root@${{ secrets.VPS_HOST }} 'tail -f /var/log/kaya-sync/sync.log'"
