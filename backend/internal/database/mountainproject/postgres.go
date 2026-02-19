@@ -156,6 +156,15 @@ func (r *PostgresRepository) GetByID(ctx context.Context, mpRouteID int64) (*mod
 		&route.Latitude,
 		&route.Longitude,
 		&route.Aspect,
+		&route.Difficulty,
+		&route.Pitches,
+		&route.HeightFeet,
+		&route.MPRating,
+		&route.Popularity,
+		&route.DescriptionText,
+		&route.LocationText,
+		&route.ProtectionText,
+		&route.SafetyText,
 		&route.CreatedAt,
 		&route.UpdatedAt,
 	)
@@ -196,6 +205,15 @@ func (r *PostgresRepository) GetByIDs(ctx context.Context, mpRouteIDs []int64) (
 			&route.Latitude,
 			&route.Longitude,
 			&route.Aspect,
+			&route.Difficulty,
+			&route.Pitches,
+			&route.HeightFeet,
+			&route.MPRating,
+			&route.Popularity,
+			&route.DescriptionText,
+			&route.LocationText,
+			&route.ProtectionText,
+			&route.SafetyText,
 			&route.CreatedAt,
 			&route.UpdatedAt,
 		)
@@ -279,6 +297,15 @@ func (r *PostgresRepository) GetWithGPSByArea(ctx context.Context, mpAreaID int6
 			&route.Latitude,
 			&route.Longitude,
 			&route.Aspect,
+			&route.Difficulty,
+			&route.Pitches,
+			&route.HeightFeet,
+			&route.MPRating,
+			&route.Popularity,
+			&route.DescriptionText,
+			&route.LocationText,
+			&route.ProtectionText,
+			&route.SafetyText,
 			&route.CreatedAt,
 			&route.UpdatedAt,
 		)
@@ -297,6 +324,11 @@ func (r *PostgresRepository) GetWithGPSByArea(ctx context.Context, mpAreaID int6
 
 func (r *PostgresRepository) UpsertRoute(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error {
 	_, err := r.db.ExecContext(ctx, queryUpsertRoute, mpRouteID, mpAreaID, locationID, name, routeType, rating, lat, lon, aspect)
+	return err
+}
+
+func (r *PostgresRepository) UpdateRouteDetails(ctx context.Context, mpRouteID int64, difficulty *string, pitches *int, heightFeet *int, mpRating, popularity *float64, descriptionText, locationText, protectionText, safetyText *string) error {
+	_, err := r.db.ExecContext(ctx, queryUpdateRouteDetails, mpRouteID, difficulty, pitches, heightFeet, mpRating, popularity, descriptionText, locationText, protectionText, safetyText)
 	return err
 }
 

@@ -172,19 +172,16 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
     const currentHour = nowPacific.getHours();
     const currentDate = formatInTimeZone(nowPacific, 'America/Los_Angeles', 'yyyy-MM-dd');
 
-    // Find the current or most recent target hour
-    // E.g., if it's 4:15pm (hour 16), current target = 16
-    // E.g., if it's 5:30pm (hour 17), current target = 16 (most recent)
-    let currentTargetHour = targetHours[0];
+    // Find the next target hour from current time
+    let nextTargetHour = targetHours[0]; // Default to first target hour (1am next day)
     for (const targetHour of targetHours) {
-      if (currentHour >= targetHour) {
-        currentTargetHour = targetHour;
-      } else {
+      if (currentHour < targetHour) {
+        nextTargetHour = targetHour;
         break;
       }
     }
 
-    let foundCurrent = false;
+    let foundFirst = false;
     const addedHours = new Set<string>(); // Track "date-hour" combinations we've added
 
     // Go through all hourly data and pick target hours
@@ -202,24 +199,19 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
       const dateHourKey = `${datePacific}-${hourPacific}`;
       if (addedHours.has(dateHourKey)) continue;
 
-      if (!foundCurrent) {
-        // Try to find current target hour on today
-        if (datePacific === currentDate && hourPacific === currentTargetHour) {
+      if (!foundFirst) {
+        // First entry: show next upcoming target hour (or closest if we're past all targets today)
+        const timePoint = new Date(timestamp).getTime();
+        const now = nowPacific.getTime();
+        
+        // Use this hour if it's in the future or if we're on today and it matches next target
+        if (timePoint >= now || (datePacific === currentDate && hourPacific === nextTargetHour)) {
           filtered.push(hourlyData[i]);
           addedHours.add(dateHourKey);
-          foundCurrent = true;
-          continue;
-        }
-
-        // Fallback: If we're on today and this hour is >= current hour, this becomes "Now"
-        if (datePacific === currentDate && hourPacific >= currentHour) {
-          filtered.push(hourlyData[i]);
-          addedHours.add(dateHourKey);
-          foundCurrent = true;
-          continue;
+          foundFirst = true;
         }
       } else {
-        // After we've found the current hour, include all future target hours
+        // After we've found the first hour, include all future target hours
         filtered.push(hourlyData[i]);
         addedHours.add(dateHourKey);
       }

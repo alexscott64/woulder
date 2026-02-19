@@ -41,9 +41,9 @@ func (c *Client) rateLimit() {
 type AreaResponse struct {
 	ID              int              `json:"id"`
 	Title           string           `json:"title"`
-	Type            string           `json:"type"`        // "Area" typically
-	Children        []ChildElement   `json:"children"`    // Can be subareas or routes
-	Coordinates     []float64        `json:"coordinates"` // [longitude, latitude] GPS coordinates
+	Type            string           `json:"type"`              // "Area" typically
+	Children        []ChildElement   `json:"children"`          // Can be subareas or routes
+	Coordinates     []float64        `json:"coordinates"`       // [longitude, latitude] GPS coordinates
 	RouteTypeCounts *RouteTypeCounts `json:"route_type_counts"` // Route statistics for this area and descendants
 }
 
@@ -67,6 +67,37 @@ type ChildElement struct {
 	Title      string   `json:"title"`
 	Type       string   `json:"type"`        // "Area" for subareas, "Route" for routes
 	RouteTypes []string `json:"route_types"` // e.g., ["Boulder", "Trad"], only present for routes
+}
+
+// RouteResponse represents the response from the Mountain Project route details endpoint
+type RouteResponse struct {
+	ID          int            `json:"id"`
+	Title       string         `json:"title"`
+	Type        string         `json:"type"`        // "Route"
+	Rating      float64        `json:"rating"`      // Star rating (0-5)
+	Difficulty  string         `json:"difficulty"`  // Grade string (V4, 5.10a, etc.)
+	Pitches     int            `json:"pitches"`     // Number of pitches
+	HeightFeet  int            `json:"height_feet"` // Height in feet
+	Popularity  float64        `json:"popularity"`  // Popularity score
+	Coordinates []float64      `json:"coordinates"` // [longitude, latitude]
+	Sections    []RouteSection `json:"sections"`    // Descriptive sections
+	RouteTypes  []string       `json:"route_types"` // e.g., ["Boulder", "Trad"]
+}
+
+// RouteSection represents a descriptive section in a route (description, location, protection, etc.)
+type RouteSection struct {
+	Title string `json:"title"` // "Description", "Location", "Protection", "Safety"
+	Body  string `json:"body"`  // HTML content
+}
+
+// GetSectionByTitle finds a section by its title and returns the HTML body
+func (r *RouteResponse) GetSectionByTitle(title string) string {
+	for _, section := range r.Sections {
+		if section.Title == title {
+			return section.Body
+		}
+	}
+	return ""
 }
 
 // TickResponse represents the response from the Mountain Project ticks endpoint
@@ -173,6 +204,43 @@ func (c *Client) GetArea(areaID string) (*AreaResponse, error) {
 	}
 
 	return &areaResp, nil
+}
+
+// GetRoute fetches detailed route information including description, sections, and ratings
+func (c *Client) GetRoute(routeID string) (*RouteResponse, error) {
+	c.rateLimit()
+
+	url := fmt.Sprintf("%s/routes/%s", baseURL, routeID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Woulder/1.0 (https://woulder.com)")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch route %s: %w", routeID, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d for route %s: %s", resp.StatusCode, routeID, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var routeResp RouteResponse
+	if err := json.Unmarshal(body, &routeResp); err != nil {
+		return nil, fmt.Errorf("failed to parse route response for %s: %w", routeID, err)
+	}
+
+	return &routeResp, nil
 }
 
 // GetRouteTicks fetches tick data (climb logs) for a specific route

@@ -21,6 +21,7 @@ import (
 // MPClientInterface defines the interface for Mountain Project API operations
 type MPClientInterface interface {
 	GetRouteTicks(routeID string) ([]mpClient.Tick, error)
+	GetRoute(routeID string) (*mpClient.RouteResponse, error)
 	GetArea(areaID string) (*mpClient.AreaResponse, error)
 	GetAreaComments(areaID string) ([]mpClient.Comment, error)
 	GetRouteComments(routeID string) ([]mpClient.Comment, error)

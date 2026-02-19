@@ -71,6 +71,9 @@ type RoutesRepository interface {
 
 	// UpsertRoute inserts or updates a route (compatibility with mountainprojectsync).
 	UpsertRoute(ctx context.Context, mpRouteID, mpAreaID int64, locationID *int, name, routeType, rating string, lat, lon *float64, aspect *string) error
+
+	// UpdateRouteDetails updates the detailed route information fields.
+	UpdateRouteDetails(ctx context.Context, mpRouteID int64, difficulty *string, pitches *int, heightFeet *int, mpRating, popularity *float64, descriptionText, locationText, protectionText, safetyText *string) error
 }
 
 // TicksRepository handles Mountain Project tick operations.

@@ -19,18 +19,27 @@ type MPArea struct {
 
 // MPRoute represents a Mountain Project route (boulder problem or climbing route)
 type MPRoute struct {
-	ID         int       `json:"id" db:"id"`
-	MPRouteID  int64     `json:"mp_route_id" db:"mp_route_id"`
-	MPAreaID   int64     `json:"mp_area_id" db:"mp_area_id"`
-	Name       string    `json:"name" db:"name"`
-	RouteType  string    `json:"route_type" db:"route_type"`
-	Rating     string    `json:"rating" db:"rating"`
-	LocationID *int      `json:"location_id,omitempty" db:"location_id"`
-	Latitude   *float64  `json:"latitude,omitempty" db:"latitude"`
-	Longitude  *float64  `json:"longitude,omitempty" db:"longitude"`
-	Aspect     *string   `json:"aspect,omitempty" db:"aspect"` // N, NE, E, SE, S, SW, W, NW
-	CreatedAt  time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at" db:"updated_at"`
+	ID              int       `json:"id" db:"id"`
+	MPRouteID       int64     `json:"mp_route_id" db:"mp_route_id"`
+	MPAreaID        int64     `json:"mp_area_id" db:"mp_area_id"`
+	Name            string    `json:"name" db:"name"`
+	RouteType       string    `json:"route_type" db:"route_type"`
+	Rating          string    `json:"rating" db:"rating"`
+	LocationID      *int      `json:"location_id,omitempty" db:"location_id"`
+	Latitude        *float64  `json:"latitude,omitempty" db:"latitude"`
+	Longitude       *float64  `json:"longitude,omitempty" db:"longitude"`
+	Aspect          *string   `json:"aspect,omitempty" db:"aspect"` // N, NE, E, SE, S, SW, W, NW
+	Difficulty      *string   `json:"difficulty,omitempty" db:"difficulty"`
+	Pitches         *int      `json:"pitches,omitempty" db:"pitches"`
+	HeightFeet      *int      `json:"height_feet,omitempty" db:"height_feet"`
+	MPRating        *float64  `json:"mp_rating,omitempty" db:"mp_rating"`               // Star rating (0-4)
+	Popularity      *float64  `json:"popularity,omitempty" db:"popularity"`             // Popularity score
+	DescriptionText *string   `json:"description_text,omitempty" db:"description_text"` // HTML from sections
+	LocationText    *string   `json:"location_text,omitempty" db:"location_text"`       // HTML from sections
+	ProtectionText  *string   `json:"protection_text,omitempty" db:"protection_text"`   // HTML from sections
+	SafetyText      *string   `json:"safety_text,omitempty" db:"safety_text"`           // HTML from sections
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // MPTick represents a single climb log (tick) from a Mountain Project user

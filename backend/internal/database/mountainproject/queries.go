@@ -85,7 +85,10 @@ const querySaveRoute = `
 // queryGetRouteByID retrieves a Mountain Project route by its MP route ID.
 const queryGetRouteByID = `
 	SELECT id, mp_route_id, mp_area_id, name, route_type, rating,
-	       location_id, latitude, longitude, aspect, created_at, updated_at
+		   location_id, latitude, longitude, aspect,
+		   difficulty, pitches, height_feet, mp_rating, popularity,
+		   description_text, location_text, protection_text, safety_text,
+		   created_at, updated_at
 	FROM woulder.mp_routes
 	WHERE mp_route_id = $1
 `
@@ -93,7 +96,10 @@ const queryGetRouteByID = `
 // queryGetRoutesByIDs retrieves multiple Mountain Project routes by IDs.
 const queryGetRoutesByIDs = `
 	SELECT id, mp_route_id, mp_area_id, name, route_type, rating,
-	       location_id, latitude, longitude, aspect, created_at, updated_at
+		   location_id, latitude, longitude, aspect,
+		   difficulty, pitches, height_feet, mp_rating, popularity,
+		   description_text, location_text, protection_text, safety_text,
+		   created_at, updated_at
 	FROM woulder.mp_routes
 	WHERE mp_route_id = ANY($1)
 `
@@ -114,7 +120,10 @@ const queryGetRoutesWithGPSByArea = `
 		INNER JOIN area_tree at ON a.parent_mp_area_id = at.mp_area_id
 	)
 	SELECT id, mp_route_id, mp_area_id, name, route_type, rating,
-	       location_id, latitude, longitude, aspect, created_at, updated_at
+	       location_id, latitude, longitude, aspect,
+	       difficulty, pitches, height_feet, mp_rating, popularity,
+	       description_text, location_text, protection_text, safety_text,
+	       created_at, updated_at
 	FROM woulder.mp_routes r
 	WHERE r.mp_area_id IN (SELECT mp_area_id FROM area_tree)
 	  AND r.latitude IS NOT NULL
@@ -161,6 +170,22 @@ const queryUpsertRoute = `
 		longitude = EXCLUDED.longitude,
 		aspect = EXCLUDED.aspect,
 		updated_at = NOW()
+`
+
+// queryUpdateRouteDetails updates detailed route information fields.
+const queryUpdateRouteDetails = `
+	UPDATE woulder.mp_routes
+	SET difficulty = $2,
+		pitches = $3,
+		height_feet = $4,
+		mp_rating = $5,
+		popularity = $6,
+		description_text = $7,
+		location_text = $8,
+		protection_text = $9,
+		safety_text = $10,
+		updated_at = NOW()
+	WHERE mp_route_id = $1
 `
 
 // TicksRepository queries
