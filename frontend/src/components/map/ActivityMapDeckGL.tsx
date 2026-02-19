@@ -220,11 +220,8 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
         
         console.log('Found', nearbyPoints.length, 'nearby points');
         
-        if (nearbyPoints.length === 1) {
-          // Single area - open detail drawer
-          onAreaClick(nearbyPoints[0].mp_area_id);
-        } else if (nearbyPoints.length > 1 && onShowCluster) {
-          // Multiple areas - notify parent to show cluster drawer
+        if (nearbyPoints.length >= 1 && onShowCluster) {
+          // Always show cluster drawer (even for single areas)
           onShowCluster(nearbyPoints);
         }
       }
