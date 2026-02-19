@@ -604,8 +604,8 @@
                 // API returns {jobs: [...]}
                 const jobs = data.jobs || [];
                 
-                // Filter for sync jobs only (include location sync jobs)
-                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc', 'location_tick_sync', 'location_comment_sync'];
+                // Filter for sync jobs only (include location sync jobs and Kaya sync)
+                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc', 'location_tick_sync', 'location_comment_sync', 'kaya_sync'];
                 const syncJobs = jobs.filter(job => syncTypes.includes(job.job_type));
                 
                 renderActiveJobs(syncJobs);
@@ -623,8 +623,8 @@
                 // API returns {jobs: [...]}
                 const jobs = data.jobs || [];
                 
-                // Filter for sync jobs only (include location sync jobs)
-                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc', 'location_tick_sync', 'location_comment_sync'];
+                // Filter for sync jobs only (include location sync jobs and Kaya sync)
+                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc', 'location_tick_sync', 'location_comment_sync', 'kaya_sync'];
                 const syncJobs = jobs.filter(job => syncTypes.includes(job.job_type));
                 
                 renderHistory(syncJobs);
@@ -647,7 +647,8 @@
                 'comment_sync': 'Comment Sync',
                 'priority_recalc': 'Priority Recalculation',
                 'location_tick_sync': 'Location Tick Sync',
-                'location_comment_sync': 'Location Comment Sync'
+                'location_comment_sync': 'Location Comment Sync',
+                'kaya_sync': 'Kaya Data Sync'
             };
 
             container.innerHTML = summary.map(item => `
@@ -1054,7 +1055,10 @@
             const labels = {
                 'tick_sync': 'Tick Sync',
                 'comment_sync': 'Comment Sync',
-                'priority_recalc': 'Priority Recalculation'
+                'priority_recalc': 'Priority Recalculation',
+                'location_tick_sync': 'Location Tick Sync',
+                'location_comment_sync': 'Location Comment Sync',
+                'kaya_sync': 'Kaya Data Sync'
             };
             return labels[type] || type;
         }
