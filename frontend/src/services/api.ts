@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Location, WeatherForecast, AllWeatherResponse, AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus, AreaDryingStats, KayaAscentEntry } from '../types/weather';
+import { Location, WeatherForecast, AllWeatherResponse, AreaActivitySummary, RouteActivitySummary, ClimbHistoryEntry, SearchResult, BoulderDryingStatus, AreaDryingStats, KayaAscentEntry, UnifiedRouteActivitySummary } from '../types/weather';
 import { Area, AreaWithLocations } from '../types/area';
 import { HeatMapActivityResponse, AreaActivityDetail, RoutesResponse, RouteTicksResponse, GeoBounds } from '../types/heatmap';
 
@@ -74,6 +74,14 @@ export const climbActivityApi = {
   // Get routes in an area ordered by recent activity
   getRoutesOrderedByActivity: async (locationId: number, areaId: number, limit = 200): Promise<RouteActivitySummary[]> => {
     const response = await api.get(`/climbs/location/${locationId}/areas/${areaId}/routes`, {
+      params: { limit }
+    });
+    return response.data;
+  },
+
+  // Get unified routes (MP + Kaya) in an area ordered by recent activity
+  getUnifiedRoutesOrderedByActivity: async (locationId: number, areaId: number, limit = 200): Promise<UnifiedRouteActivitySummary[]> => {
+    const response = await api.get(`/climbs/location/${locationId}/areas/${areaId}/unified-routes`, {
       params: { limit }
     });
     return response.data;

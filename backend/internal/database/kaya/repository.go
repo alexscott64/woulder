@@ -4,9 +4,23 @@ package kaya
 
 import (
 	"context"
+	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
+
+// KayaAscentWithDetails represents an ascent with denormalized climb and user data
+// This is returned by the optimized GetAscentsWithDetailsForWoulderLocation query
+type KayaAscentWithDetails struct {
+	KayaAscentID  string
+	KayaClimbSlug string
+	Date          time.Time
+	Comment       *string
+	ClimbName     string
+	ClimbGrade    *string
+	AreaName      string
+	Username      string
+}
 
 // Repository is a composite of all Kaya sub-repositories.
 // It provides a unified interface for accessing Kaya data operations.
@@ -67,6 +81,12 @@ type ClimbsRepository interface {
 
 	// GetClimbsByDestination retrieves all climbs for a destination.
 	GetClimbsByDestination(ctx context.Context, kayaDestinationID string) ([]*models.KayaClimb, error)
+
+	// GetClimbsOrderedByActivityForWoulderLocation retrieves climbs by recent activity for a Woulder location.
+	GetClimbsOrderedByActivityForWoulderLocation(ctx context.Context, woulderLocationID int, limit int) ([]models.UnifiedRouteActivitySummary, error)
+
+	// GetMatchedClimbsForArea retrieves Kaya climbs that have been matched to MP routes in a specific area
+	GetMatchedClimbsForArea(ctx context.Context, mpAreaID int64, limit int) ([]models.UnifiedRouteActivitySummary, error)
 }
 
 // AscentsRepository handles Kaya ascent operations.
@@ -89,6 +109,13 @@ type AscentsRepository interface {
 
 	// GetAscentsByWoulderLocation retrieves ascents for climbs at a Woulder location.
 	GetAscentsByWoulderLocation(ctx context.Context, woulderLocationID int, limit int) ([]*models.KayaAscent, error)
+
+	// GetAscentsWithDetailsForWoulderLocation retrieves ascents with climb and user details in a single query.
+	// This is optimized to avoid N+1 queries by joining climbs and users.
+	GetAscentsWithDetailsForWoulderLocation(ctx context.Context, woulderLocationID int, limit int) ([]KayaAscentWithDetails, error)
+
+	// GetAscentsForMatchedRoute retrieves Kaya ascents for routes matched to a specific MP route
+	GetAscentsForMatchedRoute(ctx context.Context, mpRouteID int64, limit int) ([]KayaAscentWithDetails, error)
 }
 
 // PostsRepository handles Kaya post operations.

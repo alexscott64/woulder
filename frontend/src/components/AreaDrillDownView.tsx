@@ -1,7 +1,7 @@
-import { ChevronRight, MapPin, ChevronLeft, Loader2, AlertCircle, Filter, Sun, Droplets, Clock } from 'lucide-react';
+import { ChevronRight, MapPin, ChevronLeft, Loader2, AlertCircle, Filter, Sun, Droplets, Clock, Mountain } from 'lucide-react';
 import { useState, useMemo } from 'react';
-import { useAreasOrderedByActivity, useSubareasOrderedByActivity, useRoutesOrderedByActivity, useSearchInLocation, useBoulderDryingStatuses, useAreaDryingStats, useMultipleAreaDryingStats } from '../hooks/useClimbActivity';
-import { AreaActivitySummary, SearchResult, RouteActivitySummary } from '../types/weather';
+import { useAreasOrderedByActivity, useSubareasOrderedByActivity, useUnifiedRoutesOrderedByActivity, useSearchInLocation, useBoulderDryingStatuses, useAreaDryingStats, useMultipleAreaDryingStats } from '../hooks/useClimbActivity';
+import { AreaActivitySummary, SearchResult, UnifiedRouteActivitySummary } from '../types/weather';
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { RouteListItem } from './RouteListItem';
 import { AreaConditionCard } from './AreaConditionCard';
@@ -37,10 +37,10 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
     locationId,
     currentAreaId
   );
-  const { data: routes, isLoading: isLoadingRoutes, error: routesError } = useRoutesOrderedByActivity(
+  const { data: routes, isLoading: isLoadingRoutes, error: routesError } = useUnifiedRoutesOrderedByActivity(
     locationId,
     currentAreaId,
-    200 // Fetch all routes (max 200)
+    200 // Fetch all routes + Kaya climbs (max 200 combined)
   );
 
   // Fetch area-level drying stats when viewing routes in an area
@@ -72,7 +72,7 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
 
   // When searching globally, show search results; otherwise show current view
   const filteredAreas: (AreaActivitySummary | SearchResult)[] = isSearchActive ? searchAreaResults : (areas || []);
-  const filteredRoutes: (RouteActivitySummary | SearchResult)[] = isSearchActive ? searchRouteResults : (routes || []);
+  const filteredRoutes: (UnifiedRouteActivitySummary | SearchResult)[] = isSearchActive ? searchRouteResults : (routes || []);
 
   // Get area IDs for fetching drying stats
   const areaIdsForDryingStats = useMemo(() => {
@@ -95,10 +95,17 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
     });
   }
 
-  // Get route IDs for fetching drying statuses
+  // Get route IDs for fetching drying statuses (only for MP routes, not Kaya)
   const routeIds = useMemo(() => {
     if (!showRoutes || !filteredRoutes) return [];
-    return filteredRoutes.map(r => ('result_type' in r ? r.id : r.mp_route_id));
+    return filteredRoutes
+      .filter(r => {
+        // For SearchResult, check if it has mp_route_id
+        if ('result_type' in r) return r.result_type === 'route';
+        // For UnifiedRouteActivitySummary, only include MP routes
+        return r.source === 'mp' && r.mp_route_id !== undefined;
+      })
+      .map(r => ('result_type' in r ? r.id : r.mp_route_id!));
   }, [showRoutes, filteredRoutes]);
 
   // Fetch drying statuses for all visible routes using batch endpoint
@@ -414,7 +421,53 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
         {showRoutes && !isLoadingData && !dataError && processedRoutes && processedRoutes.length > 0 && (
           <div className="space-y-2.5">
             {processedRoutes.map((routeData) => {
-              // Convert SearchResult to RouteActivitySummary if needed
+              // Check if this is a Kaya climb
+              const isKaya = !('result_type' in routeData) && routeData.source === 'kaya';
+              
+              if (isKaya) {
+                // Render Kaya climb
+                const kayaClimb = routeData;
+                return (
+                  <div
+                    key={kayaClimb.id}
+                    className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        {/* Route Name & Rating */}
+                        <div className="flex items-baseline gap-2 mb-1.5">
+                          <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 truncate">
+                            {kayaClimb.name}
+                          </h3>
+                          <span className="text-sm font-semibold text-blue-600 dark:text-blue-400 flex-shrink-0">
+                            {kayaClimb.rating}
+                          </span>
+                        </div>
+
+                        {/* Activity Summary + Kaya Badge */}
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium flex items-center gap-1">
+                            <Mountain className="h-3 w-3" />
+                            Kaya
+                          </span>
+                          <div className="text-xs text-gray-600 dark:text-gray-400">
+                            {formatDaysAgo(kayaClimb.days_since_climb)}
+                          </div>
+                        </div>
+
+                        {/* Area Name */}
+                        {kayaClimb.area_name && (
+                          <div className="text-xs text-gray-500 dark:text-gray-500">
+                            {kayaClimb.area_name}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // Convert SearchResult to RouteActivitySummary if needed (MP routes)
               const route: any = 'result_type' in routeData
                 ? {
                     mp_route_id: routeData.id,
@@ -425,9 +478,17 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
                     most_recent_tick: routeData.most_recent_tick,
                     days_since_climb: routeData.days_since_climb,
                   }
-                : routeData;
+                : {
+                    mp_route_id: routeData.mp_route_id,
+                    name: routeData.name,
+                    rating: routeData.rating,
+                    mp_area_id: routeData.mp_area_id,
+                    last_climb_at: routeData.last_climb_at,
+                    most_recent_tick: routeData.most_recent_tick,
+                    days_since_climb: routeData.days_since_climb,
+                  };
 
-              // Get drying status from batch map
+              // Get drying status from batch map (only for MP routes)
               const dryingStatus = dryingStatusMap.get(route.mp_route_id);
 
               return (

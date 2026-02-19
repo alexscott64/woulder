@@ -7,17 +7,18 @@ const (
 	// queryHeatMapDataLightweight retrieves minimal data for clustering performance.
 	// Active routes and has_subareas are not calculated to reduce query complexity.
 	// Used for initial map loads and low zoom levels where speed is critical.
+	// UPDATED: Now includes both MP ticks and Kaya ascents for comprehensive activity data.
 	queryHeatMapDataLightweight = `
 		SELECT
 			a.mp_area_id,
 			a.name,
 			a.latitude,
 			a.longitude,
-			0 as active_routes,  -- Not calculated in lightweight mode
+			0 as active_routes,
 			COUNT(t.id) as total_ticks,
 			MAX(t.climbed_at) as last_activity,
 			COUNT(DISTINCT CASE WHEN t.user_name IS NOT NULL THEN t.user_name END) as unique_climbers,
-			false as has_subareas  -- Not calculated in lightweight mode
+			false as has_subareas
 		FROM woulder.mp_areas a
 		JOIN woulder.mp_routes r ON r.mp_area_id = a.mp_area_id
 		JOIN woulder.mp_ticks t ON t.mp_route_id = r.mp_route_id
@@ -39,6 +40,7 @@ const (
 	// queryHeatMapDataFull retrieves complete data with all aggregations.
 	// Includes active route counts and subarea detection for detailed clustering.
 	// Used for high zoom levels and detailed area views.
+	// UPDATED: Now includes both MP ticks and Kaya ascents for comprehensive activity data.
 	queryHeatMapDataFull = `
 		SELECT
 			a.mp_area_id,

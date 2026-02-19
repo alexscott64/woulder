@@ -461,6 +461,151 @@ func (r *PostgresRepository) GetClimbsByDestination(ctx context.Context, kayaDes
 	return r.scanClimbs(rows)
 }
 
+// GetClimbsOrderedByActivityForWoulderLocation retrieves Kaya climbs with recent activity for a Woulder location
+func (r *PostgresRepository) GetClimbsOrderedByActivityForWoulderLocation(ctx context.Context, woulderLocationID int, limit int) ([]models.UnifiedRouteActivitySummary, error) {
+	rows, err := r.db.QueryContext(ctx, queryGetClimbsOrderedByActivityForWoulderLocation, woulderLocationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []models.UnifiedRouteActivitySummary
+	for rows.Next() {
+		var (
+			slug        string
+			name        string
+			rating      string
+			areaName    string
+			lastClimbAt time.Time
+			daysSince   int
+			ascentID    string
+			climbedBy   string
+			comment     sql.NullString
+			userGrade   sql.NullString
+		)
+
+		if err := rows.Scan(
+			&slug,
+			&name,
+			&rating,
+			&areaName,
+			&lastClimbAt,
+			&daysSince,
+			&ascentID,
+			&climbedBy,
+			&comment,
+			&userGrade,
+		); err != nil {
+			return nil, err
+		}
+
+		// Build most recent ascent summary
+		mostRecentAscent := &models.KayaAscentSummary{
+			KayaAscentID: ascentID,
+			ClimbedAt:    lastClimbAt,
+			ClimbedBy:    climbedBy,
+		}
+		if comment.Valid {
+			mostRecentAscent.Comment = &comment.String
+		}
+		if userGrade.Valid {
+			mostRecentAscent.GradeName = &userGrade.String
+		}
+
+		// Build unified route summary
+		result := models.UnifiedRouteActivitySummary{
+			ID:               "kaya-" + slug,
+			Name:             name,
+			Rating:           rating,
+			AreaName:         areaName,
+			LastClimbAt:      lastClimbAt,
+			DaysSinceClimb:   daysSince,
+			Source:           "kaya",
+			KayaClimbSlug:    &slug,
+			MostRecentAscent: mostRecentAscent,
+		}
+
+		results = append(results, result)
+	}
+
+	return results, rows.Err()
+}
+
+// GetMatchedClimbsForArea retrieves Kaya climbs matched to MP routes in a specific area
+func (r *PostgresRepository) GetMatchedClimbsForArea(ctx context.Context, mpAreaID int64, limit int) ([]models.UnifiedRouteActivitySummary, error) {
+	rows, err := r.db.QueryContext(ctx, queryGetMatchedClimbsForArea, mpAreaID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []models.UnifiedRouteActivitySummary
+	for rows.Next() {
+		var (
+			slug            string
+			name            string
+			rating          string
+			areaName        string
+			lastClimbAt     time.Time
+			daysSince       int
+			ascentID        string
+			climbedBy       string
+			comment         sql.NullString
+			userGrade       sql.NullString
+			mpRouteID       int64
+			matchConfidence float64
+		)
+
+		if err := rows.Scan(
+			&slug,
+			&name,
+			&rating,
+			&areaName,
+			&lastClimbAt,
+			&daysSince,
+			&ascentID,
+			&climbedBy,
+			&comment,
+			&userGrade,
+			&mpRouteID,
+			&matchConfidence,
+		); err != nil {
+			return nil, err
+		}
+
+		// Build most recent ascent summary
+		mostRecentAscent := &models.KayaAscentSummary{
+			KayaAscentID: ascentID,
+			ClimbedAt:    lastClimbAt,
+			ClimbedBy:    climbedBy,
+		}
+		if comment.Valid {
+			mostRecentAscent.Comment = &comment.String
+		}
+		if userGrade.Valid {
+			mostRecentAscent.GradeName = &userGrade.String
+		}
+
+		// Build unified route summary with MP route association
+		result := models.UnifiedRouteActivitySummary{
+			ID:               "kaya-" + slug,
+			Name:             name,
+			Rating:           rating,
+			AreaName:         areaName,
+			LastClimbAt:      lastClimbAt,
+			DaysSinceClimb:   daysSince,
+			Source:           "kaya",
+			KayaClimbSlug:    &slug,
+			MPRouteID:        &mpRouteID, // Include MP route ID from match
+			MostRecentAscent: mostRecentAscent,
+		}
+
+		results = append(results, result)
+	}
+
+	return results, rows.Err()
+}
+
 func (r *PostgresRepository) scanClimbs(rows *sql.Rows) ([]*models.KayaClimb, error) {
 	var climbs []*models.KayaClimb
 	for rows.Next() {
@@ -592,6 +737,64 @@ func (r *PostgresRepository) GetAscentsByWoulderLocation(ctx context.Context, wo
 	defer rows.Close()
 
 	return r.scanAscents(rows)
+}
+
+// GetAscentsWithDetailsForWoulderLocation retrieves ascents with climb and user details in a single optimized query
+func (r *PostgresRepository) GetAscentsWithDetailsForWoulderLocation(ctx context.Context, woulderLocationID int, limit int) ([]KayaAscentWithDetails, error) {
+	rows, err := r.db.QueryContext(ctx, queryGetAscentsWithDetailsForWoulderLocation, woulderLocationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []KayaAscentWithDetails
+	for rows.Next() {
+		var result KayaAscentWithDetails
+		if err := rows.Scan(
+			&result.KayaAscentID,
+			&result.KayaClimbSlug,
+			&result.Date,
+			&result.Comment,
+			&result.ClimbName,
+			&result.ClimbGrade,
+			&result.AreaName,
+			&result.Username,
+		); err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+
+	return results, rows.Err()
+}
+
+// GetAscentsForMatchedRoute retrieves Kaya ascents for climbs matched to a specific MP route
+func (r *PostgresRepository) GetAscentsForMatchedRoute(ctx context.Context, mpRouteID int64, limit int) ([]KayaAscentWithDetails, error) {
+	rows, err := r.db.QueryContext(ctx, queryGetAscentsForMatchedRoute, mpRouteID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []KayaAscentWithDetails
+	for rows.Next() {
+		var result KayaAscentWithDetails
+		if err := rows.Scan(
+			&result.KayaAscentID,
+			&result.KayaClimbSlug,
+			&result.Date,
+			&result.Comment,
+			&result.ClimbName,
+			&result.ClimbGrade,
+			&result.AreaName,
+			&result.Username,
+		); err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+
+	return results, rows.Err()
 }
 
 func (r *PostgresRepository) scanAscents(rows *sql.Rows) ([]*models.KayaAscent, error) {

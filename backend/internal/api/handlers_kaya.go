@@ -227,57 +227,35 @@ func (h *Handler) GetKayaAscentsForLocation(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Get ascents from Kaya repository
-	kayaAscents, err := h.kayaRepo.Ascents().GetAscentsByWoulderLocation(ctx, locationID, limit)
+	// Get ascents with all details in a single optimized query (eliminates N+1 query problem)
+	kayaAscentsWithDetails, err := h.kayaRepo.Ascents().GetAscentsWithDetailsForWoulderLocation(ctx, locationID, limit)
 	if err != nil {
 		log.Printf("Error fetching Kaya ascents for location %d: %v", locationID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve Kaya ascent data"})
 		return
 	}
 
-	// Convert to response format with climb and user details
+	// Convert to response format
 	var ascents []KayaAscentResponse
-	for _, kayaAscent := range kayaAscents {
-		// Get climb details
-		climb, err := h.kayaRepo.Climbs().GetClimbBySlug(ctx, kayaAscent.KayaClimbSlug)
-		if err != nil || climb == nil {
-			log.Printf("Error fetching climb details for slug %s: %v", kayaAscent.KayaClimbSlug, err)
-			continue
-		}
-
-		// Get user details
-		user, err := h.kayaRepo.Users().GetUserByID(ctx, kayaAscent.KayaUserID)
-		if err != nil || user == nil {
-			log.Printf("Error fetching user details for ID %s: %v", kayaAscent.KayaUserID, err)
-			continue
-		}
-
+	for _, ascentDetail := range kayaAscentsWithDetails {
 		// Calculate days since climb
-		daysSince := int(time.Since(kayaAscent.Date).Hours() / 24)
-
-		// Determine area name (prefer kaya_area_name, fallback to destination)
-		areaName := "Unknown Area"
-		if climb.KayaAreaName != nil && *climb.KayaAreaName != "" {
-			areaName = *climb.KayaAreaName
-		} else if climb.KayaDestinationName != nil && *climb.KayaDestinationName != "" {
-			areaName = *climb.KayaDestinationName
-		}
+		daysSince := int(time.Since(ascentDetail.Date).Hours() / 24)
 
 		// Determine grade name
 		gradeName := ""
-		if climb.GradeName != nil {
-			gradeName = *climb.GradeName
+		if ascentDetail.ClimbGrade != nil {
+			gradeName = *ascentDetail.ClimbGrade
 		}
 
 		ascent := KayaAscentResponse{
-			KayaAscentID:   kayaAscent.KayaAscentID,
-			KayaClimbSlug:  kayaAscent.KayaClimbSlug,
-			RouteName:      climb.Name,
+			KayaAscentID:   ascentDetail.KayaAscentID,
+			KayaClimbSlug:  ascentDetail.KayaClimbSlug,
+			RouteName:      ascentDetail.ClimbName,
 			RouteGrade:     gradeName,
-			AreaName:       areaName,
-			ClimbedAt:      kayaAscent.Date.Format(time.RFC3339),
-			ClimbedBy:      user.Username,
-			Comment:        kayaAscent.Comment,
+			AreaName:       ascentDetail.AreaName,
+			ClimbedAt:      ascentDetail.Date.Format(time.RFC3339),
+			ClimbedBy:      ascentDetail.Username,
+			Comment:        ascentDetail.Comment,
 			DaysSinceClimb: daysSince,
 			Source:         "kaya",
 		}

@@ -232,6 +232,122 @@ const (
 		WHERE kaya_destination_id = $1
 		ORDER BY grade_ordering, name
 	`
+
+	// queryGetClimbsOrderedByActivityForWoulderLocation retrieves Kaya climbs with recent activity
+	// for a specific Woulder location, ordered by most recent ascent.
+	queryGetClimbsOrderedByActivityForWoulderLocation = `
+		WITH climb_latest_ascent AS (
+			SELECT
+				c.slug,
+				c.name,
+				c.grade_name,
+				COALESCE(c.kaya_area_name, c.kaya_destination_name, 'Unknown') AS area_name,
+				a.kaya_ascent_id,
+				a.date AS climbed_at,
+				u.username AS climbed_by,
+				a.comment,
+				a.grade_name AS user_grade,
+				ROW_NUMBER() OVER (PARTITION BY c.slug ORDER BY a.date DESC) AS ascent_rank
+			FROM woulder.kaya_climbs c
+			INNER JOIN woulder.kaya_ascents a ON c.slug = a.kaya_climb_slug
+			LEFT JOIN woulder.kaya_users u ON a.kaya_user_id = u.kaya_user_id
+			WHERE c.woulder_location_id = $1
+				AND a.date >= NOW() - INTERVAL '2 years'
+				AND a.date <= NOW() + INTERVAL '30 days'
+		)
+		SELECT
+			slug,
+			name,
+			COALESCE(grade_name, 'Unknown') AS rating,
+			area_name,
+			climbed_at AS last_climb_at,
+			EXTRACT(DAY FROM (NOW() - climbed_at))::int AS days_since_climb,
+			kaya_ascent_id,
+			climbed_by,
+			comment,
+			user_grade
+		FROM climb_latest_ascent
+		WHERE ascent_rank = 1
+		ORDER BY climbed_at DESC
+		LIMIT $2
+	`
+
+	// queryGetMatchedClimbsForArea retrieves Kaya climbs that have been matched to MP routes
+	// in a specific area, ordered by most recent ascent activity.
+	// NOTE: The kaya_mp_route_matches table stores SLUG in kaya_climb_id column (not the actual kaya_climb_id)
+	queryGetMatchedClimbsForArea = `
+		WITH matched_routes AS (
+			SELECT DISTINCT
+				m.kaya_climb_id AS kaya_slug,
+				m.mp_route_id,
+				m.match_confidence
+			FROM kaya_mp_route_matches m
+			JOIN woulder.mp_routes r ON m.mp_route_id = r.mp_route_id
+			WHERE r.mp_area_id = $1
+				AND m.match_confidence >= 0.60
+		),
+		climb_latest_ascent AS (
+			SELECT
+				c.slug,
+				c.name,
+				c.grade_name,
+				COALESCE(c.kaya_area_name, c.kaya_destination_name, 'Unknown') AS area_name,
+				a.kaya_ascent_id,
+				a.date AS climbed_at,
+				u.username AS climbed_by,
+				a.comment,
+				a.grade_name AS user_grade,
+				mr.mp_route_id,
+				mr.match_confidence,
+				ROW_NUMBER() OVER (PARTITION BY c.slug ORDER BY a.date DESC) AS ascent_rank
+			FROM woulder.kaya_climbs c
+			INNER JOIN matched_routes mr ON c.slug = mr.kaya_slug
+			INNER JOIN woulder.kaya_ascents a ON c.slug = a.kaya_climb_slug
+			LEFT JOIN woulder.kaya_users u ON a.kaya_user_id = u.kaya_user_id
+			WHERE a.date >= NOW() - INTERVAL '2 years'
+				AND a.date <= NOW() + INTERVAL '30 days'
+		)
+		SELECT
+			slug,
+			name,
+			COALESCE(grade_name, 'Unknown') AS rating,
+			area_name,
+			climbed_at AS last_climb_at,
+			EXTRACT(DAY FROM (NOW() - climbed_at))::int AS days_since_climb,
+			kaya_ascent_id,
+			climbed_by,
+			comment,
+			user_grade,
+			mp_route_id,
+			match_confidence
+		FROM climb_latest_ascent
+		WHERE ascent_rank = 1
+		ORDER BY climbed_at DESC
+		LIMIT $2
+	`
+
+	// queryGetAscentsForMatchedRoute retrieves Kaya ascents for climbs matched to a specific MP route
+	queryGetAscentsForMatchedRoute = `
+		SELECT
+			ka.kaya_ascent_id,
+			ka.kaya_climb_slug,
+			ka.date,
+			ka.comment,
+			kc.name as climb_name,
+			kc.grade_name as climb_grade,
+			COALESCE(kc.kaya_area_name, kc.kaya_destination_name, 'Unknown') as area_name,
+			COALESCE(ku.username, 'Unknown') as username
+		FROM kaya_mp_route_matches m
+		JOIN woulder.kaya_climbs kc ON m.kaya_climb_id = kc.slug
+		JOIN woulder.kaya_ascents ka ON kc.slug = ka.kaya_climb_slug
+		LEFT JOIN woulder.kaya_users ku ON ka.kaya_user_id = ku.kaya_user_id
+		WHERE m.mp_route_id = $1
+			AND m.match_confidence >= 0.60
+			AND ka.date >= NOW() - INTERVAL '2 years'
+			AND ka.date <= NOW() + INTERVAL '30 days'
+		ORDER BY ka.date DESC
+		LIMIT $2
+	`
 )
 
 // Ascents queries
@@ -298,6 +414,26 @@ const (
 			a.video_url, a.video_thumb_url, a.created_at, a.updated_at
 		FROM woulder.kaya_ascents a
 		JOIN woulder.kaya_climbs c ON a.kaya_climb_slug = c.slug
+		WHERE c.woulder_location_id = $1
+		ORDER BY a.date DESC
+		LIMIT $2
+	`
+
+	// queryGetAscentsWithDetailsForWoulderLocation retrieves ascents with climb and user details in a single query
+	// This eliminates the N+1 query problem (1 query instead of 1 + 2N queries)
+	queryGetAscentsWithDetailsForWoulderLocation = `
+		SELECT
+			a.kaya_ascent_id,
+			a.kaya_climb_slug,
+			a.date,
+			a.comment,
+			c.name AS climb_name,
+			c.grade_name AS climb_grade,
+			COALESCE(c.kaya_area_name, c.kaya_destination_name, 'Unknown Area') AS area_name,
+			u.username
+		FROM woulder.kaya_ascents a
+		INNER JOIN woulder.kaya_climbs c ON a.kaya_climb_slug = c.slug
+		INNER JOIN woulder.kaya_users u ON a.kaya_user_id = u.kaya_user_id
 		WHERE c.woulder_location_id = $1
 		ORDER BY a.date DESC
 		LIMIT $2
