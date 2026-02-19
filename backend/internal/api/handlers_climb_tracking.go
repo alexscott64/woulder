@@ -89,7 +89,7 @@ func (h *Handler) GetAreasOrderedByActivity(c *gin.Context) {
 		// Fetch matched Kaya climbs for this area
 		kayaClimbs, err := h.kayaRepo.Climbs().GetMatchedClimbsForArea(c.Request.Context(), area.MPAreaID, 1)
 		if err != nil || len(kayaClimbs) == 0 {
-			continue // Skip if no Kaya data or error
+			continue
 		}
 
 		// If Kaya has more recent activity, update the area's last activity
@@ -135,6 +135,23 @@ func (h *Handler) GetSubareasOrderedByActivity(c *gin.Context) {
 	// Return empty array if no data found
 	if subareas == nil {
 		subareas = []models.AreaActivitySummary{}
+	}
+
+	// Update subarea activity with Kaya data if newer (same logic as areas)
+	for i := range subareas {
+		subarea := &subareas[i]
+
+		// Fetch matched Kaya climbs for this subarea
+		kayaClimbs, err := h.kayaRepo.Climbs().GetMatchedClimbsForArea(c.Request.Context(), subarea.MPAreaID, 1)
+		if err != nil || len(kayaClimbs) == 0 {
+			continue
+		}
+
+		// If Kaya has more recent activity, update the subarea's last activity
+		if kayaClimbs[0].LastClimbAt.After(subarea.LastClimbAt) {
+			subarea.LastClimbAt = kayaClimbs[0].LastClimbAt
+			subarea.DaysSinceClimb = kayaClimbs[0].DaysSinceClimb
+		}
 	}
 
 	c.JSON(http.StatusOK, subareas)
@@ -277,10 +294,7 @@ func (h *Handler) GetUnifiedRoutesOrderedByActivity(c *gin.Context) {
 
 	// Fetch Kaya climbs that have been matched to MP routes in this area
 	kayaClimbs, err := h.kayaRepo.Climbs().GetMatchedClimbsForArea(c.Request.Context(), areaID, limit)
-	if err != nil {
-		// Log error but continue - Kaya data is optional
-		fmt.Printf("Warning: Failed to fetch matched Kaya climbs: %v\n", err)
-	} else {
+	if err == nil {
 		for _, kayaClimb := range kayaClimbs {
 			if kayaClimb.MPRouteID != nil {
 				// If this Kaya climb matches an existing MP route, update the MP route
@@ -376,10 +390,7 @@ func (h *Handler) GetRecentTicksForRoute(c *gin.Context) {
 
 	// Try to fetch Kaya ascents for matched route
 	kayaAscents, err := h.kayaRepo.Ascents().GetAscentsForMatchedRoute(c.Request.Context(), routeID, limit)
-	if err != nil {
-		// Log but don't fail - Kaya data is optional
-		fmt.Printf("Warning: Failed to fetch Kaya ascents for route %d: %v\n", routeID, err)
-	} else {
+	if err == nil {
 		// Convert Kaya ascents to ClimbHistoryEntry format and add them
 		// Populate ALL fields so frontend doesn't need to handle source differences
 		for _, ascent := range kayaAscents {
