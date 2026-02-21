@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/database/areas"
@@ -38,6 +39,12 @@ func New() (*Database, error) {
 	dbname := os.Getenv("DB_NAME")
 	sslmode := os.Getenv("DB_SSLMODE")
 
+	// Connection pool settings with sensible defaults
+	maxOpenConns := getEnvAsInt("DB_MAX_OPEN_CONNS", 25)
+	maxIdleConns := getEnvAsInt("DB_MAX_IDLE_CONNS", 5)
+	connMaxLifetimeMin := getEnvAsInt("DB_CONN_MAX_LIFETIME_MINUTES", 5)
+	connMaxIdleTimeMin := getEnvAsInt("DB_CONN_MAX_IDLE_TIME_MINUTES", 5)
+
 	if port == "" {
 		port = "5432"
 	}
@@ -49,6 +56,7 @@ func New() (*Database, error) {
 		return nil, fmt.Errorf("missing required database configuration")
 	}
 
+	// Build connection string with pool_mode support for PgBouncer
 	connStr := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		host, port, user, password, dbname, sslmode,
@@ -63,9 +71,32 @@ func New() (*Database, error) {
 		return nil, err
 	}
 
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	// Configure connection pool
+	// MaxOpenConns: Maximum number of open connections to the database
+	// - Default: 25 (suitable for most applications)
+	// - Increase for high-concurrency workloads
+	// - If using PgBouncer, this should match or be less than PgBouncer's pool size
+	db.SetMaxOpenConns(maxOpenConns)
+
+	// MaxIdleConns: Maximum number of connections in the idle connection pool
+	// - Default: 5 (keeps connections ready for reuse)
+	// - Should be <= MaxOpenConns
+	// - Higher values reduce connection establishment overhead
+	db.SetMaxIdleConns(maxIdleConns)
+
+	// ConnMaxLifetime: Maximum amount of time a connection may be reused
+	// - Default: 5 minutes (prevents stale connections)
+	// - Important when using load balancers or connection poolers
+	// - Set lower if firewall/proxy has aggressive timeouts
+	db.SetConnMaxLifetime(time.Duration(connMaxLifetimeMin) * time.Minute)
+
+	// ConnMaxIdleTime: Maximum amount of time a connection may be idle
+	// - Default: 5 minutes (closes unused connections)
+	// - Helps free up database resources when load is low
+	db.SetConnMaxIdleTime(time.Duration(connMaxIdleTimeMin) * time.Minute)
+
+	log.Printf("Database connection pool configured: MaxOpen=%d, MaxIdle=%d, MaxLifetime=%dm, MaxIdleTime=%dm",
+		maxOpenConns, maxIdleConns, connMaxLifetimeMin, connMaxIdleTimeMin)
 
 	database := &Database{conn: db}
 
@@ -82,6 +113,20 @@ func New() (*Database, error) {
 	}
 
 	return database, nil
+}
+
+// getEnvAsInt retrieves an environment variable as an integer with a default fallback
+func getEnvAsInt(key string, defaultValue int) int {
+	valueStr := os.Getenv(key)
+	if valueStr == "" {
+		return defaultValue
+	}
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		log.Printf("Warning: Invalid value for %s, using default %d", key, defaultValue)
+		return defaultValue
+	}
+	return value
 }
 
 func (db *Database) needsInitialization() (bool, error) {

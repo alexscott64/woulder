@@ -37,12 +37,16 @@ type CORSConfig struct {
 
 // DatabaseConfig holds database connection configuration
 type DatabaseConfig struct {
-	Host     string
-	Port     string
-	User     string
-	Password string
-	Name     string
-	SSLMode  string
+	Host            string
+	Port            string
+	User            string
+	Password        string
+	Name            string
+	SSLMode         string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
 }
 
 // WeatherConfig holds weather API configuration
@@ -77,12 +81,16 @@ func Load() (*Config, error) {
 			},
 		},
 		Database: DatabaseConfig{
-			Host:     getEnv("DB_HOST", ""),
-			Port:     getEnv("DB_PORT", "5432"),
-			User:     getEnv("DB_USER", ""),
-			Password: getEnv("DB_PASSWORD", ""),
-			Name:     getEnv("DB_NAME", ""),
-			SSLMode:  getEnv("DB_SSLMODE", "require"),
+			Host:            getEnv("DB_HOST", ""),
+			Port:            getEnv("DB_PORT", "5432"),
+			User:            getEnv("DB_USER", ""),
+			Password:        getEnv("DB_PASSWORD", ""),
+			Name:            getEnv("DB_NAME", ""),
+			SSLMode:         getEnv("DB_SSLMODE", "require"),
+			MaxOpenConns:    getEnvAsInt("DB_MAX_OPEN_CONNS", 25),
+			MaxIdleConns:    getEnvAsInt("DB_MAX_IDLE_CONNS", 5),
+			ConnMaxLifetime: time.Duration(getEnvAsInt("DB_CONN_MAX_LIFETIME_MINUTES", 5)) * time.Minute,
+			ConnMaxIdleTime: time.Duration(getEnvAsInt("DB_CONN_MAX_IDLE_TIME_MINUTES", 5)) * time.Minute,
 		},
 		Weather: WeatherConfig{
 			OpenWeatherMapAPIKey:  getEnv("OPENWEATHERMAP_API_KEY", ""),
