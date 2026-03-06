@@ -52,7 +52,7 @@ interface DayForecast {
   dayName: string;
   high: number;
   low: number;
-  avgPrecip: number;
+  totalPrecip: number;
   avgWind: number;
   avgHumidity: number; // Average humidity for the day
   avgCloudCover: number; // Average cloud cover for the day
@@ -353,7 +353,6 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
     const high = Math.max(...temps);
     const low = Math.min(...temps);
     const totalPrecip = hours.reduce((sum, h) => sum + h.precipitation, 0);
-    const avgPrecip = totalPrecip / hours.length; // Average precipitation per hour
     const avgWind = hours.reduce((sum, h) => sum + h.wind_speed, 0) / hours.length;
     const avgHumidity = hours.reduce((sum, h) => sum + h.humidity, 0) / hours.length;
     const avgCloudCover = hours.reduce((sum, h) => sum + h.cloud_cover, 0) / hours.length;
@@ -546,7 +545,7 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
       dayName: isToday ? 'Today' : format(date, 'EEE'),
       high,
       low,
-      avgPrecip, // Changed from totalPrecip to avgPrecip
+      totalPrecip,
       avgWind,
       avgHumidity,
       avgCloudCover,
@@ -630,7 +629,7 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
               {/* Quick stats */}
               <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 space-y-1">
                 {/* Precipitation - always show */}
-                <div className={`flex items-center justify-center gap-1 text-xs ${getPrecipColor(day.avgPrecip)}`}>
+                <div className={`flex items-center justify-center gap-1 text-xs ${getPrecipColor(day.totalPrecip)}`}>
                   {day.hasSnow && day.hasRain ? (
                     <>
                       <Snowflake className="w-3 h-3" />
@@ -641,7 +640,7 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
                   ) : (
                     <Droplet className="w-3 h-3" />
                   )}
-                  <span className="font-semibold">{formatPrecipInches(day.avgPrecip)}</span>
+                  <span className="font-semibold">{formatPrecipInches(day.totalPrecip)}</span>
                 </div>
 
                 {/* Snow depth - show if there's snow on ground */}
