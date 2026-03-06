@@ -112,6 +112,7 @@ export interface RouteActivitySummary {
   most_recent_tick?: ClimbHistoryEntry; // Null if no ascents
   recent_ticks?: ClimbHistoryEntry[];
   days_since_climb: number;
+  latest_source?: 'mp' | 'kaya'; // Which source has the most recent activity (for merged entries)
 }
 
 // Kaya ascent summary (simplified for route lists)
@@ -132,6 +133,7 @@ export interface UnifiedRouteActivitySummary {
   last_climb_at: string;     // ISO 8601 timestamp
   days_since_climb: number;
   source: 'mp' | 'kaya';
+  latest_source?: 'mp' | 'kaya'; // Which source has the most recent activity (for merged entries)
   
   // MP-specific (null for Kaya)
   mp_route_id?: number;

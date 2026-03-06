@@ -293,22 +293,28 @@ func (h *Handler) GetUnifiedRoutesOrderedByActivity(c *gin.Context) {
 	}
 
 	// Fetch Kaya climbs that have been matched to MP routes in this area
-	kayaClimbs, err := h.kayaRepo.Climbs().GetMatchedClimbsForArea(c.Request.Context(), areaID, limit)
+	kayaMatchedClimbs, err := h.kayaRepo.Climbs().GetMatchedClimbsForArea(c.Request.Context(), areaID, limit)
 	if err == nil {
-		for _, kayaClimb := range kayaClimbs {
+		for _, kayaClimb := range kayaMatchedClimbs {
 			if kayaClimb.MPRouteID != nil {
 				// If this Kaya climb matches an existing MP route, update the MP route
 				// with the more recent activity if Kaya has newer data
 				if idx, exists := mpRouteMap[*kayaClimb.MPRouteID]; exists {
 					mpRoute := &unifiedRoutes[idx]
-					// Update if Kaya has more recent activity
-					if kayaClimb.LastClimbAt.After(mpRoute.LastClimbAt) {
+					// Update if Kaya has more recent activity (or same day but compare dates normalized to day)
+					// Use date truncation to ignore time components for same-day comparison
+					kayaDate := kayaClimb.LastClimbAt.Truncate(24 * time.Hour)
+					mpDate := mpRoute.LastClimbAt.Truncate(24 * time.Hour)
+
+					if kayaDate.After(mpDate) || kayaDate.Equal(mpDate) {
+						// Kaya has activity on same day or more recent
 						mpRoute.LastClimbAt = kayaClimb.LastClimbAt
 						mpRoute.DaysSinceClimb = kayaClimb.DaysSinceClimb
-						// Keep the MP route but note that most recent activity is from Kaya
-						if kayaClimb.MostRecentAscent != nil {
-							// We could add a field to indicate latest source, but for now just update the date
-						}
+						// Set LatestSource to indicate Kaya has the most recent activity
+						latestSrc := "kaya"
+						mpRoute.LatestSource = &latestSrc
+						// Store the Kaya ascent details
+						mpRoute.MostRecentAscent = kayaClimb.MostRecentAscent
 					}
 					// Don't add as separate entry - we updated the existing MP route
 					continue
@@ -316,6 +322,24 @@ func (h *Handler) GetUnifiedRoutesOrderedByActivity(c *gin.Context) {
 			}
 			// Add Kaya climbs that don't match any MP route
 			unifiedRoutes = append(unifiedRoutes, kayaClimb)
+		}
+	}
+
+	// Also fetch ALL Kaya climbs for this Woulder location (not just matched ones)
+	// This ensures we show Kaya-only climbs that don't have MP route matches
+	kayaOnlyClimbs, err := h.kayaRepo.Climbs().GetClimbsOrderedByActivityForWoulderLocation(c.Request.Context(), locationID, limit)
+	if err == nil {
+		// Add Kaya-only climbs, but avoid duplicates (climbs already added via MP matches)
+		kayaSlugSet := make(map[string]bool)
+		for _, route := range unifiedRoutes {
+			if route.KayaClimbSlug != nil {
+				kayaSlugSet[*route.KayaClimbSlug] = true
+			}
+		}
+		for _, kayaClimb := range kayaOnlyClimbs {
+			if kayaClimb.KayaClimbSlug != nil && !kayaSlugSet[*kayaClimb.KayaClimbSlug] {
+				unifiedRoutes = append(unifiedRoutes, kayaClimb)
+			}
 		}
 	}
 

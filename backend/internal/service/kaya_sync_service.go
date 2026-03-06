@@ -14,6 +14,23 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/monitoring"
 )
 
+// kayaDestinationToWoulderLocation maps Kaya destination names to Woulder location IDs.
+// This mapping is used to populate woulder_location_id when syncing Kaya climbs.
+var kayaDestinationToWoulderLocation = map[string]int{
+	"Bishop":         13, // Happy/Sad Boulders and Buttermilks area
+	"Leavenworth":    5,  // Icicle Creek
+	"Squamish":       6,  // Squamish
+	"Gold Bar":       3,  // Gold Bar
+	"Index":          2,  // Index
+	"Bellingham":     4,  // Bellingham
+	"Yosemite":       14, // Yosemite
+	"Joshua Tree":    14, // Joshua Tree (using same ID as Yosemite for now - needs verification)
+	"Red Rocks":      15, // Red Rocks areas
+	"Black Mountain": 11, // Black Mountain
+	"Tramway":        15, // Tramway
+	// Add more mappings as needed - these can be expanded based on actual Kaya destination data
+}
+
 // KayaClientInterface defines the interface for Kaya API operations
 type KayaClientInterface interface {
 	GetLocation(slug string) (*kayaClient.WebLocation, error)
@@ -301,6 +318,11 @@ func (s *KayaSyncService) saveClimb(ctx context.Context, apiClimb *kayaClient.We
 	// Handle destination (top-level location)
 	if apiClimb.Destination != nil {
 		climb.KayaDestinationName = &apiClimb.Destination.Name
+
+		// Map Kaya destination to Woulder location ID
+		if woulderLocID, ok := kayaDestinationToWoulderLocation[apiClimb.Destination.Name]; ok {
+			climb.WoulderLocationID = &woulderLocID
+		}
 	}
 
 	// Handle area (sub-location)

@@ -210,7 +210,7 @@ const (
 			SELECT
 				t.mp_route_id,
 				r.name as route_name,
-				COALESCE(r.rating, '') as rating,
+				COALESCE(r.difficulty, r.rating, '') as rating,
 				COALESCE(t.user_name, '') as user_name,
 				t.climbed_at,
 				COALESCE(t.style, '') as style,
@@ -317,7 +317,7 @@ const (
 			SELECT
 				r.mp_route_id,
 				r.name,
-				r.rating,
+				COALESCE(r.difficulty, r.rating, '') as rating,
 				t.id::text as activity_id,
 				t.climbed_at
 			FROM woulder.mp_routes r
@@ -432,7 +432,7 @@ const (
 			SELECT
 				t.mp_route_id,
 				r.name as route_name,
-				COALESCE(r.rating, '') as rating,
+				COALESCE(r.difficulty, r.rating, '') as rating,
 				COALESCE(t.user_name, '') as user_name,
 				t.climbed_at,
 				COALESCE(t.style, '') as style,
@@ -505,7 +505,7 @@ const (
 		SELECT
 			r.mp_route_id,
 			r.name,
-			r.rating,
+			COALESCE(r.difficulty, r.rating, '') as rating,
 			r.latitude,
 			r.longitude,
 			COUNT(ca.activity_id) as tick_count,
@@ -517,7 +517,7 @@ const (
 		JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
 		WHERE r.mp_area_id = ANY($1)
 			AND LOWER(r.name) LIKE LOWER($4)
-		GROUP BY r.mp_route_id, r.name, r.rating, r.latitude, r.longitude, r.mp_area_id, a.name
+		GROUP BY r.mp_route_id, r.name, r.difficulty, r.rating, r.latitude, r.longitude, r.mp_area_id, a.name
 		HAVING COUNT(ca.activity_id) > 0
 		ORDER BY COUNT(ca.activity_id) DESC, r.name ASC
 		LIMIT $5

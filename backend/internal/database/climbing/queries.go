@@ -52,7 +52,7 @@ const (
 		SELECT
 			r.mp_route_id,
 			r.name AS route_name,
-			r.rating AS route_rating,
+			COALESCE(r.difficulty, r.rating, '') AS route_rating,
 			r.mp_area_id,
 			a.name AS area_name,
 			at.adjusted_climbed_at AS climbed_at,
@@ -73,7 +73,7 @@ const (
 	queryGetClimbHistoryForLocations = `
 		WITH location_routes AS (
 			-- Step 1: Get all route_ids for these locations (fast with idx_mp_routes_location_id)
-			SELECT mp_route_id, location_id, name AS route_name, rating AS route_rating, mp_area_id
+			SELECT mp_route_id, location_id, name AS route_name, COALESCE(difficulty, rating, '') AS route_rating, mp_area_id
 			FROM woulder.mp_routes
 			WHERE location_id = ANY($1)
 		),
@@ -275,7 +275,7 @@ const (
 	queryGetRoutesOrderedByActivity = `
 		WITH area_routes AS (
 			-- Filter routes by area and location first
-			SELECT r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name AS area_name
+			SELECT r.mp_route_id, r.name, COALESCE(r.difficulty, r.rating, '') AS rating, r.mp_area_id, a.name AS area_name
 			FROM woulder.mp_routes r
 			INNER JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
 			WHERE r.mp_area_id = $1
@@ -370,7 +370,7 @@ const (
 	querySearchInLocation = `
 		WITH location_routes AS (
 			-- Filter routes by location first
-			SELECT r.mp_route_id, r.name, r.rating, r.mp_area_id
+			SELECT r.mp_route_id, r.name, COALESCE(r.difficulty, r.rating, '') AS rating, r.mp_area_id
 			FROM woulder.mp_routes r
 			WHERE r.location_id = $1
 		),
@@ -461,11 +461,11 @@ const (
 	querySearchRoutesInLocation = `
 		WITH location_routes AS (
 			-- Filter routes by location and search query first
-			SELECT r.mp_route_id, r.name, r.rating, r.mp_area_id, a.name AS area_name
+			SELECT r.mp_route_id, r.name, COALESCE(r.difficulty, r.rating, '') AS rating, r.mp_area_id, a.name AS area_name
 			FROM woulder.mp_routes r
 			INNER JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
 			WHERE r.location_id = $1
-			  AND (LOWER(r.name) LIKE LOWER($2) OR LOWER(r.rating) LIKE LOWER($2) OR LOWER(a.name) LIKE LOWER($2))
+			  AND (LOWER(r.name) LIKE LOWER($2) OR COALESCE(LOWER(r.difficulty), LOWER(r.rating)) LIKE LOWER($2) OR LOWER(a.name) LIKE LOWER($2))
 		),
 		adjusted_ticks AS (
 			SELECT

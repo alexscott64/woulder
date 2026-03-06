@@ -69,6 +69,15 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
 
   // Show routes if we're in an area that has no subareas OR if search is active
   const showRoutes = isSearchActive || (currentAreaId !== null && (!areas || areas.length === 0));
+  
+  console.log('[AreaDrillDownView] Current navigation state:', {
+    locationId,
+    currentAreaId,
+    breadcrumbs: breadcrumbs.map(b => ({ name: b.name, areaId: b.areaId })),
+    routesCount: routes?.length,
+    showRoutes,
+    areasCount: areas?.length
+  });
 
   // When searching globally, show search results; otherwise show current view
   const filteredAreas: (AreaActivitySummary | SearchResult)[] = isSearchActive ? searchAreaResults : (areas || []);
@@ -421,11 +430,21 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
         {showRoutes && !isLoadingData && !dataError && processedRoutes && processedRoutes.length > 0 && (
           <div className="space-y-2.5">
             {processedRoutes.map((routeData) => {
-              // Check if this is a Kaya climb
+              // Check if this is a Kaya climb OR has Kaya as the latest activity source
               const isKaya = !('result_type' in routeData) && routeData.source === 'kaya';
+              const hasKayaLatest = !('result_type' in routeData) && routeData.latest_source === 'kaya';
+              
+              console.log('[AreaDrillDownView] Route:', routeData.name, {
+                isKaya,
+                hasKayaLatest,
+                source: ('source' in routeData) ? routeData.source : undefined,
+                latest_source: ('latest_source' in routeData) ? routeData.latest_source : undefined,
+                hasResultType: 'result_type' in routeData
+              });
               
               if (isKaya) {
-                // Render Kaya climb
+                console.log('[AreaDrillDownView] ✅ Rendering Kaya climb inline:', routeData.name);
+                // Render pure Kaya climb (no MP match)
                 const kayaClimb = routeData;
                 return (
                   <div
@@ -486,6 +505,7 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
                     last_climb_at: routeData.last_climb_at,
                     most_recent_tick: routeData.most_recent_tick,
                     days_since_climb: routeData.days_since_climb,
+                    latest_source: routeData.latest_source, // Pass through latest_source for badge display
                   };
 
               // Get drying status from batch map (only for MP routes)
@@ -499,6 +519,7 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
                   onToggleExpand={() => toggleRouteExpansion(route.mp_route_id)}
                   dryingStatus={dryingStatus}
                   useBatchMode={true} // CRITICAL: Prevents individual queries with stale cache
+                  hasKayaLatest={hasKayaLatest} // Pass flag to show Kaya badge
                 />
               );
             })}

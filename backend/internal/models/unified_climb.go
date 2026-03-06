@@ -6,13 +6,14 @@ import "time"
 // This is used to show mixed results in the "By Area" view
 type UnifiedRouteActivitySummary struct {
 	// Common fields (present for both MP and Kaya)
-	ID             string    `json:"id"`               // Composite ID: "mp-{routeID}" or "kaya-{slug}"
-	Name           string    `json:"name"`             // Route/climb name
-	Rating         string    `json:"rating"`           // Grade (V4, 5.10a, etc.)
-	AreaName       string    `json:"area_name"`        // Parent area/location name
-	LastClimbAt    time.Time `json:"last_climb_at"`    // Most recent ascent timestamp
-	DaysSinceClimb int       `json:"days_since_climb"` // Days since last ascent
-	Source         string    `json:"source"`           // "mp" or "kaya"
+	ID             string    `json:"id"`                      // Composite ID: "mp-{routeID}" or "kaya-{slug}"
+	Name           string    `json:"name"`                    //Route/climb name
+	Rating         string    `json:"rating"`                  // Grade (V4, 5.10a, etc.)
+	AreaName       string    `json:"area_name"`               // Parent area/location name
+	LastClimbAt    time.Time `json:"last_climb_at"`           // Most recent ascent timestamp
+	DaysSinceClimb int       `json:"days_since_climb"`        // Days since last ascent
+	Source         string    `json:"source"`                  // "mp" or "kaya" - original source
+	LatestSource   *string   `json:"latest_source,omitempty"` // "mp" or "kaya" - which has most recent activity (for merged entries)
 
 	// MP-specific fields (null for Kaya)
 	MPRouteID      *int64             `json:"mp_route_id,omitempty"`      // Mountain Project route ID

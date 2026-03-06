@@ -20,11 +20,19 @@ function getTempColor(temp: number): string {
   return TemperatureAnalyzer.getColor(temp);
 }
 
-// Get precipitation color for climbing conditions (using PrecipitationAnalyzer)
+// Get precipitation color for climbing conditions
 function getPrecipColor(precip: number): string {
-  if (precip < 0.01) return 'text-green-600 dark:text-green-400'; // None/trace
-  if (precip <= 0.04) return 'text-yellow-600 dark:text-yellow-400'; // Fair (0.01-0.04)
-  return 'text-red-600 dark:text-red-400'; // Poor (> 0.04)
+  // Treat tiny but non-zero values as measurable precip so drizzle doesn't show as "none"
+  if (precip < 0.001) return 'text-green-600 dark:text-green-400'; // None
+  if (precip <= 0.04) return 'text-yellow-600 dark:text-yellow-400'; // Light/trace to moderate
+  return 'text-red-600 dark:text-red-400'; // Heavy
+}
+
+function formatPrecipInches(precip: number): string {
+  if (precip <= 0) return '0.00"';
+  // Preserve light PNW drizzle values that would round to 0.00 at 2 decimals
+  if (precip < 0.01) return `${precip.toFixed(3)}"`;
+  return `${precip.toFixed(2)}"`;
 }
 
 interface ForecastViewProps {
@@ -633,7 +641,7 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
                   ) : (
                     <Droplet className="w-3 h-3" />
                   )}
-                  <span className="font-semibold">{day.avgPrecip.toFixed(2)}"</span>
+                  <span className="font-semibold">{formatPrecipInches(day.avgPrecip)}</span>
                 </div>
 
                 {/* Snow depth - show if there's snow on ground */}
@@ -775,7 +783,7 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
                     ) : (
                       <Droplet className="w-3 h-3" />
                     )}
-                    <span className="font-semibold">{hour.precipitation.toFixed(2)}"</span>
+                    <span className="font-semibold">{formatPrecipInches(hour.precipitation)}</span>
                   </div>
 
                   {/* Wind */}

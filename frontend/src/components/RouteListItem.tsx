@@ -1,15 +1,16 @@
-import { ExternalLink, ChevronDown, ChevronUp, Droplets, Sun, Clock, MapPin, TreePine, Compass, User } from 'lucide-react';
-import { RouteActivitySummary, ClimbHistoryEntry, BoulderDryingStatus } from '../types/weather';
+import { ExternalLink, ChevronDown, ChevronUp, Droplets, Sun, Clock, MapPin, TreePine, Compass, User, Mountain } from 'lucide-react';
+import { RouteActivitySummary, UnifiedRouteActivitySummary, ClimbHistoryEntry, BoulderDryingStatus } from '../types/weather';
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { useRecentTicksForRoute, useBoulderDryingStatus } from '../hooks/useClimbActivity';
 import { DryingForecastTimeline } from './DryingForecastTimeline';
 
 interface RouteListItemProps {
-  route: RouteActivitySummary;
+  route: RouteActivitySummary | UnifiedRouteActivitySummary;
   isExpanded: boolean;
   onToggleExpand: () => void;
   dryingStatus?: BoulderDryingStatus; // Optional: can be provided from parent batch fetch
   useBatchMode?: boolean; // If true, never fetch individually (wait for batch)
+  hasKayaLatest?: boolean; // If true, show Kaya badge for latest activity
 }
 
 // Helper function to clean comments
@@ -36,13 +37,22 @@ const cleanComment = (comment: string | undefined): string => {
   return cleaned.trim();
 };
 
-export function RouteListItem({ route, isExpanded, onToggleExpand, dryingStatus: propDryingStatus, useBatchMode = false }: RouteListItemProps) {
-  const { data: recentTicks, isLoading: isLoadingTicks } = useRecentTicksForRoute(route.mp_route_id);
+export function RouteListItem({ route, isExpanded, onToggleExpand, dryingStatus: propDryingStatus, useBatchMode = false, hasKayaLatest = false }: RouteListItemProps) {
+  const shouldShowBadge = hasKayaLatest || route.latest_source === 'kaya' || ('source' in route && route.source === 'kaya');
+  
+  if (shouldShowBadge) {
+    console.log('[RouteListItem] ✅ Should show Kaya badge for:', route.name, {
+      hasKayaLatest,
+      latest_source: route.latest_source,
+      source: ('source' in route) ? route.source : undefined
+    });
+  }
+  const { data: recentTicks, isLoading: isLoadingTicks } = useRecentTicksForRoute(route.mp_route_id ?? null);
 
   // CRITICAL: Never fetch individually when in batch mode
   // This prevents stale cached data from individual queries
   const shouldFetchIndividually = !useBatchMode && propDryingStatus === undefined;
-  const { data: fetchedDryingStatus } = useBoulderDryingStatus(shouldFetchIndividually ? route.mp_route_id : null);
+  const { data: fetchedDryingStatus } = useBoulderDryingStatus(shouldFetchIndividually ? (route.mp_route_id ?? null) : null);
 
   // Use prop data if in batch mode, otherwise fall back to individual fetch
   const dryingStatus = useBatchMode ? propDryingStatus : (propDryingStatus || fetchedDryingStatus);
@@ -134,9 +144,16 @@ export function RouteListItem({ route, isExpanded, onToggleExpand, dryingStatus:
               </span>
             </div>
 
-            {/* Dry Status + Activity Summary */}
+            {/* Dry Status + Activity Summary + Kaya Badge */}
             <div className="flex items-center gap-2 flex-wrap">
               {getDryStatusBadge()}
+
+              {(hasKayaLatest || route.latest_source === 'kaya' || ('source' in route && route.source === 'kaya')) && (
+                <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium flex items-center gap-1">
+                  <Mountain className="h-3 w-3" />
+                  Kaya
+                </span>
+              )}
 
               <div className="text-xs text-gray-600 dark:text-gray-400">
                 {formatDaysAgo(route.days_since_climb)}

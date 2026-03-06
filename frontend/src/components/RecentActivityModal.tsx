@@ -219,7 +219,8 @@ export function RecentActivityModal({
     const fetchKayaAscents = async () => {
       try {
         setIsLoadingKaya(true);
-        const ascents = await climbActivityApi.getKayaAscentsForLocation(locationId, 5);
+        // Fetch more Kaya ascents to ensure recent ones are included
+        const ascents = await climbActivityApi.getKayaAscentsForLocation(locationId, 50);
         setKayaAscents(ascents);
       } catch (error) {
         console.error('Failed to fetch Kaya ascents:', error);
@@ -232,14 +233,15 @@ export function RecentActivityModal({
     fetchKayaAscents();
   }, [locationId]);
 
-  // Merge and sort all climbs (MP: 5 most recent + Kaya: 5 most recent)
+  // Merge and sort all climbs (MP: 5 most recent + Kaya: 50 most recent)
+  // Then take top 10 after sorting
   const allClimbs: UnifiedClimbEntry[] = [
     ...climbHistory.slice(0, 5).map(convertMPToUnified),
     ...kayaAscents.map(convertKayaToUnified),
   ].sort((a, b) => {
     // Sort by date descending (most recent first)
     return new Date(b.climbed_at).getTime() - new Date(a.climbed_at).getTime();
-  });
+  }).slice(0, 10); // Take only top 10 after merging and sorting
 
   // Filter climb history based on search query
   const filteredClimbHistory = searchQuery

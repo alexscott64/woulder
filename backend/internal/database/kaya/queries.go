@@ -193,7 +193,8 @@ const (
 			is_access_sensitive = EXCLUDED.is_access_sensitive,
 			is_closed = EXCLUDED.is_closed,
 			is_offensive = EXCLUDED.is_offensive,
-			woulder_location_id = EXCLUDED.woulder_location_id,
+			-- Preserve existing woulder_location_id if already set, otherwise use new value
+			woulder_location_id = COALESCE(kaya_climbs.woulder_location_id, EXCLUDED.woulder_location_id),
 			last_synced_at = EXCLUDED.last_synced_at,
 			updated_at = NOW()
 	`
