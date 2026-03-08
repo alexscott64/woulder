@@ -249,12 +249,22 @@ func TestWeatherService_RefreshAllWeather(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			deleteDaysToKeep := 0
+			aggregateCalls := 0
 			mockWeatherRepo := &MockWeatherRepository{
 				SaveFn: func(ctx context.Context, data *models.WeatherData) error {
 					return nil
 				},
 				GetHistoricalFn: func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error) {
 					return []models.WeatherData{}, nil
+				},
+				DeleteOldForLocationFn: func(ctx context.Context, locationID int, daysToKeep int) error {
+					deleteDaysToKeep = daysToKeep
+					return nil
+				},
+				UpsertDailyAggregatesFn: func(ctx context.Context, locationID int, startDate, endDate string) error {
+					aggregateCalls++
+					return nil
 				},
 			}
 
@@ -289,6 +299,8 @@ func TestWeatherService_RefreshAllWeather(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
+				assert.Equal(t, 30, deleteDaysToKeep)
+				assert.GreaterOrEqual(t, aggregateCalls, 1)
 			}
 		})
 	}

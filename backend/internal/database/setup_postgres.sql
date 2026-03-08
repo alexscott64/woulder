@@ -76,6 +76,28 @@ CREATE TABLE IF NOT EXISTS woulder.weather_data (
     UNIQUE(location_id, timestamp)
 );
 
+-- Daily weather aggregates table
+-- Stores per-day weather rollups for long-term historical analytics
+CREATE TABLE IF NOT EXISTS woulder.weather_daily_aggregates (
+    id SERIAL PRIMARY KEY,
+    location_id INTEGER NOT NULL,
+    local_date DATE NOT NULL,
+    min_temperature DECIMAL(5, 2) NOT NULL,
+    max_temperature DECIMAL(5, 2) NOT NULL,
+    avg_temperature DECIMAL(5, 2) NOT NULL,
+    total_precipitation DECIMAL(8, 3) NOT NULL DEFAULT 0 CHECK (total_precipitation >= 0),
+    avg_humidity DECIMAL(5, 2) NOT NULL DEFAULT 0 CHECK (avg_humidity >= 0 AND avg_humidity <= 100),
+    avg_wind_speed DECIMAL(6, 2) NOT NULL DEFAULT 0 CHECK (avg_wind_speed >= 0),
+    snow_estimate_inches DECIMAL(8, 2) NOT NULL DEFAULT 0 CHECK (snow_estimate_inches >= 0),
+    sunrise_at TIMESTAMPTZ,
+    sunset_at TIMESTAMPTZ,
+    source_hour_count INTEGER NOT NULL DEFAULT 0 CHECK (source_hour_count >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (location_id) REFERENCES woulder.locations(id) ON DELETE CASCADE,
+    UNIQUE(location_id, local_date)
+);
+
 -- Rivers table
 -- Stores river crossing information with USGS gauge data
 CREATE TABLE IF NOT EXISTS woulder.rivers (
@@ -167,6 +189,10 @@ CREATE INDEX IF NOT EXISTS idx_weather_data_location_timestamp ON woulder.weathe
 CREATE INDEX IF NOT EXISTS idx_weather_data_timestamp ON woulder.weather_data(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_weather_data_created_at ON woulder.weather_data(created_at DESC);
 
+-- Daily weather aggregate indexes
+CREATE INDEX IF NOT EXISTS idx_weather_daily_aggregates_location_date ON woulder.weather_daily_aggregates(location_id, local_date DESC);
+CREATE INDEX IF NOT EXISTS idx_weather_daily_aggregates_local_date ON woulder.weather_daily_aggregates(local_date DESC);
+
 -- River indexes
 CREATE INDEX IF NOT EXISTS idx_rivers_location ON woulder.rivers(location_id);
 CREATE INDEX IF NOT EXISTS idx_rivers_gauge_id ON woulder.rivers(gauge_id);
@@ -215,6 +241,11 @@ DROP TRIGGER IF EXISTS update_location_sun_exposure_updated_at ON woulder.locati
 CREATE TRIGGER update_location_sun_exposure_updated_at BEFORE UPDATE ON woulder.location_sun_exposure
     FOR EACH ROW EXECUTE FUNCTION woulder.update_updated_at_column();
 
+-- Trigger for weather_daily_aggregates table
+DROP TRIGGER IF EXISTS update_weather_daily_aggregates_updated_at ON woulder.weather_daily_aggregates;
+CREATE TRIGGER update_weather_daily_aggregates_updated_at BEFORE UPDATE ON woulder.weather_daily_aggregates
+    FOR EACH ROW EXECUTE FUNCTION woulder.update_updated_at_column();
+
 -- ============================================================================
 -- COMMENTS (Documentation)
 -- ============================================================================
@@ -224,6 +255,7 @@ COMMENT ON TABLE woulder.areas IS 'Geographic areas for grouping climbing locati
 COMMENT ON TABLE woulder.locations IS 'Climbing locations with coordinates and elevation';
 COMMENT ON TABLE woulder.weather_data IS 'Historical and forecast weather data';
 COMMENT ON TABLE woulder.rivers IS 'River crossing information with USGS gauge data';
+COMMENT ON TABLE woulder.weather_daily_aggregates IS 'Daily weather rollups for long-term historical analytics';
 COMMENT ON TABLE woulder.rock_type_groups IS 'Categories of rock types based on drying characteristics';
 COMMENT ON TABLE woulder.rock_types IS 'Individual rock types with drying and porosity data';
 COMMENT ON TABLE woulder.location_rock_types IS 'Junction table linking locations to their rock types';

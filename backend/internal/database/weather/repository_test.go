@@ -293,3 +293,74 @@ func TestPostgresRepository_DeleteOldForLocation(t *testing.T) {
 		t.Errorf("unfulfilled expectations: %v", err)
 	}
 }
+
+func TestPostgresRepository_UpsertDailyAggregates(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectExec("INSERT INTO woulder.weather_daily_aggregates").
+		WithArgs(10, "2026-01-01", "2026-01-31").
+		WillReturnResult(sqlmock.NewResult(0, 31))
+
+	repo := weather.NewPostgresRepository(db)
+	err = repo.UpsertDailyAggregates(context.Background(), 10, "2026-01-01", "2026-01-31")
+	if err != nil {
+		t.Errorf("UpsertDailyAggregates() error = %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestPostgresRepository_GetDailyAggregates(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now()
+	rows := sqlmock.NewRows([]string{
+		"id", "location_id", "local_date", "min_temperature", "max_temperature",
+		"avg_temperature", "total_precipitation", "avg_humidity", "avg_wind_speed",
+		"snow_estimate_inches", "sunrise_at", "sunset_at", "source_hour_count",
+		"created_at", "updated_at",
+	}).AddRow(
+		1, 10, "2026-01-10", 30.0, 40.0,
+		35.0, 0.25, 70.0, 8.5,
+		1.2, now.Add(-12*time.Hour), now.Add(-2*time.Hour), 24,
+		now, now,
+	)
+
+	mock.ExpectQuery("SELECT (.+) FROM woulder.weather_daily_aggregates").
+		WithArgs(10, "2026-01-01", "2026-01-31").
+		WillReturnRows(rows)
+
+	repo := weather.NewPostgresRepository(db)
+	result, err := repo.GetDailyAggregates(context.Background(), 10, "2026-01-01", "2026-01-31")
+	if err != nil {
+		t.Errorf("GetDailyAggregates() error = %v", err)
+	}
+	if len(result) != 1 {
+		t.Errorf("GetDailyAggregates() returned %d rows, want 1", len(result))
+	}
+	if len(result) > 0 {
+		if result[0].LocalDate != "2026-01-10" {
+			t.Errorf("GetDailyAggregates() local_date = %s, want 2026-01-10", result[0].LocalDate)
+		}
+		if result[0].SourceHourCount != 24 {
+			t.Errorf("GetDailyAggregates() source_hour_count = %d, want 24", result[0].SourceHourCount)
+		}
+		if result[0].SunriseAt == nil || result[0].SunsetAt == nil {
+			t.Errorf("GetDailyAggregates() expected sunrise/sunset to be non-nil")
+		}
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}

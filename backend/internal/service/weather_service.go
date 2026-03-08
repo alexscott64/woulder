@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -116,32 +118,38 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 		hourlyForecast[i].LocationID = locationID
 	}
 
-	// 3. Get historical data from database for rock drying and snow calculation
-	// Get 7 days (168 hours) for better snow accumulation tracking
-	historical, err := s.weatherRepo.GetHistorical(ctx, locationID, 7) // 7 days
+	// 3. Get recent hourly historical data for near-term/UI logic.
+	historical, err := s.weatherRepo.GetHistorical(ctx, locationID, 7) // 7 days hourly
 	if err != nil {
 		log.Printf("Warning: failed to get historical weather: %v", err)
 		historical = []models.WeatherData{}
 	}
 
-	// 4. Calculate snow depth
-	snowDepth := s.calculateSnowDepth(location, current, hourlyForecast, historical)
-	dailySnowDepth := s.calculateDailySnowDepth(location, current, hourlyForecast, historical)
+	// 4. Build analytics history: hourly for last 30 days + expanded daily aggregates before that.
+	analyticsHistorical, err := s.getHistoricalForAnalytics(ctx, locationID, 90)
+	if err != nil {
+		log.Printf("Warning: failed to build analytics historical weather: %v", err)
+		analyticsHistorical = historical
+	}
 
-	// 5. Calculate rock drying status
+	// 5. Calculate snow depth
+	snowDepth := s.calculateSnowDepth(location, current, hourlyForecast, analyticsHistorical)
+	dailySnowDepth := s.calculateDailySnowDepth(location, current, hourlyForecast, analyticsHistorical)
+
+	// 6. Calculate rock drying status (use high-fidelity recent hourly history)
 	rockStatus, err := s.calculateRockDryingStatus(ctx, location, current, historical, snowDepth)
 	if err != nil {
 		log.Printf("Warning: failed to calculate rock drying: %v", err)
 	}
 
-	// 6. Calculate climbing conditions
+	// 7. Calculate climbing conditions
 	conditionCalc := &weatherPkg.ConditionCalculator{}
 	todayCondition := conditionCalc.CalculateTodayCondition(current, hourlyForecast, historical)
 	rainLast48h := conditionCalc.CalculateRainLast48h(historical, hourlyForecast)
 	rainNext48h := s.calculateRainNext48h(hourlyForecast)
 
-	// 7. Calculate pest conditions
-	pestConditions := s.calculatePestConditions(current, historical)
+	// 8. Calculate pest conditions (use analytics history)
+	pestConditions := s.calculatePestConditions(current, analyticsHistorical)
 
 	// 8. Fetch climb history from Mountain Project data (conditionally, as it's expensive)
 	var lastClimbedInfo *models.LastClimbedInfo
@@ -368,6 +376,13 @@ func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, force
 
 	log.Printf("Refreshing weather for %d locations...", len(locations))
 
+	pacificTZ, tzErr := time.LoadLocation("America/Los_Angeles")
+	if tzErr != nil || pacificTZ == nil {
+		pacificTZ = time.UTC
+	}
+	aggregateEndDate := time.Now().In(pacificTZ).Format("2006-01-02")
+	aggregateStartDate := time.Now().In(pacificTZ).AddDate(0, 0, -35).Format("2006-01-02")
+
 	for _, loc := range locations {
 		// Fetch and save historical weather data (last 7 days) to database
 		// This ensures rain_last_48h calculations use fresh data
@@ -375,10 +390,9 @@ func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, force
 		if err != nil {
 			log.Printf("Failed to fetch historical weather for location %d: %v", loc.ID, err)
 		} else {
-			// Delete old historical data (older than 7 days) to prevent stale precipitation data
-			// This ensures only fresh API data is used for rain calculations
-			log.Printf("Deleting old weather data for location %d (keeping last 7 days)", loc.ID)
-			if err := s.weatherRepo.DeleteOldForLocation(ctx, loc.ID, 7); err != nil {
+			// Delete old hourly weather data (older than 30 days)
+			log.Printf("Deleting old weather data for location %d (keeping last 30 days)", loc.ID)
+			if err := s.weatherRepo.DeleteOldForLocation(ctx, loc.ID, 30); err != nil {
 				log.Printf("ERROR: failed to delete old weather data for location %d: %v", loc.ID, err)
 			} else {
 				log.Printf("Successfully deleted old weather data for location %d", loc.ID)
@@ -408,6 +422,10 @@ func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, force
 				}
 			}
 			log.Printf("Updated forecast weather for location %d (%d hours)", loc.ID, len(forecast))
+		}
+
+		if err := s.weatherRepo.UpsertDailyAggregates(ctx, loc.ID, aggregateStartDate, aggregateEndDate); err != nil {
+			log.Printf("Failed to upsert daily weather aggregates for location %d: %v", loc.ID, err)
 		}
 
 		// Fetch current/forecast weather (this also triggers calculations)
@@ -597,4 +615,100 @@ func (s *WeatherService) calculatePestConditions(
 		OutdoorPestScore: result.OutdoorPestScore,
 		Factors:          result.Factors,
 	}
+}
+
+// getHistoricalForAnalytics builds a hybrid history timeline:
+// - hourly rows for the most recent 30 days
+// - expanded daily aggregates for older days in the requested window
+func (s *WeatherService) getHistoricalForAnalytics(ctx context.Context, locationID int, totalDays int) ([]models.WeatherData, error) {
+	if totalDays <= 0 {
+		return []models.WeatherData{}, nil
+	}
+
+	hourlyDays := totalDays
+	if hourlyDays > 30 {
+		hourlyDays = 30
+	}
+
+	recentHourly, err := s.weatherRepo.GetHistorical(ctx, locationID, hourlyDays)
+	if err != nil {
+		return nil, err
+	}
+
+	if totalDays <= 30 {
+		return recentHourly, nil
+	}
+
+	pacificTZ, tzErr := time.LoadLocation("America/Los_Angeles")
+	if tzErr != nil || pacificTZ == nil {
+		pacificTZ = time.UTC
+	}
+
+	nowLocal := time.Now().In(pacificTZ)
+	aggStartDate := nowLocal.AddDate(0, 0, -totalDays).Format("2006-01-02")
+	aggEndDate := nowLocal.AddDate(0, 0, -31).Format("2006-01-02")
+
+	dailyAgg, err := s.weatherRepo.GetDailyAggregates(ctx, locationID, aggStartDate, aggEndDate)
+	if err != nil {
+		return nil, err
+	}
+
+	hybrid := make([]models.WeatherData, 0, len(recentHourly)+(len(dailyAgg)*24))
+	hybrid = append(hybrid, recentHourly...)
+
+	for _, agg := range dailyAgg {
+		hybrid = append(hybrid, expandDailyAggregateToHourly(agg, pacificTZ)...)
+	}
+
+	sort.Slice(hybrid, func(i, j int) bool {
+		return hybrid[i].Timestamp.Before(hybrid[j].Timestamp)
+	})
+
+	return hybrid, nil
+}
+
+func expandDailyAggregateToHourly(agg models.WeatherDailyAggregate, loc *time.Location) []models.WeatherData {
+	base, err := time.ParseInLocation("2006-01-02", agg.LocalDate, loc)
+	if err != nil {
+		return []models.WeatherData{}
+	}
+
+	hours := 24
+	if agg.SourceHourCount > 0 && agg.SourceHourCount < 24 {
+		hours = agg.SourceHourCount
+	}
+
+	precipPerHour := 0.0
+	if hours > 0 {
+		precipPerHour = agg.TotalPrecipitation / float64(hours)
+	}
+
+	humidity := int(math.Round(agg.AvgHumidity))
+	if humidity < 0 {
+		humidity = 0
+	}
+	if humidity > 100 {
+		humidity = 100
+	}
+
+	result := make([]models.WeatherData, 0, hours)
+	for h := 0; h < hours; h++ {
+		ts := time.Date(base.Year(), base.Month(), base.Day(), h, 0, 0, 0, loc).UTC()
+		result = append(result, models.WeatherData{
+			LocationID:    agg.LocationID,
+			Timestamp:     ts,
+			Temperature:   agg.AvgTemperature,
+			FeelsLike:     agg.AvgTemperature,
+			Precipitation: precipPerHour,
+			Humidity:      humidity,
+			WindSpeed:     agg.AvgWindSpeed,
+			WindDirection: 0,
+			CloudCover:    0,
+			Pressure:      0,
+			Description:   "daily aggregate expanded",
+			Icon:          "",
+		})
+	}
+
+	return result
 }

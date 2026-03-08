@@ -42,4 +42,11 @@ type Repository interface {
 	// - The timestamp (observation time) is older than daysToKeep, OR
 	// - The record was created more than daysToKeep ago (stale forecasts)
 	DeleteOldForLocation(ctx context.Context, locationID int, daysToKeep int) error
+
+	// UpsertDailyAggregates upserts daily weather rollups for a location and date range.
+	// startDate and endDate are inclusive date boundaries in YYYY-MM-DD format.
+	UpsertDailyAggregates(ctx context.Context, locationID int, startDate, endDate string) error
+
+	// GetDailyAggregates retrieves daily rollups in a local date range for a location.
+	GetDailyAggregates(ctx context.Context, locationID int, startDate, endDate string) ([]models.WeatherDailyAggregate, error)
 }
