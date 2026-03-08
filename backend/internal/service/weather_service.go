@@ -18,6 +18,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/weather/calculator"
 	"github.com/alexscott64/woulder/backend/internal/weather/client"
 	"github.com/alexscott64/woulder/backend/internal/weather/rock_drying"
+	sunpkg "github.com/alexscott64/woulder/backend/internal/weather/sun"
 )
 
 type WeatherService struct {
@@ -177,7 +178,7 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 		}
 	}
 
-	// 9. Build response with fresh API data
+	// 9. Build response with sun times
 	var dailySunTimes []models.DailySunTimes
 	if sunTimes != nil && len(sunTimes.Daily) > 0 {
 		for _, st := range sunTimes.Daily {
@@ -186,6 +187,13 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 				Sunrise: st.Sunrise,
 				Sunset:  st.Sunset,
 			})
+		}
+	} else {
+		// Cache path fallback: compute sunrise/sunset locally so frontend still gets daily sun times
+		dailySunTimes = buildDailySunTimesFallback(location.Latitude, location.Longitude, 7)
+		if sunrise == "" && len(dailySunTimes) > 0 {
+			sunrise = dailySunTimes[0].Sunrise
+			sunset = dailySunTimes[0].Sunset
 		}
 	}
 
@@ -210,6 +218,31 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 	}
 
 	return forecast, nil
+}
+
+func buildDailySunTimesFallback(lat, lon float64, days int) []models.DailySunTimes {
+	if days <= 0 {
+		return nil
+	}
+
+	pacificTZ, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil || pacificTZ == nil {
+		pacificTZ = time.UTC
+	}
+
+	nowLocal := time.Now().In(pacificTZ)
+	daily := make([]models.DailySunTimes, 0, days)
+	for i := 0; i < days; i++ {
+		day := nowLocal.AddDate(0, 0, i)
+		sunrise, sunset := sunpkg.GetSunriseAndSunset(lat, lon, day)
+		daily = append(daily, models.DailySunTimes{
+			Date:    day.Format("2006-01-02"),
+			Sunrise: sunrise.Format(time.RFC3339),
+			Sunset:  sunset.Format(time.RFC3339),
+		})
+	}
+
+	return daily
 }
 
 // calculateSnowDepth calculates current snow depth on ground

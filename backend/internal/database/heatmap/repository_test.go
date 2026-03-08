@@ -232,7 +232,7 @@ func TestPostgresRepository_GetAreaActivityDetail(t *testing.T) {
 		250, 45, 80, time.Date(2024, 6, 15, 10, 30, 0, 0, time.UTC),
 	)
 
-	mock.ExpectQuery(`SELECT\s+COUNT\(t\.id\)`).
+	mock.ExpectQuery(`WITH\s+combined_activity`).
 		WithArgs(areaID, startDate, endDate).
 		WillReturnRows(statsRows)
 
@@ -245,7 +245,7 @@ func TestPostgresRepository_GetAreaActivityDetail(t *testing.T) {
 		time.Date(2024, 6, 15, 10, 30, 0, 0, time.UTC), "Lead", "Great climb!",
 	)
 
-	mock.ExpectQuery(`SELECT\s+t\.mp_route_id(.+)ORDER BY t\.climbed_at DESC`).
+	mock.ExpectQuery(`WITH\s+combined_ticks`).
 		WithArgs(areaID, startDate, endDate).
 		WillReturnRows(ticksRows)
 
@@ -269,7 +269,7 @@ func TestPostgresRepository_GetAreaActivityDetail(t *testing.T) {
 		time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), 10, 5,
 	)
 
-	mock.ExpectQuery(`SELECT\s+DATE\(t\.climbed_at\)(.+)GROUP BY DATE`).
+	mock.ExpectQuery(`WITH\s+combined_activity`).
 		WithArgs(areaID, startDate, endDate).
 		WillReturnRows(timelineRows)
 
@@ -281,7 +281,7 @@ func TestPostgresRepository_GetAreaActivityDetail(t *testing.T) {
 		time.Date(2024, 6, 15, 10, 30, 0, 0, time.UTC),
 	)
 
-	mock.ExpectQuery(`SELECT\s+r\.mp_route_id(.+)ORDER BY COUNT`).
+	mock.ExpectQuery(`WITH\s+combined_activity`).
 		WithArgs(areaID, startDate, endDate).
 		WillReturnRows(topRoutesRows)
 
@@ -289,7 +289,7 @@ func TestPostgresRepository_GetAreaActivityDetail(t *testing.T) {
 	result, err := repo.GetAreaActivityDetail(context.Background(), areaID, startDate, endDate)
 
 	if err != nil {
-		t.Errorf("GetAreaActivityDetail() error = %v", err)
+		t.Fatalf("GetAreaActivityDetail() error = %v", err)
 	}
 
 	if result.MPAreaID != areaID {
