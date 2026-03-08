@@ -22,6 +22,7 @@ type KayaClimb struct {
 	Latitude  *float64
 	Longitude *float64
 	Grade     string
+	ClimbType string
 }
 
 // MPRoute represents a Mountain Project route
@@ -164,7 +165,8 @@ func getKayaClimbs(ctx context.Context, db *sql.DB, location string, limit int) 
 			COALESCE(c.kaya_destination_name, c.kaya_area_name, 'Unknown') as location_name,
 			l.latitude,
 			l.longitude,
-			c.grade_name
+			c.grade_name,
+			c.climb_type_name
 		FROM kaya_climbs c
 		LEFT JOIN kaya_locations l ON c.kaya_destination_id = l.kaya_location_id
 		WHERE c.slug IS NOT NULL
@@ -196,9 +198,9 @@ func getKayaClimbs(ctx context.Context, db *sql.DB, location string, limit int) 
 	for rows.Next() {
 		var climb KayaClimb
 		var lat, lon sql.NullFloat64
-		var grade sql.NullString
+		var grade, climbType sql.NullString
 
-		err := rows.Scan(&climb.ID, &climb.Name, &climb.Location, &lat, &lon, &grade)
+		err := rows.Scan(&climb.ID, &climb.Name, &climb.Location, &lat, &lon, &grade, &climbType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
@@ -211,6 +213,10 @@ func getKayaClimbs(ctx context.Context, db *sql.DB, location string, limit int) 
 		}
 		if grade.Valid {
 			climb.Grade = grade.String
+		}
+
+		if climbType.Valid {
+			climb.ClimbType = climbType.String
 		}
 
 		climbs = append(climbs, climb)
@@ -227,7 +233,9 @@ func findMPMatches(ctx context.Context, db *sql.DB, climb KayaClimb, minConfiden
 			r.name,
 			COALESCE(a.name, 'Unknown') as area_name,
 			a.latitude,
-			a.longitude
+			a.longitude,
+			r.route_type,
+			r.rating
 		FROM woulder.mp_routes r
 		LEFT JOIN woulder.mp_areas a ON r.mp_area_id = a.mp_area_id
 		WHERE LOWER(r.name) LIKE LOWER($1)
@@ -244,10 +252,10 @@ func findMPMatches(ctx context.Context, db *sql.DB, climb KayaClimb, minConfiden
 	var matches []RouteMatch
 	for rows.Next() {
 		var mpID string
-		var mpName, mpArea string
+		var mpName, mpArea, mpRouteType, mpRating string
 		var mpLat, mpLon sql.NullFloat64
 
-		if err := rows.Scan(&mpID, &mpName, &mpArea, &mpLat, &mpLon); err != nil {
+		if err := rows.Scan(&mpID, &mpName, &mpArea, &mpLat, &mpLon, &mpRouteType, &mpRating); err != nil {
 			continue
 		}
 
@@ -268,6 +276,11 @@ func findMPMatches(ctx context.Context, db *sql.DB, climb KayaClimb, minConfiden
 		if climb.Latitude != nil && climb.Longitude != nil && mpLat.Valid && mpLon.Valid {
 			dist := calculateGPSDistance(*climb.Latitude, *climb.Longitude, mpLat.Float64, mpLon.Float64)
 			distKM = &dist
+		}
+
+		// Hard-reject discipline/grade mismatches before scoring
+		if !isCompatibleMatch(climb.ClimbType, climb.Grade, mpRouteType, mpRating) {
+			continue
 		}
 
 		// Calculate overall confidence
@@ -464,6 +477,122 @@ func determineMatchType(nameSim float64, locationMatch bool, distanceKM *float64
 		return "location_name"
 	}
 	return "low_confidence"
+}
+
+func isCompatibleMatch(kayaClimbType, kayaGrade, mpRouteType, mpRating string) bool {
+	kayaDiscipline := classifyKayaDiscipline(kayaClimbType, kayaGrade)
+	mpDiscipline := classifyMPDiscipline(mpRouteType, mpRating)
+
+	if kayaDiscipline != "" && mpDiscipline != "" && kayaDiscipline != mpDiscipline {
+		return false
+	}
+
+	if kayaDiscipline == "boulder" {
+		if !containsToken(mpRouteType, "boulder") {
+			return false
+		}
+		if containsAnyToken(mpRouteType, []string{"ice", "mixed", "snow", "alpine"}) {
+			return false
+		}
+	}
+
+	kayaFamily := gradeFamily(kayaGrade)
+	mpFamily := gradeFamily(mpRating)
+	if kayaFamily != "" && mpFamily != "" && kayaFamily != mpFamily {
+		return false
+	}
+
+	return true
+}
+
+func classifyKayaDiscipline(climbType, grade string) string {
+	ct := strings.ToLower(strings.TrimSpace(climbType))
+	switch {
+	case strings.Contains(ct, "boulder"):
+		return "boulder"
+	case strings.Contains(ct, "sport"), strings.Contains(ct, "trad"), strings.Contains(ct, "route"):
+		return "route"
+	}
+
+	switch gradeFamily(grade) {
+	case "v":
+		return "boulder"
+	case "yds":
+		return "route"
+	case "wi", "mixed", "aid":
+		return "ice"
+	default:
+		return ""
+	}
+}
+
+func classifyMPDiscipline(routeType, rating string) string {
+	rt := strings.ToLower(strings.TrimSpace(routeType))
+	if containsToken(rt, "boulder") {
+		return "boulder"
+	}
+	if containsAnyToken(rt, []string{"ice", "mixed", "snow", "alpine"}) {
+		return "ice"
+	}
+	if containsAnyToken(rt, []string{"sport", "trad", "tr", "top rope", "aid"}) {
+		return "route"
+	}
+
+	switch gradeFamily(rating) {
+	case "v":
+		return "boulder"
+	case "yds":
+		return "route"
+	case "wi", "mixed", "aid":
+		return "ice"
+	default:
+		return ""
+	}
+}
+
+func gradeFamily(grade string) string {
+	g := strings.ToUpper(strings.TrimSpace(grade))
+	if g == "" {
+		return ""
+	}
+
+	switch {
+	case strings.HasPrefix(g, "V"):
+		return "v"
+	case strings.HasPrefix(g, "WI"), strings.HasPrefix(g, "AI"):
+		return "wi"
+	case strings.HasPrefix(g, "M"):
+		return "mixed"
+	case strings.HasPrefix(g, "A"), strings.HasPrefix(g, "C"):
+		return "aid"
+	case strings.HasPrefix(g, "5.") || strings.HasPrefix(g, "5"):
+		return "yds"
+	default:
+		return ""
+	}
+}
+
+func containsToken(value, token string) bool {
+	v := strings.ToLower(value)
+	t := strings.ToLower(token)
+	parts := strings.FieldsFunc(v, func(r rune) bool {
+		return r == ',' || r == '/' || r == ';' || r == '|'
+	})
+	for _, p := range parts {
+		if strings.TrimSpace(p) == t {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAnyToken(value string, tokens []string) bool {
+	for _, token := range tokens {
+		if containsToken(value, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func toRadians(degrees float64) float64 {
