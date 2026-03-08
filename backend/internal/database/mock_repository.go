@@ -92,7 +92,7 @@ type MockRepository struct {
 	GetMPRoutesByIDsFn                   func(ctx context.Context, mpRouteIDs []int64) (map[int64]*models.MPRoute, error)
 
 	// Heat map mocks
-	GetHeatMapDataFn           func(ctx context.Context, startDate, endDate time.Time, bounds *GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error)
+	GetHeatMapDataFn           func(ctx context.Context, startDate, endDate time.Time, bounds *GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool, gradeMin, gradeMax *int) ([]models.HeatMapPoint, error)
 	GetAreaActivityDetailFn    func(ctx context.Context, areaID int64, startDate, endDate time.Time) (*models.AreaActivityDetail, error)
 	GetRoutesByBoundsFn        func(ctx context.Context, bounds GeoBounds, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error)
 	GetRouteTicksInDateRangeFn func(ctx context.Context, routeID int64, startDate, endDate time.Time, limit int) ([]models.TickDetail, error)
@@ -566,9 +566,9 @@ func (m *MockRepository) GetPriorityDistribution(ctx context.Context) (map[strin
 }
 
 // GetHeatMapData mock
-func (m *MockRepository) GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error) {
+func (m *MockRepository) GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool, gradeMin, gradeMax *int) ([]models.HeatMapPoint, error) {
 	if m.GetHeatMapDataFn != nil {
-		return m.GetHeatMapDataFn(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight)
+		return m.GetHeatMapDataFn(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight, gradeMin, gradeMax)
 	}
 	return nil, nil
 }

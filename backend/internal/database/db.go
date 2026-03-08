@@ -551,7 +551,7 @@ func (db *Database) SearchRoutesInLocation(ctx context.Context, locationID int, 
 // Heat map wrapper methods
 
 // GetHeatMapData delegates to HeatMap().GetData()
-func (db *Database) GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error) {
+func (db *Database) GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool, gradeMin, gradeMax *int) ([]models.HeatMapPoint, error) {
 	var heatmapBounds *heatmap.GeoBounds
 	if bounds != nil {
 		heatmapBounds = &heatmap.GeoBounds{
@@ -561,7 +561,7 @@ func (db *Database) GetHeatMapData(ctx context.Context, startDate, endDate time.
 			MaxLon: bounds.MaxLon,
 		}
 	}
-	return db.HeatMap().GetHeatMapData(ctx, startDate, endDate, heatmapBounds, minActivity, limit, routeTypes, lightweight)
+	return db.HeatMap().GetHeatMapData(ctx, startDate, endDate, heatmapBounds, minActivity, limit, routeTypes, lightweight, gradeMin, gradeMax)
 }
 
 // GetAreaActivityDetail delegates to HeatMap().GetAreaActivityDetail()

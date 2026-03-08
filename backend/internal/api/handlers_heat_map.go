@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/database/heatmap"
+	"github.com/alexscott64/woulder/backend/internal/grades"
 	"github.com/gin-gonic/gin"
 )
 
@@ -103,8 +104,11 @@ func (h *Handler) GetHeatMapActivity(c *gin.Context) {
 		lightweight = true
 	}
 
+	// Parse grade range filter (grade strings like "V3", "5.10a", etc.)
+	gradeMin, gradeMax := grades.ParseGradeRange(c.Query("grade_min"), c.Query("grade_max"))
+
 	// Fetch heat map data
-	points, err := h.heatMapService.GetHeatMapData(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight)
+	points, err := h.heatMapService.GetHeatMapData(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight, gradeMin, gradeMax)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to fetch heat map data",
@@ -123,6 +127,8 @@ func (h *Handler) GetHeatMapActivity(c *gin.Context) {
 			"limit":        limit,
 			"route_types":  routeTypes,
 			"lightweight":  lightweight,
+			"grade_min":    c.Query("grade_min"),
+			"grade_max":    c.Query("grade_max"),
 		},
 	})
 }

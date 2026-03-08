@@ -7,6 +7,8 @@ import { ActivityMapDeckGL } from './ActivityMapDeckGL';
 import { AreaDetailDrawer } from './AreaDetailDrawer';
 import { ClusterDetailDrawer } from './ClusterDetailDrawer';
 import { RouteTypeFilter } from './RouteTypeFilter';
+import { GradeRangeFilter } from './GradeRangeFilter';
+import { type GradeRangeSelection, gradeRangeToApiParams } from '../../utils/grades';
 
 type ViewMode = 'map' | 'list';
 
@@ -17,6 +19,7 @@ interface StoredFilters {
   minActivity: number;
   timePeriodDays: number;
   viewMode: ViewMode;
+  gradeSelections: GradeRangeSelection;
 }
 
 // Load filters from localStorage
@@ -56,6 +59,9 @@ export function HeatMapPage() {
   const [selectedRouteTypes, setSelectedRouteTypes] = useState<string[]>(
     savedFilters.routeTypes || ['Boulder', 'Sport', 'Trad', 'Ice']
   );
+  const [gradeSelections, setGradeSelections] = useState<GradeRangeSelection>(
+    savedFilters.gradeSelections || {}
+  );
   const [clusterAreas, setClusterAreas] = useState<HeatMapPoint[]>([]);
   const [showClusterDrawer, setShowClusterDrawer] = useState(false);
 
@@ -64,6 +70,9 @@ export function HeatMapPage() {
     (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24)
   );
 
+  // Compute grade API params from current selections
+  const gradeApiParams = gradeRangeToApiParams(gradeSelections, selectedRouteTypes);
+
   // Save filters to localStorage whenever they change
   useEffect(() => {
     saveFilters({
@@ -71,12 +80,13 @@ export function HeatMapPage() {
       minActivity,
       timePeriodDays,
       viewMode,
+      gradeSelections,
     });
-  }, [selectedRouteTypes, minActivity, timePeriodDays, viewMode]);
+  }, [selectedRouteTypes, minActivity, timePeriodDays, viewMode, gradeSelections]);
 
   // Fetch heat map data - full mode to get active_routes
   const { data, isLoading, error } = useQuery({
-    queryKey: ['heatMap', dateRange, minActivity, selectedRouteTypes],
+    queryKey: ['heatMap', dateRange, minActivity, selectedRouteTypes, gradeApiParams.gradeMin, gradeApiParams.gradeMax],
     queryFn: () => heatMapApi.getHeatMapActivity({
       startDate: dateRange.start,
       endDate: dateRange.end,
@@ -84,6 +94,8 @@ export function HeatMapPage() {
       limit: 10000, // No effective limit - show all areas
       routeTypes: selectedRouteTypes.length > 0 ? selectedRouteTypes : undefined,
       lightweight: false, // Full mode to get active_routes and other stats
+      gradeMin: gradeApiParams.gradeMin,
+      gradeMax: gradeApiParams.gradeMax,
     }),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -117,6 +129,13 @@ export function HeatMapPage() {
             <RouteTypeFilter
               selectedTypes={selectedRouteTypes}
               onChange={setSelectedRouteTypes}
+            />
+
+            {/* Grade Range Filter */}
+            <GradeRangeFilter
+              selectedTypes={selectedRouteTypes}
+              selections={gradeSelections}
+              onChange={setGradeSelections}
             />
 
             {/* Date Range and Activity Filters */}

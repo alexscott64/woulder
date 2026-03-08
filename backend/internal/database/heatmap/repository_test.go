@@ -36,11 +36,11 @@ func TestPostgresRepository_GetHeatMapData_Lightweight(t *testing.T) {
 
 	// Use regex that matches the query structure regardless of comments/whitespace
 	mock.ExpectQuery(`SELECT\s+a\.mp_area_id`).
-		WithArgs(startDate, endDate, nil, nil, nil, nil, nil, 10, 100).
+		WithArgs(startDate, endDate, nil, nil, nil, nil, nil, 10, 100, nil, nil).
 		WillReturnRows(rows)
 
 	repo := heatmap.NewPostgresRepository(db)
-	result, err := repo.GetHeatMapData(context.Background(), startDate, endDate, nil, 10, 100, nil, true)
+	result, err := repo.GetHeatMapData(context.Background(), startDate, endDate, nil, 10, 100, nil, true, nil, nil)
 
 	if err != nil {
 		t.Errorf("GetHeatMapData() error = %v", err)
@@ -93,11 +93,11 @@ func TestPostgresRepository_GetHeatMapData_Full(t *testing.T) {
 
 	// Use regex that matches the query structure
 	mock.ExpectQuery(`SELECT\s+a\.mp_area_id`).
-		WithArgs(startDate, endDate, nil, nil, nil, nil, nil, 5, 50).
+		WithArgs(startDate, endDate, nil, nil, nil, nil, nil, 5, 50, nil, nil).
 		WillReturnRows(rows)
 
 	repo := heatmap.NewPostgresRepository(db)
-	result, err := repo.GetHeatMapData(context.Background(), startDate, endDate, nil, 5, 50, nil, false)
+	result, err := repo.GetHeatMapData(context.Background(), startDate, endDate, nil, 5, 50, nil, false, nil, nil)
 
 	if err != nil {
 		t.Errorf("GetHeatMapData() error = %v", err)
@@ -148,11 +148,11 @@ func TestPostgresRepository_GetHeatMapData_WithBounds(t *testing.T) {
 	)
 
 	mock.ExpectQuery(`SELECT\s+a\.mp_area_id`).
-		WithArgs(startDate, endDate, 36.0, 37.0, -116.0, -115.0, nil, 1, 100).
+		WithArgs(startDate, endDate, 36.0, 37.0, -116.0, -115.0, nil, 1, 100, nil, nil).
 		WillReturnRows(rows)
 
 	repo := heatmap.NewPostgresRepository(db)
-	result, err := repo.GetHeatMapData(context.Background(), startDate, endDate, bounds, 1, 100, nil, true)
+	result, err := repo.GetHeatMapData(context.Background(), startDate, endDate, bounds, 1, 100, nil, true, nil, nil)
 
 	if err != nil {
 		t.Errorf("GetHeatMapData() error = %v", err)
@@ -190,7 +190,7 @@ func TestPostgresRepository_GetHeatMapData_InvalidBounds(t *testing.T) {
 	}
 
 	repo := heatmap.NewPostgresRepository(db)
-	_, err = repo.GetHeatMapData(context.Background(), startDate, endDate, bounds, 1, 100, nil, true)
+	_, err = repo.GetHeatMapData(context.Background(), startDate, endDate, bounds, 1, 100, nil, true, nil, nil)
 
 	if err == nil {
 		t.Error("GetHeatMapData() expected error for invalid bounds, got nil")

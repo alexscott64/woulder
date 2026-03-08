@@ -643,16 +643,16 @@ func (m *MockBouldersRepository) SaveProfile(ctx context.Context, profile *model
 
 // MockHeatMapRepository implements heatmap.Repository
 type MockHeatMapRepository struct {
-	GetHeatMapDataFn           func(ctx context.Context, startDate, endDate time.Time, bounds *heatmap.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error)
+	GetHeatMapDataFn           func(ctx context.Context, startDate, endDate time.Time, bounds *heatmap.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool, gradeMin, gradeMax *int) ([]models.HeatMapPoint, error)
 	GetAreaActivityDetailFn    func(ctx context.Context, areaID int64, startDate, endDate time.Time) (*models.AreaActivityDetail, error)
 	GetRoutesByBoundsFn        func(ctx context.Context, bounds heatmap.GeoBounds, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error)
 	GetRouteTicksInDateRangeFn func(ctx context.Context, routeID int64, startDate, endDate time.Time, limit int) ([]models.TickDetail, error)
 	SearchRoutesInAreasFn      func(ctx context.Context, areaIDs []int64, searchQuery string, startDate, endDate time.Time, limit int) ([]models.RouteActivity, error)
 }
 
-func (m *MockHeatMapRepository) GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *heatmap.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool) ([]models.HeatMapPoint, error) {
+func (m *MockHeatMapRepository) GetHeatMapData(ctx context.Context, startDate, endDate time.Time, bounds *heatmap.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool, gradeMin, gradeMax *int) ([]models.HeatMapPoint, error) {
 	if m.GetHeatMapDataFn != nil {
-		return m.GetHeatMapDataFn(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight)
+		return m.GetHeatMapDataFn(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight, gradeMin, gradeMax)
 	}
 	return []models.HeatMapPoint{}, nil
 }

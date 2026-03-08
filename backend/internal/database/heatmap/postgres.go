@@ -45,6 +45,7 @@ func (r *PostgresRepository) GetHeatMapData(
 	minActivity, limit int,
 	routeTypes []string,
 	lightweight bool,
+	gradeMin, gradeMax *int,
 ) ([]models.HeatMapPoint, error) {
 	// Validate bounds if provided
 	if bounds != nil {
@@ -78,6 +79,7 @@ func (r *PostgresRepository) GetHeatMapData(
 		minLat, maxLat, minLon, maxLon,
 		routeTypesParam,
 		minActivity, limit,
+		gradeMin, gradeMax,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query heat map data: %w", err)
