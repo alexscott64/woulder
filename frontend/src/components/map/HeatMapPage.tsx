@@ -107,7 +107,7 @@ export function HeatMapPage() {
   };
 
   // Sort points by activity score
-  const sortedPoints: HeatMapPoint[] = data?.points.sort((a, b) => b.activity_score - a.activity_score) || [];
+  const sortedPoints: HeatMapPoint[] = data?.points?.sort((a, b) => b.activity_score - a.activity_score) || [];
 
   return (
     <main className="h-screen flex flex-col overflow-hidden">

@@ -8,11 +8,13 @@ import {
   FAMILY_V,
   FAMILY_YDS,
   FAMILY_WI,
+  FAMILY_AI,
   FAMILY_MIXED,
   FAMILY_AID,
   V_SCALE_GRADES,
   YDS_GRADES,
   WI_GRADES,
+  AI_GRADES,
   MIXED_GRADES,
 } from '../../utils/grades';
 
@@ -32,6 +34,12 @@ describe('gradeFamily', () => {
   it('classifies WI grades', () => {
     expect(gradeFamily('WI3')).toBe(FAMILY_WI);
     expect(gradeFamily('wi5')).toBe(FAMILY_WI);
+  });
+
+  it('classifies AI (Alpine Ice) grades', () => {
+    expect(gradeFamily('AI3')).toBe(FAMILY_AI);
+    expect(gradeFamily('ai5')).toBe(FAMILY_AI);
+    expect(gradeFamily('AI1')).toBe(FAMILY_AI);
   });
 
   it('classifies Mixed grades', () => {
@@ -67,6 +75,11 @@ describe('gradeToOrderNum', () => {
   it('converts WI grades', () => {
     expect(gradeToOrderNum('WI1')).toBe(200);
     expect(gradeToOrderNum('WI7')).toBe(206);
+  });
+
+  it('converts AI grades', () => {
+    expect(gradeToOrderNum('AI1')).toBe(400);
+    expect(gradeToOrderNum('AI6')).toBe(405);
   });
 
   it('converts Mixed grades', () => {
@@ -116,6 +129,11 @@ describe('orderToGrade', () => {
     expect(orderToGrade(200)).toBe('WI1');
   });
 
+  it('converts AI orders', () => {
+    expect(orderToGrade(400)).toBe('AI1');
+    expect(orderToGrade(405)).toBe('AI6');
+  });
+
   it('converts Mixed orders', () => {
     expect(orderToGrade(300)).toBe('M1');
   });
@@ -159,8 +177,16 @@ describe('grade ordering consistency', () => {
     }
   });
 
+  it('AI grades are ordered correctly', () => {
+    for (let i = 1; i < AI_GRADES.length; i++) {
+      expect(gradeToOrderNum(AI_GRADES[i])).toBeGreaterThan(
+        gradeToOrderNum(AI_GRADES[i - 1]),
+      );
+    }
+  });
+
   it('round-trips through orderToGrade for every grade', () => {
-    for (const grade of [...V_SCALE_GRADES, ...YDS_GRADES, ...WI_GRADES, ...MIXED_GRADES]) {
+    for (const grade of [...V_SCALE_GRADES, ...YDS_GRADES, ...WI_GRADES, ...AI_GRADES, ...MIXED_GRADES]) {
       const order = gradeToOrderNum(grade);
       expect(order).toBeGreaterThanOrEqual(0);
       expect(orderToGrade(order)).toBe(grade);
@@ -189,17 +215,19 @@ describe('getGradeScalesForTypes', () => {
     expect(scales[0].label).toBe('Sport / Trad');
   });
 
-  it('returns ice scale when Ice is selected', () => {
+  it('returns ice and mixed scales when Ice is selected', () => {
     const scales = getGradeScalesForTypes(['Ice']);
-    expect(scales).toHaveLength(1);
+    expect(scales).toHaveLength(2);
     expect(scales[0].key).toBe('ice');
-    expect(scales[0].grades.length).toBe(WI_GRADES.length + MIXED_GRADES.length);
+    expect(scales[0].grades.length).toBe(WI_GRADES.length + AI_GRADES.length);
+    expect(scales[1].key).toBe('mixed');
+    expect(scales[1].grades.length).toBe(MIXED_GRADES.length);
   });
 
   it('returns multiple scales when multiple types selected', () => {
     const scales = getGradeScalesForTypes(['Boulder', 'Sport', 'Ice']);
-    expect(scales).toHaveLength(3);
-    expect(scales.map((s) => s.key)).toEqual(['boulder', 'rope', 'ice']);
+    expect(scales).toHaveLength(4);
+    expect(scales.map((s) => s.key)).toEqual(['boulder', 'rope', 'ice', 'mixed']);
   });
 
   it('returns empty for no types', () => {

@@ -6,6 +6,7 @@
  *   - V-scale (bouldering): V0 through V17
  *   - YDS (sport/trad): 5.4 through 5.15d
  *   - Ice (WI): WI1 through WI7
+ *   - Alpine Ice (AI): AI1 through AI6
  *   - Mixed (M): M1 through M13
  */
 
@@ -13,10 +14,11 @@
 export const FAMILY_V = 'v' as const;
 export const FAMILY_YDS = 'yds' as const;
 export const FAMILY_WI = 'wi' as const;
+export const FAMILY_AI = 'ai' as const;
 export const FAMILY_MIXED = 'mixed' as const;
 export const FAMILY_AID = 'aid' as const;
 
-export type GradeFamily = typeof FAMILY_V | typeof FAMILY_YDS | typeof FAMILY_WI | typeof FAMILY_MIXED | typeof FAMILY_AID;
+export type GradeFamily = typeof FAMILY_V | typeof FAMILY_YDS | typeof FAMILY_WI | typeof FAMILY_AI | typeof FAMILY_MIXED | typeof FAMILY_AID;
 
 // Ordered grade lists per family
 export const V_SCALE_GRADES = [
@@ -38,6 +40,10 @@ export const WI_GRADES = [
   'WI1', 'WI2', 'WI3', 'WI4', 'WI5', 'WI6', 'WI7',
 ] as const;
 
+export const AI_GRADES = [
+  'AI1', 'AI2', 'AI3', 'AI4', 'AI5', 'AI6',
+] as const;
+
 export const MIXED_GRADES = [
   'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9',
   'M10', 'M11', 'M12', 'M13',
@@ -48,6 +54,7 @@ const OFFSET_V = 0;
 const OFFSET_YDS = 100;
 const OFFSET_WI = 200;
 const OFFSET_MIXED = 300;
+const OFFSET_AI = 400;
 
 // Precomputed lookup map: uppercase grade → numeric order
 const gradeToOrder: Record<string, number> = {};
@@ -55,6 +62,7 @@ const gradeToOrder: Record<string, number> = {};
 V_SCALE_GRADES.forEach((g, i) => { gradeToOrder[g.toUpperCase()] = OFFSET_V + i; });
 YDS_GRADES.forEach((g, i) => { gradeToOrder[g.toUpperCase()] = OFFSET_YDS + i; });
 WI_GRADES.forEach((g, i) => { gradeToOrder[g.toUpperCase()] = OFFSET_WI + i; });
+AI_GRADES.forEach((g, i) => { gradeToOrder[g.toUpperCase()] = OFFSET_AI + i; });
 MIXED_GRADES.forEach((g, i) => { gradeToOrder[g.toUpperCase()] = OFFSET_MIXED + i; });
 
 /**
@@ -67,6 +75,7 @@ export function gradeFamily(grade: string): GradeFamily | undefined {
 
   if (g.startsWith('V') && g.length > 1 && g[1] >= '0' && g[1] <= '9') return FAMILY_V;
   if (g.startsWith('WI')) return FAMILY_WI;
+  if (g.startsWith('AI') && g.length > 2 && g[2] >= '0' && g[2] <= '9') return FAMILY_AI;
   if (g.startsWith('M') && g.length > 1 && g[1] >= '0' && g[1] <= '9') return FAMILY_MIXED;
   if (g.startsWith('A') || g.startsWith('C')) return FAMILY_AID;
   if (g.startsWith('5.')) return FAMILY_YDS;
@@ -126,6 +135,9 @@ export function gradeToOrderNum(grade: string): number {
  * Returns undefined if invalid.
  */
 export function orderToGrade(order: number): string | undefined {
+  if (order >= OFFSET_AI && order < OFFSET_AI + AI_GRADES.length) {
+    return AI_GRADES[order - OFFSET_AI];
+  }
   if (order >= OFFSET_MIXED && order < OFFSET_MIXED + MIXED_GRADES.length) {
     return MIXED_GRADES[order - OFFSET_MIXED];
   }
@@ -182,15 +194,26 @@ export function getGradeScalesForTypes(selectedTypes: string[]): GradeScale[] {
   }
 
   if (selectedTypes.includes('Ice')) {
+    // Ice scale: WI + AI grades
+    const iceGrades = [...WI_GRADES, ...AI_GRADES] as const;
     scales.push({
       key: 'ice',
       label: 'Ice',
       emoji: '🧊',
-      grades: [...WI_GRADES, ...MIXED_GRADES],
+      grades: iceGrades,
       orders: [
         ...WI_GRADES.map((_, i) => OFFSET_WI + i),
-        ...MIXED_GRADES.map((_, i) => OFFSET_MIXED + i),
+        ...AI_GRADES.map((_, i) => OFFSET_AI + i),
       ],
+    });
+
+    // Mixed scale: M grades (separate from ice)
+    scales.push({
+      key: 'mixed',
+      label: 'Mixed',
+      emoji: '🔀',
+      grades: MIXED_GRADES,
+      orders: MIXED_GRADES.map((_, i) => OFFSET_MIXED + i),
     });
   }
 

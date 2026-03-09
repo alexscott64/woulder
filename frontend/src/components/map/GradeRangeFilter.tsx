@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { ChevronDown } from 'lucide-react';
 import {
   getGradeScalesForTypes,
-  type GradeScale,
   type GradeRangeSelection,
 } from '../../utils/grades';
 

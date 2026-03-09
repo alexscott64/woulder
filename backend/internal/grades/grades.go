@@ -5,6 +5,7 @@
 //   - V-scale (bouldering): V0 through V17
 //   - YDS (sport/trad): 5.4 through 5.15d
 //   - Ice (WI): WI1 through WI7
+//   - Alpine Ice (AI): AI1 through AI6
 //   - Mixed (M): M1 through M13
 package grades
 
@@ -17,6 +18,7 @@ const (
 	FamilyV     = "v"
 	FamilyYDS   = "yds"
 	FamilyWI    = "wi"
+	FamilyAI    = "ai"
 	FamilyMixed = "mixed"
 	FamilyAid   = "aid"
 )
@@ -43,6 +45,11 @@ var wiGrades = []string{
 	"WI1", "WI2", "WI3", "WI4", "WI5", "WI6", "WI7",
 }
 
+// Ordered AI (Alpine Ice) grades.
+var aiGrades = []string{
+	"AI1", "AI2", "AI3", "AI4", "AI5", "AI6",
+}
+
 // Ordered mixed grades.
 var mixedGrades = []string{
 	"M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9",
@@ -50,19 +57,20 @@ var mixedGrades = []string{
 }
 
 // Grade order offsets per family to create a single numeric namespace.
-// V-scale: 0-17, YDS: 100-129, WI: 200-206, Mixed: 300-312
+// V-scale: 0-17, YDS: 100-129, WI: 200-206, Mixed: 300-312, AI: 400-405
 const (
 	offsetV     = 0
 	offsetYDS   = 100
 	offsetWI    = 200
 	offsetMixed = 300
+	offsetAI    = 400
 )
 
 // Precomputed lookup maps for fast grade → order conversion.
 var gradeToOrder map[string]int
 
 func init() {
-	gradeToOrder = make(map[string]int, len(vScaleGrades)+len(ydsGrades)+len(wiGrades)+len(mixedGrades))
+	gradeToOrder = make(map[string]int, len(vScaleGrades)+len(ydsGrades)+len(wiGrades)+len(aiGrades)+len(mixedGrades))
 
 	for i, g := range vScaleGrades {
 		gradeToOrder[strings.ToUpper(g)] = offsetV + i
@@ -72,6 +80,9 @@ func init() {
 	}
 	for i, g := range wiGrades {
 		gradeToOrder[strings.ToUpper(g)] = offsetWI + i
+	}
+	for i, g := range aiGrades {
+		gradeToOrder[strings.ToUpper(g)] = offsetAI + i
 	}
 	for i, g := range mixedGrades {
 		gradeToOrder[strings.ToUpper(g)] = offsetMixed + i
@@ -91,6 +102,8 @@ func Family(grade string) string {
 		return FamilyV
 	case strings.HasPrefix(g, "WI"):
 		return FamilyWI
+	case strings.HasPrefix(g, "AI") && len(g) > 2 && g[2] >= '0' && g[2] <= '9':
+		return FamilyAI
 	case strings.HasPrefix(g, "M") && len(g) > 1 && g[1] >= '0' && g[1] <= '9':
 		return FamilyMixed
 	case strings.HasPrefix(g, "A") || strings.HasPrefix(g, "C"):
@@ -157,6 +170,8 @@ func normalizeGrade(g string) string {
 // Returns empty string if the order is not valid.
 func OrderToGrade(order int) string {
 	switch {
+	case order >= offsetAI && order < offsetAI+len(aiGrades):
+		return aiGrades[order-offsetAI]
 	case order >= offsetMixed && order < offsetMixed+len(mixedGrades):
 		return mixedGrades[order-offsetMixed]
 	case order >= offsetWI && order < offsetWI+len(wiGrades):
@@ -188,6 +203,13 @@ func YDSGrades() []string {
 func WIGrades() []string {
 	result := make([]string, len(wiGrades))
 	copy(result, wiGrades)
+	return result
+}
+
+// AIGrades returns the ordered list of Alpine Ice grades.
+func AIGrades() []string {
+	result := make([]string, len(aiGrades))
+	copy(result, aiGrades)
 	return result
 }
 
