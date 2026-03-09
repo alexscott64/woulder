@@ -8,7 +8,7 @@ const (
 	// Active routes and has_subareas are not calculated to reduce query complexity.
 	// Used for initial map loads and low zoom levels where speed is critical.
 	// UPDATED: Now includes both MP ticks and Kaya ascents for comprehensive activity data.
-	// Supports grade_order range filtering via $10 (min) and $11 (max).
+	// Supports grade_order array filtering via $10 (allowed order values).
 	queryHeatMapDataLightweight = `
 		WITH combined_activity AS (
 			-- MP ticks
@@ -30,8 +30,7 @@ const (
 					AND a.longitude BETWEEN $5 AND $6
 				))
 				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int IS NULL OR r.grade_order >= $10)
-				AND ($11::int IS NULL OR r.grade_order <= $11)
+				AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
 			
 			UNION ALL
 			
@@ -58,8 +57,7 @@ const (
 				))
 				AND mr.match_confidence >= 0.60
 				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int IS NULL OR r.grade_order >= $10)
-				AND ($11::int IS NULL OR r.grade_order <= $11)
+				AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
 		)
 		SELECT
 			a.mp_area_id,
@@ -83,7 +81,7 @@ const (
 	// Includes active route counts and subarea detection for detailed clustering.
 	// Used for high zoom levels and detailed area views.
 	// UPDATED: Now includes both MP ticks and Kaya ascents for comprehensive activity data.
-	// Supports grade_order range filtering via $10 (min) and $11 (max).
+	// Supports grade_order array filtering via $10 (allowed order values).
 	queryHeatMapDataFull = `
 		WITH combined_activity AS (
 			-- MP ticks
@@ -105,8 +103,7 @@ const (
 					AND a.longitude BETWEEN $5 AND $6
 				))
 				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int IS NULL OR r.grade_order >= $10)
-				AND ($11::int IS NULL OR r.grade_order <= $11)
+				AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
 			
 			UNION ALL
 			
@@ -133,8 +130,7 @@ const (
 				))
 				AND mr.match_confidence >= 0.60
 				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int IS NULL OR r.grade_order >= $10)
-				AND ($11::int IS NULL OR r.grade_order <= $11)
+				AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
 		)
 		SELECT
 			a.mp_area_id,

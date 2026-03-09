@@ -17,7 +17,7 @@ func TestHeatMapService_GetHeatMapData(t *testing.T) {
 
 	t.Run("successfully retrieves and calculates activity scores", func(t *testing.T) {
 		mockRepo := &MockHeatMapRepository{
-			GetHeatMapDataFn: func(ctx context.Context, startDate, endDate time.Time, bounds *heatmap.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool, gradeMin, gradeMax *int) ([]models.HeatMapPoint, error) {
+			GetHeatMapDataFn: func(ctx context.Context, startDate, endDate time.Time, bounds *heatmap.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool, gradeOrders []int) ([]models.HeatMapPoint, error) {
 				return []models.HeatMapPoint{
 					{
 						MPAreaID:       1,
@@ -44,7 +44,7 @@ func TestHeatMapService_GetHeatMapData(t *testing.T) {
 		}
 
 		service := NewHeatMapService(mockRepo)
-		points, err := service.GetHeatMapData(ctx, thirtyDaysAgo, now, nil, 1, 500, nil, false, nil, nil)
+		points, err := service.GetHeatMapData(ctx, thirtyDaysAgo, now, nil, 1, 500, nil, false, nil)
 
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -74,7 +74,7 @@ func TestHeatMapService_GetHeatMapData(t *testing.T) {
 		service := NewHeatMapService(mockRepo)
 
 		// Invalid: start after end
-		_, err := service.GetHeatMapData(ctx, now, thirtyDaysAgo, nil, 1, 500, nil, false, nil, nil)
+		_, err := service.GetHeatMapData(ctx, now, thirtyDaysAgo, nil, 1, 500, nil, false, nil)
 
 		if err == nil {
 			t.Error("Expected error for invalid date range")
@@ -92,7 +92,7 @@ func TestHeatMapService_GetHeatMapData(t *testing.T) {
 			MaxLon: -120.0,
 		}
 
-		_, err := service.GetHeatMapData(ctx, thirtyDaysAgo, now, invalidBounds, 1, 500, nil, false, nil, nil)
+		_, err := service.GetHeatMapData(ctx, thirtyDaysAgo, now, invalidBounds, 1, 500, nil, false, nil)
 
 		if err == nil {
 			t.Error("Expected error for invalid bounds")

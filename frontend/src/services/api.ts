@@ -166,8 +166,7 @@ export const heatMapApi = {
     limit?: number;
     routeTypes?: string[];
     lightweight?: boolean;
-    gradeMin?: string;
-    gradeMax?: string;
+    gradeOrders?: string;
   }): Promise<HeatMapActivityResponse> => {
     const queryParams: Record<string, string | number | boolean> = {
       start_date: params.startDate.toISOString().split('T')[0],
@@ -187,8 +186,7 @@ export const heatMapApi = {
       queryParams.route_types = params.routeTypes.join(',');
     }
     if (params.lightweight !== undefined) queryParams.lightweight = params.lightweight;
-    if (params.gradeMin) queryParams.grade_min = params.gradeMin;
-    if (params.gradeMax) queryParams.grade_max = params.gradeMax;
+    if (params.gradeOrders) queryParams.grade_orders = params.gradeOrders;
 
     const response = await api.get('/heat-map/activity', {
       params: queryParams,

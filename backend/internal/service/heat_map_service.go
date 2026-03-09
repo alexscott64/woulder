@@ -26,7 +26,7 @@ func (s *HeatMapService) GetHeatMapData(
 	minActivity, limit int,
 	routeTypes []string,
 	lightweight bool,
-	gradeMin, gradeMax *int,
+	gradeOrders []int,
 ) ([]models.HeatMapPoint, error) {
 	// Validate inputs
 	if startDate.After(endDate) {
@@ -48,7 +48,7 @@ func (s *HeatMapService) GetHeatMapData(
 	}
 
 	// Fetch raw data with route type filtering, grade filtering, and lightweight option
-	points, err := s.heatMapRepo.GetHeatMapData(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight, gradeMin, gradeMax)
+	points, err := s.heatMapRepo.GetHeatMapData(ctx, startDate, endDate, bounds, minActivity, limit, routeTypes, lightweight, gradeOrders)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch heat map data: %w", err)
 	}

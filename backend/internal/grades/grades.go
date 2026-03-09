@@ -10,6 +10,7 @@
 package grades
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -238,4 +239,31 @@ func ParseGradeRange(minGrade, maxGrade string) (*int, *int) {
 	}
 
 	return minOrder, maxOrder
+}
+
+// ParseGradeOrders parses a comma-separated string of integer grade_order values.
+// Returns nil if the input is empty or contains no valid integers.
+// Example: "0,1,2,16,17,200,201" → []int{0, 1, 2, 16, 17, 200, 201}
+func ParseGradeOrders(input string) []int {
+	if input == "" {
+		return nil
+	}
+
+	parts := strings.Split(input, ",")
+	var orders []int
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		val, err := strconv.Atoi(p)
+		if err == nil && val >= 0 {
+			orders = append(orders, val)
+		}
+	}
+
+	if len(orders) == 0 {
+		return nil
+	}
+	return orders
 }

@@ -24,7 +24,7 @@ type Repository interface {
 	// GetHeatMapData returns aggregated climbing activity for geographic areas.
 	// Supports lightweight mode for clustering performance with minimal data.
 	// Route type filtering allows boulder/sport/trad specific visualizations.
-	// Grade order filtering allows min/max grade range (nil = no filter).
+	// Grade order filtering allows an array of allowed grade_order values (nil = no filter).
 	// Results are ordered by activity (tick count) descending.
 	GetHeatMapData(
 		ctx context.Context,
@@ -33,7 +33,7 @@ type Repository interface {
 		minActivity, limit int,
 		routeTypes []string,
 		lightweight bool,
-		gradeMin, gradeMax *int,
+		gradeOrders []int,
 	) ([]models.HeatMapPoint, error)
 
 	// GetAreaActivityDetail returns comprehensive activity data for a specific area.

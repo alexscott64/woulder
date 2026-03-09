@@ -226,46 +226,40 @@ export interface GradeRangeSelection {
 }
 
 /**
- * Convert grade range selections to the min/max grade strings for the API.
- * Returns the overall min and max grade strings across all active scales,
- * or undefined if everything is at full range.
+ * Convert the current grade selections + route types into API params.
+ * Returns comma-separated integer grade_order values for every selected grade
+ * across all active scales. Only scales with a non-default (narrowed) range
+ * contribute their orders; scales at full range are omitted so that routes
+ * from those families pass through unfiltered.
  */
 export function gradeRangeToApiParams(
   selections: GradeRangeSelection,
   selectedTypes: string[],
-): { gradeMin?: string; gradeMax?: string } {
+): { gradeOrders?: string } {
   const scales = getGradeScalesForTypes(selectedTypes);
   if (scales.length === 0) return {};
 
-  // Check if all scales are at full range (no filtering needed)
-  let allFullRange = true;
-  const activeOrders: number[] = [];
+  // Collect orders only from scales that have been narrowed
+  const narrowedOrders: number[] = [];
+  let hasNarrowed = false;
 
   for (const scale of scales) {
     const sel = selections[scale.key];
-    if (!sel) continue;
+    const minIdx = sel ? sel[0] : 0;
+    const maxIdx = sel ? sel[1] : scale.grades.length - 1;
+    const isFullRange = minIdx === 0 && maxIdx === scale.grades.length - 1;
 
-    const [minIdx, maxIdx] = sel;
-    if (minIdx !== 0 || maxIdx !== scale.grades.length - 1) {
-      allFullRange = false;
-    }
-
-    // Collect the order values for the selected range
-    for (let i = minIdx; i <= maxIdx; i++) {
-      activeOrders.push(scale.orders[i]);
+    if (!isFullRange) {
+      hasNarrowed = true;
+      for (let i = minIdx; i <= maxIdx; i++) {
+        narrowedOrders.push(scale.orders[i]);
+      }
     }
   }
 
-  if (allFullRange || activeOrders.length === 0) return {};
-
-  const minOrder = Math.min(...activeOrders);
-  const maxOrder = Math.max(...activeOrders);
-
-  const minGrade = orderToGrade(minOrder);
-  const maxGrade = orderToGrade(maxOrder);
+  if (!hasNarrowed) return {};
 
   return {
-    gradeMin: minGrade,
-    gradeMax: maxGrade,
+    gradeOrders: narrowedOrders.join(','),
   };
 }

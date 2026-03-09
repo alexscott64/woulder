@@ -244,35 +244,46 @@ describe('gradeRangeToApiParams', () => {
     expect(result).toEqual({});
   });
 
-  it('returns grade strings when range is narrowed', () => {
+  it('returns grade orders when range is narrowed', () => {
     const result = gradeRangeToApiParams(
-      { boulder: [3, 8] },
+      { boulder: [3, 5] },
       ['Boulder'],
     );
-    expect(result.gradeMin).toBe('V3');
-    expect(result.gradeMax).toBe('V8');
+    // V3=3, V4=4, V5=5
+    expect(result.gradeOrders).toBe('3,4,5');
   });
 
-  it('returns YDS grades for rope scale', () => {
+  it('returns YDS orders for rope scale', () => {
     const result = gradeRangeToApiParams(
-      { rope: [5, 10] },
+      { rope: [5, 7] },
       ['Sport'],
     );
-    expect(result.gradeMin).toBe('5.9');
-    expect(result.gradeMax).toBe('5.11b');
+    // YDS offset=100, indices 5-7 → orders 105,106,107
+    expect(result.gradeOrders).toBe('105,106,107');
   });
 
-  it('spans multiple families when multiple types are narrowed', () => {
+  it('only includes narrowed families, not full-range ones', () => {
     const result = gradeRangeToApiParams(
       {
         boulder: [2, 5],
-        rope: [6, 12],
+        // rope not set → full range → omitted
       },
       ['Boulder', 'Sport'],
     );
-    // Min should be V2 (order 2), Max should be 5.12a (order 114)
-    expect(result.gradeMin).toBe('V2');
-    expect(result.gradeMax).toBe('5.12a');
+    // Only boulder orders: V2=2, V3=3, V4=4, V5=5
+    expect(result.gradeOrders).toBe('2,3,4,5');
+  });
+
+  it('includes orders from multiple narrowed families', () => {
+    const result = gradeRangeToApiParams(
+      {
+        boulder: [0, 1],
+        rope: [0, 1],
+      },
+      ['Boulder', 'Sport'],
+    );
+    // V0=0, V1=1, 5.4=100, 5.5=101
+    expect(result.gradeOrders).toBe('0,1,100,101');
   });
 
   it('returns empty when no selections provided', () => {

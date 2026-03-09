@@ -45,7 +45,7 @@ func (r *PostgresRepository) GetHeatMapData(
 	minActivity, limit int,
 	routeTypes []string,
 	lightweight bool,
-	gradeMin, gradeMax *int,
+	gradeOrders []int,
 ) ([]models.HeatMapPoint, error) {
 	// Validate bounds if provided
 	if bounds != nil {
@@ -74,12 +74,18 @@ func (r *PostgresRepository) GetHeatMapData(
 		routeTypesParam = pq.Array(routeTypes)
 	}
 
+	// Convert grade orders to PostgreSQL array format
+	var gradeOrdersParam interface{}
+	if len(gradeOrders) > 0 {
+		gradeOrdersParam = pq.Array(gradeOrders)
+	}
+
 	rows, err := r.db.QueryContext(ctx, query,
 		startDate, endDate,
 		minLat, maxLat, minLon, maxLon,
 		routeTypesParam,
 		minActivity, limit,
-		gradeMin, gradeMax,
+		gradeOrdersParam,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query heat map data: %w", err)

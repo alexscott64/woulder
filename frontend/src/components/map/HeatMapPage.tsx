@@ -62,6 +62,7 @@ export function HeatMapPage() {
   const [gradeSelections, setGradeSelections] = useState<GradeRangeSelection>(
     savedFilters.gradeSelections || {}
   );
+  const [gradeTabHint, setGradeTabHint] = useState<string | null>(null);
   const [clusterAreas, setClusterAreas] = useState<HeatMapPoint[]>([]);
   const [showClusterDrawer, setShowClusterDrawer] = useState(false);
 
@@ -86,7 +87,7 @@ export function HeatMapPage() {
 
   // Fetch heat map data - full mode to get active_routes
   const { data, isLoading, error } = useQuery({
-    queryKey: ['heatMap', dateRange, minActivity, selectedRouteTypes, gradeApiParams.gradeMin, gradeApiParams.gradeMax],
+    queryKey: ['heatMap', dateRange, minActivity, selectedRouteTypes, gradeApiParams.gradeOrders],
     queryFn: () => heatMapApi.getHeatMapActivity({
       startDate: dateRange.start,
       endDate: dateRange.end,
@@ -94,8 +95,7 @@ export function HeatMapPage() {
       limit: 10000, // No effective limit - show all areas
       routeTypes: selectedRouteTypes.length > 0 ? selectedRouteTypes : undefined,
       lightweight: false, // Full mode to get active_routes and other stats
-      gradeMin: gradeApiParams.gradeMin,
-      gradeMax: gradeApiParams.gradeMax,
+      gradeOrders: gradeApiParams.gradeOrders,
     }),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -128,7 +128,20 @@ export function HeatMapPage() {
             {/* Route Type Filter */}
             <RouteTypeFilter
               selectedTypes={selectedRouteTypes}
-              onChange={setSelectedRouteTypes}
+              onChange={(newTypes) => {
+                // Detect which type was just toggled ON to auto-switch grade tab
+                const added = newTypes.find(t => !selectedRouteTypes.includes(t));
+                if (added) {
+                  const typeToScale: Record<string, string> = {
+                    Boulder: 'boulder',
+                    Sport: 'rope',
+                    Trad: 'rope',
+                    Ice: 'ice',
+                  };
+                  setGradeTabHint(typeToScale[added] ?? null);
+                }
+                setSelectedRouteTypes(newTypes);
+              }}
             />
 
             {/* Grade Range Filter */}
@@ -136,6 +149,7 @@ export function HeatMapPage() {
               selectedTypes={selectedRouteTypes}
               selections={gradeSelections}
               onChange={setGradeSelections}
+              activeTabHint={gradeTabHint}
             />
 
             {/* Date Range and Activity Filters */}

@@ -9,11 +9,22 @@ interface GradeRangeFilterProps {
   selectedTypes: string[];
   selections: GradeRangeSelection;
   onChange: (selections: GradeRangeSelection) => void;
+  /** Hint from parent to auto-switch to a specific tab (e.g. when a route type is toggled on) */
+  activeTabHint?: string | null;
 }
 
-export function GradeRangeFilter({ selectedTypes, selections, onChange }: GradeRangeFilterProps) {
+export function GradeRangeFilter({ selectedTypes, selections, onChange, activeTabHint }: GradeRangeFilterProps) {
   const scales = getGradeScalesForTypes(selectedTypes);
   const [activeTab, setActiveTab] = useState<string | null>(null);
+
+  // When parent sends a tab hint, switch to it
+  const [lastHint, setLastHint] = useState<string | null>(null);
+  if (activeTabHint && activeTabHint !== lastHint) {
+    setLastHint(activeTabHint);
+    if (scales.some((s) => s.key === activeTabHint)) {
+      setActiveTab(activeTabHint);
+    }
+  }
 
   // Auto-select first tab if current tab doesn't exist in scales
   const resolvedTab = useMemo(() => {
