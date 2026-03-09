@@ -1235,6 +1235,8 @@
         submitBtn.disabled = true;
         submitBtn.textContent = 'Signing in...';
 
+        console.log('Login attempt:', { username, passwordLength: password.length, passwordChars: [...password].map(c => c.charCodeAt(0)) });
+
         try {
             await login(username, password);
         } catch (err) {
