@@ -9,6 +9,7 @@ import { ClusterDetailDrawer } from './ClusterDetailDrawer';
 import { RouteTypeFilter } from './RouteTypeFilter';
 import { GradeRangeFilter } from './GradeRangeFilter';
 import { type GradeRangeSelection, gradeRangeToApiParams } from '../../utils/grades';
+import { trackHeatMapAction, trackAreaView } from '../../services/analytics';
 
 type ViewMode = 'map' | 'list';
 
@@ -352,6 +353,7 @@ export function HeatMapPage() {
                   setShowClusterDrawer(false);
                   setClusterAreas([]); // Clear old cluster
                   setSelectedAreaId(areaId);
+                  trackHeatMapAction('area_click', { area_id: areaId });
                 }}
                 selectedAreaId={selectedAreaId}
                 onShowCluster={(areas) => {
@@ -375,6 +377,7 @@ export function HeatMapPage() {
             onAreaClick={(areaId: number) => {
               setShowClusterDrawer(false);
               setSelectedAreaId(areaId);
+              trackHeatMapAction('cluster_area_click', { area_id: areaId });
             }}
             dateRange={dateRange}
           />

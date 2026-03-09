@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { MapPin, Globe, X, Check } from 'lucide-react';
 import { weatherApi } from '../services/api';
 import { useSettings } from '../contexts/SettingsContext';
+import { trackAreaView } from '../services/analytics';
 
 interface AreaSelectorProps {
   variant?: 'header' | 'mobile';
@@ -164,6 +165,8 @@ export default function AreaSelector({ variant = 'header' }: AreaSelectorProps) 
   const handleAreaClick = (areaId: number | null) => {
     setSelectedArea(areaId);
     setIsOpen(false);
+    const areaName = areaId ? areas.find(a => a.id === areaId)?.name || 'Unknown' : 'All Areas';
+    trackAreaView(areaId ?? 'all', areaName, 'area_filter');
   };
 
   const selectedAreaName = settings.selectedAreaId

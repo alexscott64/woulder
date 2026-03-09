@@ -5,6 +5,7 @@ import { AreaActivitySummary, SearchResult, UnifiedRouteActivitySummary } from '
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { RouteListItem } from './RouteListItem';
 import { AreaConditionCard } from './AreaConditionCard';
+import { trackAreaView, trackRouteView, trackSearch } from '../services/analytics';
 
 interface AreaDrillDownViewProps {
   locationId: number;
@@ -193,6 +194,7 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
     }
     setBreadcrumbs([...breadcrumbs, { name: area.name, areaId }]);
     setExpandedRoutes(new Set()); // Reset expanded routes when navigating
+    trackAreaView(areaId, area.name, 'area_drilldown', locationId);
   };
 
   const handleBreadcrumbClick = (index: number) => {
@@ -206,6 +208,12 @@ export function AreaDrillDownView({ locationId, locationName, searchQuery = '' }
       newExpanded.delete(routeId);
     } else {
       newExpanded.add(routeId);
+      // Track route expansion (viewing route details)
+      const allRoutes = routes || [];
+      const route = allRoutes.find((r: UnifiedRouteActivitySummary) => r.mp_route_id === routeId);
+      if (route) {
+        trackRouteView(routeId, route.name, route.source);
+      }
     }
     setExpandedRoutes(newExpanded);
   };

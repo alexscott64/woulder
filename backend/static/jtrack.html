@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sync Dashboard - Woulder</title>
+    <title>Admin</title>
     <style>
         * {
             margin: 0;
@@ -540,10 +540,109 @@
             font-size: 14px;
             color: #6b7280;
         }
+
+        /* Login Screen */
+        .login-screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: #0f172a;
+        }
+
+        .login-box {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 40px;
+            width: 100%;
+            max-width: 380px;
+            text-align: center;
+        }
+
+        .login-box h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 24px;
+        }
+
+        .login-form-group {
+            margin-bottom: 16px;
+            text-align: left;
+        }
+
+        .login-form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: #94a3b8;
+            margin-bottom: 6px;
+        }
+
+        .login-form-group input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            background: #0f172a;
+            color: #f1f5f9;
+            font-size: 14px;
+        }
+
+        .login-form-group input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 10px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+
+        .login-btn:hover { background: #2563eb; }
+        .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .login-error {
+            color: #f87171;
+            font-size: 13px;
+            margin-top: 12px;
+            min-height: 20px;
+        }
+
+        .container { display: none; }
+        .container.active { display: block; }
     </style>
 </head>
 <body>
-    <div class="container">
+
+<!-- Login Screen -->
+<div id="login-screen" class="login-screen">
+    <div class="login-box">
+        <h1>Sign in</h1>
+        <form id="login-form">
+            <div class="login-form-group">
+                <label>Username</label>
+                <input type="text" id="login-username" autocomplete="username" required>
+            </div>
+            <div class="login-form-group">
+                <label>Password</label>
+                <input type="password" id="login-password" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="login-btn" id="login-submit">Sign in</button>
+            <div class="login-error" id="login-error"></div>
+        </form>
+    </div>
+</div>
+
+    <div class="container" id="main-container">
         <!-- Header -->
         <div class="header">
             <div class="header-top">
@@ -576,13 +675,83 @@
 
     <script>
         const API_BASE = window.location.origin;
+        const AUTH_API = `${API_BASE}/api/analytics`;
+        const TOKEN_KEY = 'iglooghost_token';
         let refreshInterval = null;
         let expandedCards = new Set(); // Track which cards are expanded
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
+        // --- Auth ---
+        async function login(username, password) {
+            const res = await fetch(`${AUTH_API}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || 'Login failed');
+            }
+            const data = await res.json();
+            localStorage.setItem(TOKEN_KEY, data.token);
+            return data;
+        }
+
+        async function validateToken(token) {
+            const res = await fetch(`${AUTH_API}/metrics/summary?period=1d`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return res.ok;
+        }
+
+        function showLogin() {
+            document.getElementById('main-container').classList.remove('active');
+            document.getElementById('login-screen').style.display = 'flex';
+        }
+
+        function showDashboard() {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('main-container').classList.add('active');
             loadActiveJobs();
             startAutoRefresh();
+        }
+
+        // Login form handler
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const errorEl = document.getElementById('login-error');
+            const submitBtn = document.getElementById('login-submit');
+
+            errorEl.textContent = '';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Signing in...';
+
+            try {
+                await login(username, password);
+                showDashboard();
+            } catch (err) {
+                errorEl.textContent = err.message;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Sign in';
+            }
+        });
+
+        // Initialize - check for existing token
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (token) {
+                try {
+                    const valid = await validateToken(token);
+                    if (valid) {
+                        showDashboard();
+                        return;
+                    }
+                } catch (e) {}
+                localStorage.removeItem(TOKEN_KEY);
+            }
+            showLogin();
         });
 
         function startAutoRefresh() {

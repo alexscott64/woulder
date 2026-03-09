@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/alexscott64/woulder/backend/internal/api"
+	"github.com/alexscott64/woulder/backend/internal/api/middleware"
 	"github.com/alexscott64/woulder/backend/internal/config"
 	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/monitoring"
@@ -54,9 +55,10 @@ func main() {
 	riverServiceLayer := service.NewRiverService(db.Rivers(), riverClient)
 	boulderDryingService := service.NewBoulderDryingService(db.Boulders(), db.Weather(), db.Locations(), db.Rocks(), db.MountainProject(), weatherClient)
 	heatMapService := service.NewHeatMapService(db.HeatMap())
+	analyticsService := service.NewAnalyticsService(db.Analytics())
 
 	// Initialize API handler with services
-	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService, db.Kaya(), jobMonitor)
+	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService, analyticsService, db.Kaya(), jobMonitor)
 
 	// Start background syncs only if not disabled (e.g., in development)
 	if cfg.Server.DisableBackgroundSyncs {
@@ -148,6 +150,37 @@ func main() {
 	// Serve job monitoring dashboard at /jtrack
 	router.StaticFile("/jtrack", "./static/jtrack.html")
 	log.Printf("Job monitoring dashboard available at /jtrack")
+
+	// Serve analytics CMS dashboard at /iglooghost
+	router.StaticFile("/iglooghost", "./static/iglooghost.html")
+	log.Printf("Analytics dashboard available at /iglooghost")
+
+	// Analytics routes (event collection - no auth required)
+	analyticsGroup := router.Group("/api/analytics")
+	{
+		analyticsGroup.POST("/session", handler.CreateAnalyticsSession)
+		analyticsGroup.POST("/events", handler.TrackAnalyticsEvents)
+		analyticsGroup.POST("/heartbeat", handler.AnalyticsHeartbeat)
+		analyticsGroup.POST("/auth/login", handler.AnalyticsLogin)
+	}
+
+	// Analytics metrics routes (auth required)
+	analyticsMetrics := router.Group("/api/analytics")
+	analyticsMetrics.Use(middleware.AnalyticsAuth(analyticsService))
+	{
+		analyticsMetrics.GET("/metrics/overview", handler.GetAnalyticsOverview)
+		analyticsMetrics.GET("/metrics/visitors", handler.GetAnalyticsVisitors)
+		analyticsMetrics.GET("/metrics/pages", handler.GetAnalyticsPages)
+		analyticsMetrics.GET("/metrics/locations", handler.GetAnalyticsLocations)
+		analyticsMetrics.GET("/metrics/areas", handler.GetAnalyticsAreas)
+		analyticsMetrics.GET("/metrics/routes", handler.GetAnalyticsRoutes)
+		analyticsMetrics.GET("/metrics/features", handler.GetAnalyticsFeatures)
+		analyticsMetrics.GET("/metrics/geography", handler.GetAnalyticsGeography)
+		analyticsMetrics.GET("/metrics/devices", handler.GetAnalyticsDevices)
+		analyticsMetrics.GET("/metrics/referrers", handler.GetAnalyticsReferrers)
+		analyticsMetrics.GET("/sessions", handler.GetAnalyticsSessions)
+		analyticsMetrics.GET("/sessions/:session_id/events", handler.GetAnalyticsSessionEvents)
+	}
 
 	// Start server
 	log.Printf("Starting Woulder API server on port %s", cfg.Server.Port)

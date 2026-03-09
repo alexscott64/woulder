@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+
+        /* Login Screen */
+        .login-screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
+
+        .login-box {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 48px;
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        .login-box h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 24px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #e2e8f0;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus {
+            border-color: #3b82f6;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 8px;
+            transition: background 0.2s;
+        }
+
+        .login-btn:hover { background: #2563eb; }
+        .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .login-error {
+            color: #f87171;
+            font-size: 13px;
+            margin-top: 12px;
+        }
+
+        /* Dashboard Layout */
+        .dashboard { display: none; }
+        .dashboard.active { display: block; }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .header-left h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+
+        .header-left .subtitle {
+            color: #64748b;
+            font-size: 13px;
+            margin-top: 2px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .period-selector {
+            display: flex;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .period-btn {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .period-btn:hover { color: #e2e8f0; background: #334155; }
+        .period-btn.active { color: #3b82f6; background: #1e3a5f; }
+
+        .refresh-btn, .logout-btn {
+            padding: 8px 16px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #94a3b8;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .refresh-btn:hover { background: #334155; color: #e2e8f0; }
+        .logout-btn:hover { background: #7f1d1d; border-color: #991b1b; color: #fca5a5; }
+
+        /* Nav Tabs */
+        .nav-tabs {
+            display: flex;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            padding: 4px;
+            margin-bottom: 24px;
+            overflow-x: auto;
+            gap: 2px;
+        }
+
+        .nav-tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            color: #94a3b8;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.15s;
+        }
+
+        .nav-tab:hover { color: #e2e8f0; background: #334155; }
+        .nav-tab.active { color: #3b82f6; background: #172554; }
+
+        /* Summary Cards */
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .stat-card .label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+
+        .stat-card .subtext {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+
+        /* Content Panels */
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .card h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 16px;
+        }
+
+        /* Tables */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table th {
+            text-align: left;
+            padding: 10px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #334155;
+        }
+
+        .data-table td {
+            padding: 10px 12px;
+            font-size: 14px;
+            color: #cbd5e1;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .data-table tr:hover td {
+            background: #0f172a;
+        }
+
+        /* Progress Bars */
+        .bar-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .bar-bg {
+            flex: 1;
+            height: 6px;
+            background: #334155;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+
+        .bar-fill.blue { background: #3b82f6; }
+        .bar-fill.green { background: #22c55e; }
+        .bar-fill.purple { background: #a855f7; }
+        .bar-fill.amber { background: #f59e0b; }
+        .bar-fill.rose { background: #f43f5e; }
+        .bar-fill.cyan { background: #06b6d4; }
+
+        .bar-value {
+            font-size: 13px;
+            font-weight: 600;
+            color: #94a3b8;
+            min-width: 40px;
+            text-align: right;
+        }
+
+        /* Rank List */
+        .rank-list { list-style: none; }
+
+        .rank-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .rank-item:last-child { border: none; }
+
+        .rank-pos {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+
+        .rank-pos.gold { background: #422006; color: #fbbf24; }
+        .rank-pos.silver { background: #1c1917; color: #a8a29e; }
+        .rank-pos.bronze { background: #431407; color: #fb923c; }
+        .rank-pos.normal { background: #1e293b; color: #64748b; }
+
+        .rank-name {
+            flex: 1;
+            font-size: 14px;
+            color: #e2e8f0;
+            font-weight: 500;
+        }
+
+        .rank-count {
+            font-size: 14px;
+            font-weight: 600;
+            color: #94a3b8;
+        }
+
+        /* Grid layouts */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 16px;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2, .grid-3 { grid-template-columns: 1fr; }
+            .container { padding: 16px; }
+            .header { flex-direction: column; align-items: flex-start; }
+        }
+
+        /* Session list */
+        .session-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-bottom: 1px solid #1e293b;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .session-item:hover { background: #0f172a; border-radius: 8px; }
+
+        .session-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .session-icon.desktop { background: #172554; }
+        .session-icon.mobile { background: #14532d; }
+        .session-icon.tablet { background: #422006; }
+
+        .session-info { flex: 1; }
+
+        .session-info .top {
+            font-size: 13px;
+            font-weight: 500;
+            color: #e2e8f0;
+        }
+
+        .session-info .bottom {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        .session-meta {
+            text-align: right;
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .session-meta .events {
+            font-weight: 600;
+            color: #3b82f6;
+        }
+
+        /* Visitors chart (simple bar chart) */
+        .bar-chart {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 120px;
+            padding-top: 16px;
+        }
+
+        .bar-chart-bar {
+            flex: 1;
+            min-width: 0;
+            background: #3b82f6;
+            border-radius: 2px 2px 0 0;
+            transition: height 0.5s ease;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .bar-chart-bar:hover {
+            background: #60a5fa;
+        }
+
+        .chart-labels {
+            display: flex;
+            gap: 2px;
+            margin-top: 4px;
+        }
+
+        .chart-labels span {
+            flex: 1;
+            text-align: center;
+            font-size: 10px;
+            color: #475569;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid #334155;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Badge */
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-blue { background: #172554; color: #60a5fa; }
+        .badge-green { background: #14532d; color: #4ade80; }
+        .badge-amber { background: #422006; color: #fbbf24; }
+        .badge-red { background: #450a0a; color: #f87171; }
+
+        /* Tooltip */
+        .tooltip {
+            position: fixed;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 12px;
+            color: #e2e8f0;
+            pointer-events: none;
+            z-index: 1000;
+            display: none;
+        }
+
+        /* Event timeline */
+        .event-timeline-item {
+            display: flex;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #1e293b;
+            font-size: 13px;
+        }
+
+        .event-time {
+            color: #64748b;
+            min-width: 70px;
+            flex-shrink: 0;
+        }
+
+        .event-type {
+            font-weight: 600;
+            min-width: 100px;
+            flex-shrink: 0;
+        }
+
+        .event-name { color: #cbd5e1; }
+
+        .event-meta {
+            color: #475569;
+            font-size: 12px;
+            margin-left: auto;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="login-screen" class="login-screen">
+    <div class="login-box">
+        <h1>Sign in</h1>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="login-username" autocomplete="username" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="login-password" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="login-btn" id="login-submit">Sign in</button>
+            <div class="login-error" id="login-error"></div>
+        </form>
+    </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard" class="dashboard">
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <h1>👻 iglooghost</h1>
+                <div class="subtitle">Woulder Analytics &mdash; <span id="last-updated"></span></div>
+            </div>
+            <div class="header-right">
+                <div class="period-selector">
+                    <button class="period-btn active" data-period="7d">7d</button>
+                    <button class="period-btn" data-period="30d">30d</button>
+                    <button class="period-btn" data-period="90d">90d</button>
+                </div>
+                <button class="refresh-btn" onclick="refreshAll()">&#x21bb; Refresh</button>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="summary-cards" id="summary-cards">
+            <div class="stat-card">
+                <div class="label">Unique Visitors</div>
+                <div class="value" id="stat-visitors">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Total Sessions</div>
+                <div class="value" id="stat-sessions">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Page Views</div>
+                <div class="value" id="stat-pageviews">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Bounce Rate</div>
+                <div class="value" id="stat-bounce">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Avg Duration</div>
+                <div class="value" id="stat-duration">—</div>
+            </div>
+        </div>
+
+        <!-- Nav Tabs -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-tab="overview">Overview</button>
+            <button class="nav-tab" data-tab="locations">Locations</button>
+            <button class="nav-tab" data-tab="areas">Areas</button>
+            <button class="nav-tab" data-tab="routes">Routes</button>
+            <button class="nav-tab" data-tab="features">Features</button>
+            <button class="nav-tab" data-tab="geography">Geography</button>
+            <button class="nav-tab" data-tab="devices">Devices</button>
+            <button class="nav-tab" data-tab="sessions">Sessions</button>
+        </div>
+
+        <!-- Overview Panel -->
+        <div class="panel active" id="panel-overview">
+            <div class="grid-2">
+                <div class="card">
+                    <h3>Visitors Over Time</h3>
+                    <div id="visitors-chart" class="bar-chart"></div>
+                    <div id="visitors-labels" class="chart-labels"></div>
+                </div>
+                <div class="card">
+                    <h3>Top Pages</h3>
+                    <div id="top-pages"></div>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <h3>Top Referrers</h3>
+                    <div id="referrers-list"></div>
+                </div>
+                <div class="card">
+                    <h3>Feature Usage</h3>
+                    <div id="features-overview"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Locations Panel -->
+        <div class="panel" id="panel-locations">
+            <div class="card">
+                <h3>Top Climbing Locations Viewed</h3>
+                <div id="locations-list">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Areas Panel -->
+        <div class="panel" id="panel-areas">
+            <div class="card">
+                <h3>Top Areas Explored</h3>
+                <div id="areas-list">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Routes Panel -->
+        <div class="panel" id="panel-routes">
+            <div class="card">
+                <h3>Top Routes Viewed</h3>
+                <div id="routes-list">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Features Panel -->
+        <div class="panel" id="panel-features">
+            <div class="card">
+                <h3>Feature Usage Breakdown</h3>
+                <div id="features-full">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Geography Panel -->
+        <div class="panel" id="panel-geography">
+            <div class="card">
+                <h3>Visitor Geography</h3>
+                <div id="geography-list">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Devices Panel -->
+        <div class="panel" id="panel-devices">
+            <div class="grid-3">
+                <div class="card">
+                    <h3>Device Types</h3>
+                    <div id="device-types"></div>
+                </div>
+                <div class="card">
+                    <h3>Browsers</h3>
+                    <div id="browsers-list"></div>
+                </div>
+                <div class="card">
+                    <h3>Operating Systems</h3>
+                    <div id="os-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sessions Panel -->
+        <div class="panel" id="panel-sessions">
+            <div class="card">
+                <h3>Recent Sessions</h3>
+                <div id="sessions-list">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+            <div class="card" id="session-detail-card" style="display:none">
+                <h3>Session Events <button onclick="closeSessionDetail()" style="float:right;background:#334155;border:none;color:#94a3b8;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px">Close</button></h3>
+                <div id="session-events"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+    // --- State ---
+    let token = localStorage.getItem('iglooghost_token');
+    let currentPeriod = '7d';
+    let currentTab = 'overview';
+
+    const API_BASE = window.location.origin + '/api/analytics';
+
+    // --- Auth ---
+    async function login(username, password) {
+        const res = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || 'Login failed');
+        }
+
+        const data = await res.json();
+        token = data.token;
+        localStorage.setItem('iglooghost_token', token);
+        showDashboard();
+    }
+
+    function logout() {
+        token = null;
+        localStorage.removeItem('iglooghost_token');
+        document.getElementById('dashboard').classList.remove('active');
+        document.getElementById('login-screen').style.display = 'flex';
+    }
+
+    async function authFetch(url) {
+        const res = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (res.status === 401) {
+            logout();
+            throw new Error('Session expired');
+        }
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+    }
+
+    // --- Dashboard ---
+    function showDashboard() {
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('dashboard').classList.add('active');
+        refreshAll();
+    }
+
+    async function refreshAll() {
+        document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+        try {
+            await Promise.all([
+                loadOverview(),
+                loadCurrentTab()
+            ]);
+        } catch (e) {
+            console.error('Refresh error:', e);
+        }
+    }
+
+    async function loadOverview() {
+        try {
+            const data = await authFetch(`${API_BASE}/metrics/overview?period=${currentPeriod}`);
+            document.getElementById('stat-visitors').textContent = fmt(data.unique_visitors);
+            document.getElementById('stat-sessions').textContent = fmt(data.total_sessions);
+            document.getElementById('stat-pageviews').textContent = fmt(data.total_page_views);
+            document.getElementById('stat-bounce').textContent = data.bounce_rate.toFixed(1) + '%';
+            document.getElementById('stat-duration').textContent = fmtDuration(data.avg_session_duration_seconds);
+        } catch (e) {
+            console.error('Failed to load overview:', e);
+        }
+    }
+
+    async function loadCurrentTab() {
+        switch (currentTab) {
+            case 'overview': await loadOverviewCharts(); break;
+            case 'locations': await loadLocations(); break;
+            case 'areas': await loadAreas(); break;
+            case 'routes': await loadRoutes(); break;
+            case 'features': await loadFeaturesFull(); break;
+            case 'geography': await loadGeography(); break;
+            case 'devices': await loadDevices(); break;
+            case 'sessions': await loadSessions(); break;
+        }
+    }
+
+    // --- Overview Tab ---
+    async function loadOverviewCharts() {
+        try {
+            const [visitors, pages, referrers, features] = await Promise.all([
+                authFetch(`${API_BASE}/metrics/visitors?period=${currentPeriod}`),
+                authFetch(`${API_BASE}/metrics/pages?period=${currentPeriod}&limit=10`),
+                authFetch(`${API_BASE}/metrics/referrers?period=${currentPeriod}&limit=10`),
+                authFetch(`${API_BASE}/metrics/features?period=${currentPeriod}&limit=8`)
+            ]);
+
+            renderVisitorsChart(visitors.data_points || []);
+            renderRankList('top-pages', (pages.pages || []).map(p => ({ name: p.page_path, count: p.view_count })), 'blue');
+            renderRankList('referrers-list', (referrers.referrers || []).map(r => ({ name: r.referrer || 'Direct', count: r.session_count })), 'purple');
+            renderBarList('features-overview', (features.features || []).map(f => ({ name: f.event_name, count: f.use_count })), 'green');
+        } catch (e) {
+            console.error('Failed to load overview charts:', e);
+        }
+    }
+
+    // --- Locations Tab ---
+    async function loadLocations() {
+        const el = document.getElementById('locations-list');
+        el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        try {
+            const data = await authFetch(`${API_BASE}/metrics/locations?period=${currentPeriod}&limit=25`);
+            const items = data.locations || [];
+            if (items.length === 0) {
+                el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No location data yet</p>';
+                return;
+            }
+            const maxCount = Math.max(...items.map(i => i.view_count));
+            renderBarList('locations-list', items.map(l => ({ name: l.location_name, count: l.view_count })), 'blue', maxCount);
+        } catch (e) {
+            el.innerHTML = '<p style="color:#f87171">Failed to load locations</p>';
+        }
+    }
+
+    // --- Areas Tab ---
+    async function loadAreas() {
+        const el = document.getElementById('areas-list');
+        el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        try {
+            const data = await authFetch(`${API_BASE}/metrics/areas?period=${currentPeriod}&limit=25`);
+            const items = data.areas || [];
+            if (items.length === 0) {
+                el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No area data yet</p>';
+                return;
+            }
+            const maxCount = Math.max(...items.map(i => i.view_count));
+            renderBarList('areas-list', items.map(a => ({ name: a.area_name, count: a.view_count })), 'green', maxCount);
+        } catch (e) {
+            el.innerHTML = '<p style="color:#f87171">Failed to load areas</p>';
+        }
+    }
+
+    // --- Routes Tab ---
+    async function loadRoutes() {
+        const el = document.getElementById('routes-list');
+        el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        try {
+            const data = await authFetch(`${API_BASE}/metrics/routes?period=${currentPeriod}&limit=25`);
+            const items = data.routes || [];
+            if (items.length === 0) {
+                el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No route data yet</p>';
+                return;
+            }
+            const maxCount = Math.max(...items.map(i => i.view_count));
+            renderBarList('routes-list', items.map(r => ({ name: r.route_name, count: r.view_count })), 'amber', maxCount);
+        } catch (e) {
+            el.innerHTML = '<p style="color:#f87171">Failed to load routes</p>';
+        }
+    }
+
+    // --- Features Tab ---
+    async function loadFeaturesFull() {
+        const el = document.getElementById('features-full');
+        el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        try {
+            const data = await authFetch(`${API_BASE}/metrics/features?period=${currentPeriod}&limit=30`);
+            const items = data.features || [];
+            if (items.length === 0) {
+                el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No feature data yet</p>';
+                return;
+            }
+            const maxCount = Math.max(...items.map(i => i.use_count));
+            el.innerHTML = '';
+            const table = document.createElement('table');
+            table.className = 'data-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>Feature / Event</th>
+                        <th>Type</th>
+                        <th style="width:40%">Usage</th>
+                        <th style="text-align:right">Count</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${items.map(f => `
+                        <tr>
+                            <td style="font-weight:500">${esc(f.event_name)}</td>
+                            <td><span class="badge badge-blue">${esc(f.event_type)}</span></td>
+                            <td>
+                                <div class="bar-container">
+                                    <div class="bar-bg"><div class="bar-fill purple" style="width:${(f.use_count/maxCount*100).toFixed(1)}%"></div></div>
+                                </div>
+                            </td>
+                            <td style="text-align:right;font-weight:600">${fmt(f.use_count)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            el.appendChild(table);
+        } catch (e) {
+            el.innerHTML = '<p style="color:#f87171">Failed to load features</p>';
+        }
+    }
+
+    // --- Geography Tab ---
+    async function loadGeography() {
+        const el = document.getElementById('geography-list');
+        el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        try {
+            const data = await authFetch(`${API_BASE}/metrics/geography?period=${currentPeriod}&limit=25`);
+            const items = data.locations || [];
+            if (items.length === 0) {
+                el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No geography data yet</p>';
+                return;
+            }
+            el.innerHTML = '';
+            const table = document.createElement('table');
+            table.className = 'data-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Country</th>
+                        <th>City</th>
+                        <th style="text-align:right">Visitors</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${items.map((g, i) => `
+                        <tr>
+                            <td style="color:#64748b">${i + 1}</td>
+                            <td style="font-weight:500">${esc(g.country || 'Unknown')}</td>
+                            <td>${esc(g.city || 'Unknown')}</td>
+                            <td style="text-align:right;font-weight:600">${fmt(g.visitor_count)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            el.appendChild(table);
+        } catch (e) {
+            el.innerHTML = '<p style="color:#f87171">Failed to load geography</p>';
+        }
+    }
+
+    // --- Devices Tab ---
+    async function loadDevices() {
+        try {
+            const data = await authFetch(`${API_BASE}/metrics/devices?period=${currentPeriod}`);
+            const d = data.breakdown || {};
+            renderDonutList('device-types', (d.device_types || []).map(x => ({ name: x.device_type || 'Unknown', count: x.count })), 'blue');
+            renderDonutList('browsers-list', (d.browsers || []).map(x => ({ name: x.browser || 'Unknown', count: x.count })), 'purple');
+            renderDonutList('os-list', (d.operating_systems || []).map(x => ({ name: x.os || 'Unknown', count: x.count })), 'green');
+        } catch (e) {
+            console.error('Failed to load devices:', e);
+        }
+    }
+
+    // --- Sessions Tab ---
+    async function loadSessions() {
+        const el = document.getElementById('sessions-list');
+        el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        try {
+            const data = await authFetch(`${API_BASE}/sessions?period=${currentPeriod}&limit=50`);
+            const sessions = data.sessions || [];
+            if (sessions.length === 0) {
+                el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No sessions yet</p>';
+                return;
+            }
+            el.innerHTML = sessions.map(s => {
+                const device = (s.device_type || 'desktop').toLowerCase();
+                const icon = device === 'mobile' ? '📱' : device === 'tablet' ? '📋' : '💻';
+                const iconClass = device === 'mobile' ? 'mobile' : device === 'tablet' ? 'tablet' : 'desktop';
+                const time = new Date(s.started_at).toLocaleString();
+                const duration = s.duration_seconds ? fmtDuration(s.duration_seconds) : '—';
+                return `
+                    <div class="session-item" onclick="loadSessionEvents('${esc(s.session_id)}')">
+                        <div class="session-icon ${iconClass}">${icon}</div>
+                        <div class="session-info">
+                            <div class="top">${esc(s.browser || 'Unknown')} on ${esc(s.os || 'Unknown')}</div>
+                            <div class="bottom">${esc(s.country || '')} ${esc(s.city || '')} &middot; ${esc(s.visitor_id || '').substring(0, 8)}</div>
+                        </div>
+                        <div class="session-meta">
+                            <div>${time}</div>
+                            <div>${duration} &middot; <span class="events">${s.event_count || 0} events</span></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch (e) {
+            el.innerHTML = '<p style="color:#f87171">Failed to load sessions</p>';
+        }
+    }
+
+    async function loadSessionEvents(sessionId) {
+        const card = document.getElementById('session-detail-card');
+        const el = document.getElementById('session-events');
+        card.style.display = 'block';
+        el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        card.scrollIntoView({ behavior: 'smooth' });
+
+        try {
+            const data = await authFetch(`${API_BASE}/sessions/${sessionId}/events`);
+            const events = data.events || [];
+            if (events.length === 0) {
+                el.innerHTML = '<p style="color:#64748b">No events recorded</p>';
+                return;
+            }
+            el.innerHTML = events.map(e => {
+                const time = new Date(e.created_at).toLocaleTimeString();
+                const typeColor = getEventColor(e.event_type);
+                const meta = e.metadata ? Object.entries(e.metadata).map(([k,v]) => `${k}: ${v}`).join(', ') : '';
+                return `
+                    <div class="event-timeline-item">
+                        <div class="event-time">${time}</div>
+                        <div class="event-type" style="color:${typeColor}">${esc(e.event_type)}</div>
+                        <div class="event-name">${esc(e.event_name)}</div>
+                        <div class="event-meta">${esc(meta)}</div>
+                    </div>
+                `;
+            }).join('');
+        } catch (e) {
+            el.innerHTML = '<p style="color:#f87171">Failed to load events</p>';
+        }
+    }
+
+    function closeSessionDetail() {
+        document.getElementById('session-detail-card').style.display = 'none';
+    }
+
+    // --- Rendering Helpers ---
+    function renderVisitorsChart(dataPoints) {
+        const container = document.getElementById('visitors-chart');
+        const labels = document.getElementById('visitors-labels');
+        if (!dataPoints || dataPoints.length === 0) {
+            container.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No visitor data</p>';
+            labels.innerHTML = '';
+            return;
+        }
+
+        const maxVisitors = Math.max(...dataPoints.map(d => d.visitors), 1);
+        container.innerHTML = dataPoints.map((d, i) => {
+            const h = Math.max((d.visitors / maxVisitors) * 100, 2);
+            return `<div class="bar-chart-bar" style="height:${h}%" title="${d.date}: ${d.visitors} visitors" data-idx="${i}"></div>`;
+        }).join('');
+
+        // Show every nth label to avoid crowding
+        const step = Math.ceil(dataPoints.length / 7);
+        labels.innerHTML = dataPoints.map((d, i) => {
+            const label = i % step === 0 ? formatShortDate(d.date) : '';
+            return `<span>${label}</span>`;
+        }).join('');
+    }
+
+    function renderRankList(elementId, items, color) {
+        const el = document.getElementById(elementId);
+        if (!items || items.length === 0) {
+            el.innerHTML = '<p style="color:#64748b;padding:8px">No data yet</p>';
+            return;
+        }
+        el.innerHTML = '<ul class="rank-list">' + items.map((item, i) => {
+            const posClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : 'normal';
+            return `
+                <li class="rank-item">
+                    <span class="rank-pos ${posClass}">${i + 1}</span>
+                    <span class="rank-name">${esc(item.name)}</span>
+                    <span class="rank-count">${fmt(item.count)}</span>
+                </li>
+            `;
+        }).join('') + '</ul>';
+    }
+
+    function renderBarList(elementId, items, color, maxCount) {
+        const el = document.getElementById(elementId);
+        if (!items || items.length === 0) {
+            el.innerHTML = '<p style="color:#64748b;padding:8px">No data yet</p>';
+            return;
+        }
+        const max = maxCount || Math.max(...items.map(i => i.count));
+        el.innerHTML = items.map(item => `
+            <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #1e293b">
+                <span style="flex:1;font-size:14px;color:#e2e8f0;font-weight:500">${esc(item.name)}</span>
+                <div class="bar-container" style="width:40%">
+                    <div class="bar-bg"><div class="bar-fill ${color}" style="width:${(item.count/max*100).toFixed(1)}%"></div></div>
+                    <span class="bar-value">${fmt(item.count)}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderDonutList(elementId, items, color) {
+        const el = document.getElementById(elementId);
+        if (!items || items.length === 0) {
+            el.innerHTML = '<p style="color:#64748b;padding:8px">No data yet</p>';
+            return;
+        }
+        const total = items.reduce((s, i) => s + i.count, 0);
+        const colors = ['blue', 'purple', 'green', 'amber', 'rose', 'cyan'];
+        el.innerHTML = items.map((item, i) => {
+            const pct = total > 0 ? ((item.count / total) * 100).toFixed(1) : '0';
+            const c = colors[i % colors.length];
+            return `
+                <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #1e293b">
+                    <span style="flex:1;font-size:14px;color:#e2e8f0;font-weight:500">${esc(item.name)}</span>
+                    <div class="bar-container" style="width:50%">
+                        <div class="bar-bg"><div class="bar-fill ${c}" style="width:${pct}%"></div></div>
+                        <span class="bar-value">${pct}%</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // --- Utilities ---
+    function fmt(n) {
+        if (n === undefined || n === null) return '—';
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+        if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+        return n.toLocaleString();
+    }
+
+    function fmtDuration(seconds) {
+        if (!seconds || seconds < 0) return '0s';
+        if (seconds < 60) return Math.round(seconds) + 's';
+        if (seconds < 3600) return Math.round(seconds / 60) + 'm ' + Math.round(seconds % 60) + 's';
+        return Math.round(seconds / 3600) + 'h ' + Math.round((seconds % 3600) / 60) + 'm';
+    }
+
+    function formatShortDate(dateStr) {
+        if (!dateStr) return '';
+        const d = new Date(dateStr);
+        return (d.getMonth() + 1) + '/' + d.getDate();
+    }
+
+    function esc(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(String(str)));
+        return div.innerHTML;
+    }
+
+    function getEventColor(type) {
+        switch (type) {
+            case 'page_view': return '#3b82f6';
+            case 'location_view': return '#22c55e';
+            case 'area_view': return '#a855f7';
+            case 'route_view': return '#f59e0b';
+            case 'modal_open': return '#06b6d4';
+            case 'heatmap': return '#f43f5e';
+            case 'search': return '#fb923c';
+            case 'settings': return '#94a3b8';
+            default: return '#64748b';
+        }
+    }
+
+    // --- Event Handlers ---
+    // Period selector
+    document.querySelectorAll('.period-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentPeriod = btn.dataset.period;
+            refreshAll();
+        });
+    });
+
+    // Nav tabs
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            currentTab = tab.dataset.tab;
+            document.getElementById('panel-' + currentTab).classList.add('active');
+            loadCurrentTab();
+        });
+    });
+
+    // Login form
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('login-username').value;
+        const password = document.getElementById('login-password').value;
+        const errorEl = document.getElementById('login-error');
+        const submitBtn = document.getElementById('login-submit');
+
+        errorEl.textContent = '';
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Signing in...';
+
+        try {
+            await login(username, password);
+        } catch (err) {
+            errorEl.textContent = err.message;
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Sign In';
+        }
+    });
+
+    // --- Init ---
+    if (token) {
+        // Validate token by making a test request
+        authFetch(`${API_BASE}/metrics/overview?period=7d`)
+            .then(() => showDashboard())
+            .catch(() => {
+                // Token invalid, show login
+                localStorage.removeItem('iglooghost_token');
+                token = null;
+            });
+    }
+</script>
+
+</body>
+</html>

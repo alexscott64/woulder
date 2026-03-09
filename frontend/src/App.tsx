@@ -10,6 +10,7 @@ import { getConditionColor } from './components/weather/weatherDisplay';
 import { RefreshCw, WifiOff, ChevronUp, Settings, Github, Heart, Mail, Map, Cloud } from 'lucide-react';
 import { format } from 'date-fns';
 import { HeatMapPage } from './components/map/HeatMapPage';
+import { trackPageView, trackLocationView, trackModalOpen, trackEvent } from './services/analytics';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,6 +36,11 @@ function Dashboard() {
   const [expandedLocationId, setExpandedLocationId] = useState<number | null>(null);
   const [expandedTodayCondition, setExpandedTodayCondition] = useState<'good' | 'marginal' | 'bad' | 'do_not_climb' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+
+  // Track initial page view on mount
+  useEffect(() => {
+    trackPageView(viewMode === 'weather' ? 'weather_dashboard' : 'activity_map', { initial: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   
   // Load last viewed tab from localStorage
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -46,6 +52,7 @@ function Dashboard() {
   const handleViewModeChange = (mode: ViewMode) => {
     setViewMode(mode);
     localStorage.setItem('woulder-last-tab', mode);
+    trackPageView(mode === 'weather' ? 'weather_dashboard' : 'activity_map', { view_mode: mode });
   };
 
   // Monitor online/offline status

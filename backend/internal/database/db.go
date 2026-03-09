@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/alexscott64/woulder/backend/internal/database/analytics"
 	"github.com/alexscott64/woulder/backend/internal/database/areas"
 	"github.com/alexscott64/woulder/backend/internal/database/boulders"
 	"github.com/alexscott64/woulder/backend/internal/database/climbing"
@@ -208,6 +209,11 @@ func (db *Database) MountainProject() mountainproject.Repository {
 // Kaya returns the Kaya repository for Kaya data operations.
 func (db *Database) Kaya() kaya.Repository {
 	return kaya.NewPostgresRepository(db.conn)
+}
+
+// Analytics returns the analytics repository for site tracking operations.
+func (db *Database) Analytics() analytics.Repository {
+	return analytics.NewPostgresRepository(db.conn)
 }
 
 // Legacy wrapper methods for backward compatibility

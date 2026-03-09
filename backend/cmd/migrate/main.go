@@ -23,14 +23,21 @@ type Migration struct {
 
 func main() {
 	// Load .env file if it exists
-	// Try loading from backend/.env first (when running from backend/cmd/migrate)
-	envPath := ".env"
-	if err := godotenv.Load(envPath); err != nil {
-		// Try loading from project root (when running from backend directory)
-		envPath = filepath.Join("..", ".env")
-		if err := godotenv.Load(envPath); err != nil {
-			log.Println("Warning: .env file not found, using environment variables")
+	// Try multiple paths depending on working directory
+	envPaths := []string{
+		".env",                            // current directory
+		filepath.Join("..", ".env"),       // one level up (e.g., from cmd/)
+		filepath.Join("..", "..", ".env"), // two levels up (e.g., from cmd/migrate/)
+	}
+	envLoaded := false
+	for _, envPath := range envPaths {
+		if err := godotenv.Load(envPath); err == nil {
+			envLoaded = true
+			break
 		}
+	}
+	if !envLoaded {
+		log.Println("Warning: .env file not found, using environment variables")
 	}
 
 	// Get database connection details from environment

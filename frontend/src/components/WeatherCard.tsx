@@ -9,6 +9,7 @@ import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, Chev
 import { useState, useEffect, useMemo } from 'react';
 import { ConditionsModal } from './ConditionsModal';
 import { RecentActivityModal } from './RecentActivityModal';
+import { trackLocationView, trackModalOpen } from '../services/analytics';
 
 interface WeatherCardProps {
   forecast: WeatherForecast;
@@ -101,6 +102,15 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
       }
     }
     setShowConditionsModal(true);
+    trackModalOpen('conditions', { location_id: location.id, location_name: location.name });
+  };
+
+  // Track location expand/collapse
+  const handleToggleExpand = (expanded: boolean, todayLevel?: 'good' | 'marginal' | 'bad' | 'do_not_climb') => {
+    if (expanded) {
+      trackLocationView(location.id, location.name);
+    }
+    onToggleExpand(expanded, todayLevel);
   };
 
   // Count total conditions
@@ -200,7 +210,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
               {/* Recent Activity Button */}
               {climb_history && climb_history.length > 0 && (
                 <button
-                  onClick={() => setShowRecentActivityModal(true)}
+                  onClick={() => { setShowRecentActivityModal(true); trackModalOpen('recent_activity', { location_id: location.id, location_name: location.name }); }}
                   className="group relative inline-flex items-center justify-center p-1.5 rounded-md border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all"
                   title={`View ${climb_history.length} recent ${climb_history.length === 1 ? 'climb' : 'climbs'}`}
                 >
@@ -356,7 +366,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
       {/* Expandable Forecast Section */}
       <button
-        onClick={() => onToggleExpand(!isExpanded, todayCondition.level)}
+        onClick={() => handleToggleExpand(!isExpanded, todayCondition.level)}
         className={`w-full px-6 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
           isExpanded
             ? `${conditionColor.replace('bg-', 'bg-opacity-20 bg-')} text-gray-900 dark:text-white border-b-0`

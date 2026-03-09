@@ -1,5 +1,6 @@
 import { X, Moon, Sun, Settings } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
+import { trackSettingsChange, trackModalOpen } from '../services/analytics';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -7,6 +8,9 @@ interface SettingsModalProps {
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const { settings, toggleDarkMode } = useSettings();
+
+  // Track modal open on mount
+  trackModalOpen('settings');
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -49,7 +53,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
               </div>
               <button
-                onClick={toggleDarkMode}
+                onClick={() => { toggleDarkMode(); trackSettingsChange('dark_mode', !settings.darkMode); }}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   settings.darkMode ? 'bg-indigo-600' : 'bg-gray-300'
                 }`}
