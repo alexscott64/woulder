@@ -68,8 +68,9 @@ export function GradeRangeFilter({ selectedTypes, selections, onChange, activeTa
   };
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
+    <div className="space-y-1.5">
+      {/* Row 1: Label + tabs */}
+      <div className="flex items-center gap-2 flex-wrap">
         <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex-shrink-0">
           Grades
           {hasActiveFilter && (
@@ -79,7 +80,7 @@ export function GradeRangeFilter({ selectedTypes, selections, onChange, activeTa
 
         {/* Tabs for each grade family */}
         {scales.length > 1 && (
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-wrap">
             {scales.map((scale) => {
               const isActive = scale.key === resolvedTab;
               const scaleHasFilter = (() => {
@@ -116,31 +117,31 @@ export function GradeRangeFilter({ selectedTypes, selections, onChange, activeTa
             {activeScale.label}
           </span>
         )}
+      </div>
 
-        {/* Min / Max dropdowns */}
-        <div className="flex items-center gap-1 ml-auto">
-          <GradeSelect
-            grades={activeScale.grades}
-            value={minIdx}
-            onChange={handleMinChange}
-            label="Min grade"
-          />
-          <span className="text-xs text-gray-400 dark:text-gray-500">–</span>
-          <GradeSelect
-            grades={activeScale.grades}
-            value={maxIdx}
-            onChange={handleMaxChange}
-            label="Max grade"
-          />
-          {!isFullRange && (
-            <button
-              onClick={handleReset}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:underline ml-1 flex-shrink-0"
-            >
-              Reset
-            </button>
-          )}
-        </div>
+      {/* Row 2: Min / Max dropdowns */}
+      <div className="flex items-center gap-1.5 pl-0 sm:pl-0">
+        <GradeSelect
+          grades={activeScale.grades}
+          value={minIdx}
+          onChange={handleMinChange}
+          label="Min grade"
+        />
+        <span className="text-xs text-gray-400 dark:text-gray-500">–</span>
+        <GradeSelect
+          grades={activeScale.grades}
+          value={maxIdx}
+          onChange={handleMaxChange}
+          label="Max grade"
+        />
+        {!isFullRange && (
+          <button
+            onClick={handleReset}
+            className="text-xs text-blue-600 dark:text-blue-400 hover:underline ml-1 flex-shrink-0"
+          >
+            Reset
+          </button>
+        )}
       </div>
     </div>
   );

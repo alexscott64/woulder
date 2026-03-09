@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { heatMapApi } from '../../services/api';
 import { HeatMapPoint } from '../../types/heatmap';
-import { Calendar, Activity, Loader2, AlertCircle, TrendingUp, Users, Map as MapIcon, List } from 'lucide-react';
+import { Calendar, Activity, Loader2, AlertCircle, TrendingUp, Users, Map as MapIcon, List, ChevronDown, ChevronUp, SlidersHorizontal } from 'lucide-react';
 import { ActivityMapDeckGL } from './ActivityMapDeckGL';
 import { AreaDetailDrawer } from './AreaDetailDrawer';
 import { ClusterDetailDrawer } from './ClusterDetailDrawer';
@@ -63,6 +63,7 @@ export function HeatMapPage() {
     savedFilters.gradeSelections || {}
   );
   const [gradeTabHint, setGradeTabHint] = useState<string | null>(null);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [clusterAreas, setClusterAreas] = useState<HeatMapPoint[]>([]);
   const [showClusterDrawer, setShowClusterDrawer] = useState(false);
 
@@ -123,8 +124,28 @@ export function HeatMapPage() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-          <div className="space-y-4">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 sm:p-4">
+          {/* Mobile: collapsible toggle */}
+          <button
+            onClick={() => setFiltersExpanded(!filtersExpanded)}
+            className="flex items-center justify-between w-full sm:hidden"
+          >
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-gray-500" />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filters</span>
+              {(selectedRouteTypes.length < 4 || gradeApiParams.gradeOrders) && (
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              )}
+            </div>
+            {filtersExpanded ? (
+              <ChevronUp className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            )}
+          </button>
+
+          {/* Filter content: always visible on sm+, collapsible on mobile */}
+          <div className={`${filtersExpanded ? 'block' : 'hidden'} sm:block ${filtersExpanded ? 'mt-3' : ''} space-y-4`}>
             {/* Route Type Filter */}
             <RouteTypeFilter
               selectedTypes={selectedRouteTypes}
