@@ -61,6 +61,10 @@ jobs:
           # Upload new binary
           scp -i ~/.ssh/id_ed25519 backend/woulder-api root@${{ secrets.VPS_HOST }}:/opt/woulder/woulder-api
 
+          # Upload static files (dashboards)
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "mkdir -p /opt/woulder/static"
+          scp -i ~/.ssh/id_ed25519 -r backend/static/* root@${{ secrets.VPS_HOST }}:/opt/woulder/static/
+
           # Create .env file on server with secrets
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'PORT=${{ secrets.PORT }}' > /opt/woulder/.env"
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'GIN_MODE=${{ secrets.GIN_MODE }}' >> /opt/woulder/.env"
@@ -72,6 +76,9 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'DB_NAME=${{ secrets.DB_NAME }}' >> /opt/woulder/.env"
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'DB_SSLMODE=${{ secrets.DB_SSLMODE }}' >> /opt/woulder/.env"
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'CACHE_DURATION=${{ secrets.CACHE_DURATION }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'ANALYTICS_JWT_SECRET=${{ secrets.ANALYTICS_JWT_SECRET }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'ANALYTICS_ADMIN_USERNAME=${{ secrets.ANALYTICS_ADMIN_USERNAME }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'ANALYTICS_ADMIN_PASSWORD=${{ secrets.ANALYTICS_ADMIN_PASSWORD }}' >> /opt/woulder/.env"
 
           # Make executable and start
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "chmod +x /opt/woulder/woulder-api && systemctl start woulder"
