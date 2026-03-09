@@ -7,8 +7,8 @@
  * Events are batched and sent every 5 seconds to minimize HTTP requests.
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-const ANALYTICS_URL = `${API_BASE}/api/analytics`;
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const ANALYTICS_URL = `${API_BASE}/analytics`;
 const BATCH_INTERVAL = 5000; // 5 seconds
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 
