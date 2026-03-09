@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -133,6 +134,7 @@ func getLimit(c *gin.Context, defaultLimit int) int {
 func (h *Handler) GetAnalyticsOverview(c *gin.Context) {
 	metrics, err := h.analyticsService.GetOverviewMetrics(c.Request.Context(), getPeriod(c))
 	if err != nil {
+		log.Printf("[analytics] overview metrics error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get overview metrics"})
 		return
 	}
@@ -143,6 +145,7 @@ func (h *Handler) GetAnalyticsOverview(c *gin.Context) {
 func (h *Handler) GetAnalyticsVisitors(c *gin.Context) {
 	data, err := h.analyticsService.GetVisitorsOverTime(c.Request.Context(), getPeriod(c))
 	if err != nil {
+		log.Printf("[analytics] visitors error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get visitor data"})
 		return
 	}
@@ -153,6 +156,7 @@ func (h *Handler) GetAnalyticsVisitors(c *gin.Context) {
 func (h *Handler) GetAnalyticsPages(c *gin.Context) {
 	data, err := h.analyticsService.GetTopPages(c.Request.Context(), getPeriod(c), getLimit(c, 20))
 	if err != nil {
+		log.Printf("[analytics] pages error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get page data"})
 		return
 	}
@@ -163,6 +167,7 @@ func (h *Handler) GetAnalyticsPages(c *gin.Context) {
 func (h *Handler) GetAnalyticsLocations(c *gin.Context) {
 	data, err := h.analyticsService.GetTopLocations(c.Request.Context(), getPeriod(c), getLimit(c, 20))
 	if err != nil {
+		log.Printf("[analytics] locations error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get location data"})
 		return
 	}
@@ -173,6 +178,7 @@ func (h *Handler) GetAnalyticsLocations(c *gin.Context) {
 func (h *Handler) GetAnalyticsAreas(c *gin.Context) {
 	data, err := h.analyticsService.GetTopAreas(c.Request.Context(), getPeriod(c), getLimit(c, 20))
 	if err != nil {
+		log.Printf("[analytics] areas error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get area data"})
 		return
 	}
@@ -183,6 +189,7 @@ func (h *Handler) GetAnalyticsAreas(c *gin.Context) {
 func (h *Handler) GetAnalyticsRoutes(c *gin.Context) {
 	data, err := h.analyticsService.GetTopRoutes(c.Request.Context(), getPeriod(c), getLimit(c, 20))
 	if err != nil {
+		log.Printf("[analytics] routes error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get route data"})
 		return
 	}
@@ -193,6 +200,7 @@ func (h *Handler) GetAnalyticsRoutes(c *gin.Context) {
 func (h *Handler) GetAnalyticsFeatures(c *gin.Context) {
 	data, err := h.analyticsService.GetFeatureUsage(c.Request.Context(), getPeriod(c))
 	if err != nil {
+		log.Printf("[analytics] features error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get feature data"})
 		return
 	}
@@ -203,6 +211,7 @@ func (h *Handler) GetAnalyticsFeatures(c *gin.Context) {
 func (h *Handler) GetAnalyticsGeography(c *gin.Context) {
 	data, err := h.analyticsService.GetGeography(c.Request.Context(), getPeriod(c), getLimit(c, 50))
 	if err != nil {
+		log.Printf("[analytics] geography error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get geography data"})
 		return
 	}
@@ -213,6 +222,7 @@ func (h *Handler) GetAnalyticsGeography(c *gin.Context) {
 func (h *Handler) GetAnalyticsDevices(c *gin.Context) {
 	data, err := h.analyticsService.GetDeviceBreakdown(c.Request.Context(), getPeriod(c))
 	if err != nil {
+		log.Printf("[analytics] devices error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get device data"})
 		return
 	}
@@ -223,6 +233,7 @@ func (h *Handler) GetAnalyticsDevices(c *gin.Context) {
 func (h *Handler) GetAnalyticsReferrers(c *gin.Context) {
 	data, err := h.analyticsService.GetReferrers(c.Request.Context(), getPeriod(c), getLimit(c, 20))
 	if err != nil {
+		log.Printf("[analytics] referrers error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get referrer data"})
 		return
 	}
@@ -233,6 +244,7 @@ func (h *Handler) GetAnalyticsReferrers(c *gin.Context) {
 func (h *Handler) GetAnalyticsSessions(c *gin.Context) {
 	sessions, err := h.analyticsService.GetRecentSessions(c.Request.Context(), getLimit(c, 50))
 	if err != nil {
+		log.Printf("[analytics] sessions error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get sessions"})
 		return
 	}
@@ -249,6 +261,7 @@ func (h *Handler) GetAnalyticsSessionEvents(c *gin.Context) {
 
 	events, err := h.analyticsService.GetSessionEvents(c.Request.Context(), sessionID)
 	if err != nil {
+		log.Printf("[analytics] session events error (session=%s): %v", sessionID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get session events"})
 		return
 	}

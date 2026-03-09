@@ -812,10 +812,11 @@
             document.getElementById('stat-visitors').textContent = fmt(data.unique_visitors);
             document.getElementById('stat-sessions').textContent = fmt(data.total_sessions);
             document.getElementById('stat-pageviews').textContent = fmt(data.total_page_views);
-            document.getElementById('stat-bounce').textContent = data.bounce_rate.toFixed(1) + '%';
+            document.getElementById('stat-bounce').textContent = (data.bounce_rate * 100).toFixed(1) + '%';
             document.getElementById('stat-duration').textContent = fmtDuration(data.avg_session_duration_seconds);
         } catch (e) {
             console.error('Failed to load overview:', e);
+            document.getElementById('stat-visitors').textContent = 'Error';
         }
     }
 
@@ -842,12 +843,13 @@
                 authFetch(`${API_BASE}/metrics/features?period=${currentPeriod}&limit=8`)
             ]);
 
-            renderVisitorsChart(visitors.data_points || []);
-            renderRankList('top-pages', (pages.pages || []).map(p => ({ name: p.page_path, count: p.view_count })), 'blue');
-            renderRankList('referrers-list', (referrers.referrers || []).map(r => ({ name: r.referrer || 'Direct', count: r.session_count })), 'purple');
-            renderBarList('features-overview', (features.features || []).map(f => ({ name: f.event_name, count: f.use_count })), 'green');
+            renderVisitorsChart(visitors.data || []);
+            renderRankList('top-pages', (pages.data || []).map(p => ({ name: p.page_path, count: p.view_count })), 'blue');
+            renderRankList('referrers-list', (referrers.data || []).map(r => ({ name: r.referrer || 'Direct', count: r.visit_count })), 'purple');
+            renderBarList('features-overview', (features.data || []).map(f => ({ name: f.feature_name, count: f.usage_count })), 'green');
         } catch (e) {
             console.error('Failed to load overview charts:', e);
+            document.getElementById('visitors-chart').innerHTML = '<p style="color:#f87171;padding:8px">Error: ' + e.message + '</p>';
         }
     }
 
@@ -857,7 +859,7 @@
         el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         try {
             const data = await authFetch(`${API_BASE}/metrics/locations?period=${currentPeriod}&limit=25`);
-            const items = data.locations || [];
+            const items = data.data || [];
             if (items.length === 0) {
                 el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No location data yet</p>';
                 return;
@@ -875,7 +877,7 @@
         el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         try {
             const data = await authFetch(`${API_BASE}/metrics/areas?period=${currentPeriod}&limit=25`);
-            const items = data.areas || [];
+            const items = data.data || [];
             if (items.length === 0) {
                 el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No area data yet</p>';
                 return;
@@ -893,7 +895,7 @@
         el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         try {
             const data = await authFetch(`${API_BASE}/metrics/routes?period=${currentPeriod}&limit=25`);
-            const items = data.routes || [];
+            const items = data.data || [];
             if (items.length === 0) {
                 el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No route data yet</p>';
                 return;
@@ -911,12 +913,12 @@
         el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         try {
             const data = await authFetch(`${API_BASE}/metrics/features?period=${currentPeriod}&limit=30`);
-            const items = data.features || [];
+            const items = data.data || [];
             if (items.length === 0) {
                 el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No feature data yet</p>';
                 return;
             }
-            const maxCount = Math.max(...items.map(i => i.use_count));
+            const maxCount = Math.max(...items.map(i => i.usage_count));
             el.innerHTML = '';
             const table = document.createElement('table');
             table.className = 'data-table';
@@ -932,14 +934,14 @@
                 <tbody>
                     ${items.map(f => `
                         <tr>
-                            <td style="font-weight:500">${esc(f.event_name)}</td>
-                            <td><span class="badge badge-blue">${esc(f.event_type)}</span></td>
+                            <td style="font-weight:500">${esc(f.feature_name)}</td>
+                            <td><span class="badge badge-blue">event</span></td>
                             <td>
                                 <div class="bar-container">
-                                    <div class="bar-bg"><div class="bar-fill purple" style="width:${(f.use_count/maxCount*100).toFixed(1)}%"></div></div>
+                                    <div class="bar-bg"><div class="bar-fill purple" style="width:${(f.usage_count/maxCount*100).toFixed(1)}%"></div></div>
                                 </div>
                             </td>
-                            <td style="text-align:right;font-weight:600">${fmt(f.use_count)}</td>
+                            <td style="text-align:right;font-weight:600">${fmt(f.usage_count)}</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -956,7 +958,7 @@
         el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         try {
             const data = await authFetch(`${API_BASE}/metrics/geography?period=${currentPeriod}&limit=25`);
-            const items = data.locations || [];
+            const items = data.data || [];
             if (items.length === 0) {
                 el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No geography data yet</p>';
                 return;
@@ -979,7 +981,7 @@
                             <td style="color:#64748b">${i + 1}</td>
                             <td style="font-weight:500">${esc(g.country || 'Unknown')}</td>
                             <td>${esc(g.city || 'Unknown')}</td>
-                            <td style="text-align:right;font-weight:600">${fmt(g.visitor_count)}</td>
+                            <td style="text-align:right;font-weight:600">${fmt(g.unique_visitors)}</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -994,10 +996,9 @@
     async function loadDevices() {
         try {
             const data = await authFetch(`${API_BASE}/metrics/devices?period=${currentPeriod}`);
-            const d = data.breakdown || {};
-            renderDonutList('device-types', (d.device_types || []).map(x => ({ name: x.device_type || 'Unknown', count: x.count })), 'blue');
-            renderDonutList('browsers-list', (d.browsers || []).map(x => ({ name: x.browser || 'Unknown', count: x.count })), 'purple');
-            renderDonutList('os-list', (d.operating_systems || []).map(x => ({ name: x.os || 'Unknown', count: x.count })), 'green');
+            renderDonutList('device-types', (data.devices || []).map(x => ({ name: x.name || 'Unknown', count: x.count })), 'blue');
+            renderDonutList('browsers-list', (data.browsers || []).map(x => ({ name: x.name || 'Unknown', count: x.count })), 'purple');
+            renderDonutList('os-list', (data.os || []).map(x => ({ name: x.name || 'Unknown', count: x.count })), 'green');
         } catch (e) {
             console.error('Failed to load devices:', e);
         }
@@ -1009,7 +1010,7 @@
         el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         try {
             const data = await authFetch(`${API_BASE}/sessions?period=${currentPeriod}&limit=50`);
-            const sessions = data.sessions || [];
+            const sessions = data.data || [];
             if (sessions.length === 0) {
                 el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px">No sessions yet</p>';
                 return;
@@ -1029,7 +1030,7 @@
                         </div>
                         <div class="session-meta">
                             <div>${time}</div>
-                            <div>${duration} &middot; <span class="events">${s.event_count || 0} events</span></div>
+                            <div>${duration} &middot; <span class="events">${s.page_count || 0} pages</span></div>
                         </div>
                     </div>
                 `;
@@ -1048,7 +1049,7 @@
 
         try {
             const data = await authFetch(`${API_BASE}/sessions/${sessionId}/events`);
-            const events = data.events || [];
+            const events = data.data || [];
             if (events.length === 0) {
                 el.innerHTML = '<p style="color:#64748b">No events recorded</p>';
                 return;
@@ -1085,10 +1086,10 @@
             return;
         }
 
-        const maxVisitors = Math.max(...dataPoints.map(d => d.visitors), 1);
+        const maxVisitors = Math.max(...dataPoints.map(d => d.unique_visitors), 1);
         container.innerHTML = dataPoints.map((d, i) => {
-            const h = Math.max((d.visitors / maxVisitors) * 100, 2);
-            return `<div class="bar-chart-bar" style="height:${h}%" title="${d.date}: ${d.visitors} visitors" data-idx="${i}"></div>`;
+            const h = Math.max((d.unique_visitors / maxVisitors) * 100, 2);
+            return `<div class="bar-chart-bar" style="height:${h}%" title="${d.date}: ${d.unique_visitors} visitors" data-idx="${i}"></div>`;
         }).join('');
 
         // Show every nth label to avoid crowding
@@ -1234,8 +1235,6 @@
         errorEl.textContent = '';
         submitBtn.disabled = true;
         submitBtn.textContent = 'Signing in...';
-
-        console.log('Login attempt:', { username, passwordLength: password.length, passwordChars: [...password].map(c => c.charCodeAt(0)) });
 
         try {
             await login(username, password);

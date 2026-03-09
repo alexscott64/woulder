@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -85,7 +86,54 @@ func (s *AnalyticsService) CreateSession(ctx context.Context, req *models.Create
 		ScreenWidth:  req.ScreenWidth,
 		ScreenHeight: req.ScreenHeight,
 	}
-	return s.repo.CreateSession(ctx, session)
+	if err := s.repo.CreateSession(ctx, session); err != nil {
+		return err
+	}
+
+	// Async IP geolocation lookup
+	go s.lookupGeo(req.SessionID, ipAddress)
+
+	return nil
+}
+
+// lookupGeo resolves IP address to country/region/city using ip-api.com (free, no key needed).
+func (s *AnalyticsService) lookupGeo(sessionID, ipAddress string) {
+	if ipAddress == "" || ipAddress == "127.0.0.1" || ipAddress == "::1" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=status,country,regionName,city", ipAddress)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("[analytics] geo lookup failed for %s: %v", ipAddress, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Status     string `json:"status"`
+		Country    string `json:"country"`
+		RegionName string `json:"regionName"`
+		City       string `json:"city"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return
+	}
+	if result.Status != "success" || result.Country == "" {
+		return
+	}
+
+	if err := s.repo.UpdateSessionGeo(context.Background(), sessionID, result.Country, result.RegionName, result.City); err != nil {
+		log.Printf("[analytics] failed to update geo for session %s: %v", sessionID, err)
+	}
 }
 
 // Heartbeat updates session activity.

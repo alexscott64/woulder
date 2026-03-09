@@ -59,39 +59,61 @@ const (
 		WHERE username = $1
 	`
 
+	queryUpdateSessionGeo = `
+		UPDATE woulder.analytics_sessions
+		SET country = $2, region = $3, city = $4
+		WHERE session_id = $1 AND country IS NULL
+	`
+
 	// --- Metrics queries ---
 
 	queryOverviewMetrics = `
+		WITH stats AS (
+			SELECT
+				COUNT(DISTINCT visitor_id) AS unique_visitors,
+				COUNT(*) AS total_sessions,
+				COALESCE(AVG(CASE WHEN duration_seconds > 0 THEN duration_seconds END), 0)::FLOAT8 AS avg_session_duration,
+				CASE WHEN COUNT(*) > 0
+					THEN COUNT(*) FILTER (WHERE is_bounce = TRUE)::FLOAT8 / COUNT(*)::FLOAT8
+					ELSE 0
+				END AS bounce_rate
+			FROM woulder.analytics_sessions
+			WHERE started_at >= $1
+		)
 		SELECT
-			(SELECT COUNT(DISTINCT visitor_id) FROM woulder.analytics_sessions WHERE started_at >= $1) AS unique_visitors,
-			(SELECT COUNT(*) FROM woulder.analytics_sessions WHERE started_at >= $1) AS total_sessions,
+			s.unique_visitors,
+			s.total_sessions,
 			(SELECT COUNT(*) FROM woulder.analytics_events WHERE event_type = 'page_view' AND created_at >= $1) AS total_page_views,
-			COALESCE((SELECT AVG(duration_seconds)::FLOAT FROM woulder.analytics_sessions WHERE started_at >= $1 AND duration_seconds > 0), 0) AS avg_session_duration,
-			COALESCE(
-				(SELECT COUNT(*)::FLOAT / NULLIF(COUNT(*), 0) FROM woulder.analytics_sessions WHERE started_at >= $1 AND is_bounce = TRUE)
-				/ NULLIF((SELECT COUNT(*) FROM woulder.analytics_sessions WHERE started_at >= $1), 0),
-				0
-			) AS bounce_rate,
+			s.avg_session_duration,
+			s.bounce_rate,
 			(SELECT COUNT(*) FROM woulder.analytics_events WHERE created_at >= $1) AS total_events
+		FROM stats s
 	`
 
 	queryVisitorsOverTime = `
 		SELECT
-			TO_CHAR(started_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS date,
-			COUNT(DISTINCT visitor_id) AS unique_visitors,
-			COUNT(*) AS sessions,
-			COALESCE((
-				SELECT COUNT(*) FROM woulder.analytics_events e
-				WHERE e.event_type = 'page_view'
-				AND e.session_id IN (
-					SELECT s2.session_id FROM woulder.analytics_sessions s2
-					WHERE TO_CHAR(s2.started_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') = TO_CHAR(s.started_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')
-				)
-			), 0) AS page_views
-		FROM woulder.analytics_sessions s
-		WHERE started_at >= $1
-		GROUP BY TO_CHAR(started_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')
-		ORDER BY date ASC
+			d.date,
+			d.unique_visitors,
+			d.sessions,
+			COALESCE(ev.page_views, 0) AS page_views
+		FROM (
+			SELECT
+				TO_CHAR(started_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS date,
+				COUNT(DISTINCT visitor_id) AS unique_visitors,
+				COUNT(*) AS sessions
+			FROM woulder.analytics_sessions
+			WHERE started_at >= $1
+			GROUP BY TO_CHAR(started_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')
+		) d
+		LEFT JOIN (
+			SELECT
+				TO_CHAR(e.created_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS date,
+				COUNT(*) AS page_views
+			FROM woulder.analytics_events e
+			WHERE e.event_type = 'page_view' AND e.created_at >= $1
+			GROUP BY TO_CHAR(e.created_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')
+		) ev ON ev.date = d.date
+		ORDER BY d.date ASC
 	`
 
 	queryTopPages = `
@@ -123,7 +145,7 @@ const (
 		SELECT
 			COALESCE(metadata->>'area_id', 'unknown') AS area_id,
 			COALESCE(metadata->>'area_name', 'Unknown') AS area_name,
-			COALESCE((metadata->>'location_id')::INT, 0) AS location_id,
+			COALESCE(NULLIF(metadata->>'location_id', '')::INT, 0) AS location_id,
 			COUNT(*) AS view_count,
 			COUNT(DISTINCT e.session_id) AS unique_visitors
 		FROM woulder.analytics_events e

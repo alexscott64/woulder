@@ -23,6 +23,9 @@ type Repository interface {
 	// GetSessionByID retrieves a session by its UUID.
 	GetSessionByID(ctx context.Context, sessionID string) (*models.AnalyticsSession, error)
 
+	// UpdateSessionGeo updates the geographic fields for a session.
+	UpdateSessionGeo(ctx context.Context, sessionID, country, region, city string) error
+
 	// --- Event operations ---
 
 	// InsertEvent records a single analytics event.

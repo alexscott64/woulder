@@ -58,6 +58,15 @@ func (r *PostgresRepository) GetSessionByID(ctx context.Context, sessionID strin
 	return &s, nil
 }
 
+// UpdateSessionGeo updates the geographic fields for a session.
+func (r *PostgresRepository) UpdateSessionGeo(ctx context.Context, sessionID, country, region, city string) error {
+	_, err := r.db.ExecContext(ctx, queryUpdateSessionGeo, sessionID, country, region, city)
+	if err != nil {
+		return fmt.Errorf("failed to update session geo: %w", err)
+	}
+	return nil
+}
+
 // --- Event operations ---
 
 // InsertEvent records a single analytics event.
