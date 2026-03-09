@@ -227,10 +227,13 @@ export interface GradeRangeSelection {
 
 /**
  * Convert the current grade selections + route types into API params.
- * Returns comma-separated integer grade_order values for every selected grade
- * across all active scales. Only scales with a non-default (narrowed) range
- * contribute their orders; scales at full range are omitted so that routes
- * from those families pass through unfiltered.
+ * Returns comma-separated integer grade_order values that form an allowlist.
+ *
+ * When ANY scale is narrowed, we send orders for ALL scales:
+ * - Narrowed scales contribute only their selected range
+ * - Full-range scales contribute their entire range (so those routes pass through)
+ *
+ * This ensures that narrowing Boulder to V16-V17 doesn't exclude Ice/Trad routes.
  */
 export function gradeRangeToApiParams(
   selections: GradeRangeSelection,
@@ -239,27 +242,34 @@ export function gradeRangeToApiParams(
   const scales = getGradeScalesForTypes(selectedTypes);
   if (scales.length === 0) return {};
 
-  // Collect orders only from scales that have been narrowed
-  const narrowedOrders: number[] = [];
+  // First pass: check if any scale is narrowed
   let hasNarrowed = false;
-
   for (const scale of scales) {
     const sel = selections[scale.key];
     const minIdx = sel ? sel[0] : 0;
     const maxIdx = sel ? sel[1] : scale.grades.length - 1;
-    const isFullRange = minIdx === 0 && maxIdx === scale.grades.length - 1;
-
-    if (!isFullRange) {
+    if (minIdx !== 0 || maxIdx !== scale.grades.length - 1) {
       hasNarrowed = true;
-      for (let i = minIdx; i <= maxIdx; i++) {
-        narrowedOrders.push(scale.orders[i]);
-      }
+      break;
     }
   }
 
   if (!hasNarrowed) return {};
 
+  // Second pass: collect orders from all scales
+  // Narrowed scales → only selected range; full-range scales → all orders
+  const allOrders: number[] = [];
+  for (const scale of scales) {
+    const sel = selections[scale.key];
+    const minIdx = sel ? sel[0] : 0;
+    const maxIdx = sel ? sel[1] : scale.grades.length - 1;
+
+    for (let i = minIdx; i <= maxIdx; i++) {
+      allOrders.push(scale.orders[i]);
+    }
+  }
+
   return {
-    gradeOrders: narrowedOrders.join(','),
+    gradeOrders: allOrders.join(','),
   };
 }

@@ -262,16 +262,25 @@ describe('gradeRangeToApiParams', () => {
     expect(result.gradeOrders).toBe('105,106,107');
   });
 
-  it('only includes narrowed families, not full-range ones', () => {
+  it('includes full-range orders from unfiltered families', () => {
     const result = gradeRangeToApiParams(
       {
         boulder: [2, 5],
-        // rope not set → full range → omitted
+        // rope not set → full range → include ALL rope orders
       },
       ['Boulder', 'Sport'],
     );
-    // Only boulder orders: V2=2, V3=3, V4=4, V5=5
-    expect(result.gradeOrders).toBe('2,3,4,5');
+    // Boulder narrowed: V2=2, V3=3, V4=4, V5=5
+    // Rope full range: all YDS orders (100..147)
+    const orders = result.gradeOrders!.split(',').map(Number);
+    // Check boulder part
+    expect(orders).toContain(2);
+    expect(orders).toContain(5);
+    expect(orders).not.toContain(0); // V0 excluded
+    expect(orders).not.toContain(1); // V1 excluded
+    // Check rope part (full range included)
+    expect(orders).toContain(100); // 5.4
+    expect(orders).toContain(147); // 5.15d
   });
 
   it('includes orders from multiple narrowed families', () => {

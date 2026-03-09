@@ -30,7 +30,7 @@ const (
 					AND a.longitude BETWEEN $5 AND $6
 				))
 				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
+				AND ($10::int[] IS NULL OR r.grade_order IS NULL OR r.grade_order = ANY($10))
 			
 			UNION ALL
 			
@@ -57,7 +57,7 @@ const (
 				))
 				AND mr.match_confidence >= 0.60
 				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
+				AND ($10::int[] IS NULL OR r.grade_order IS NULL OR r.grade_order = ANY($10))
 		)
 		SELECT
 			a.mp_area_id,
@@ -103,7 +103,7 @@ const (
 					AND a.longitude BETWEEN $5 AND $6
 				))
 				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
+				AND ($10::int[] IS NULL OR r.grade_order IS NULL OR r.grade_order = ANY($10))
 			
 			UNION ALL
 			
@@ -130,7 +130,7 @@ const (
 				))
 				AND mr.match_confidence >= 0.60
 				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
+				AND ($10::int[] IS NULL OR r.grade_order IS NULL OR r.grade_order = ANY($10))
 		)
 		SELECT
 			a.mp_area_id,
