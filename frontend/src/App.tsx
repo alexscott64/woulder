@@ -10,7 +10,7 @@ import { getConditionColor } from './components/weather/weatherDisplay';
 import { RefreshCw, WifiOff, ChevronUp, Settings, Github, Heart, Mail, Map, Cloud } from 'lucide-react';
 import { format } from 'date-fns';
 import { HeatMapPage } from './components/map/HeatMapPage';
-import { trackPageView, trackLocationView, trackModalOpen, trackEvent } from './services/analytics';
+import { trackPageView } from './services/analytics';
 
 const queryClient = new QueryClient({
   defaultOptions: {

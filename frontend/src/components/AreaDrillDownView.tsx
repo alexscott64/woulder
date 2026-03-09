@@ -5,7 +5,7 @@ import { AreaActivitySummary, SearchResult, UnifiedRouteActivitySummary } from '
 import { formatDaysAgo } from '../utils/weather/formatters';
 import { RouteListItem } from './RouteListItem';
 import { AreaConditionCard } from './AreaConditionCard';
-import { trackAreaView, trackRouteView, trackSearch } from '../services/analytics';
+import { trackAreaView, trackRouteView } from '../services/analytics';
 
 interface AreaDrillDownViewProps {
   locationId: number;

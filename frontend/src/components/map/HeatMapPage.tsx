@@ -9,7 +9,7 @@ import { ClusterDetailDrawer } from './ClusterDetailDrawer';
 import { RouteTypeFilter } from './RouteTypeFilter';
 import { GradeRangeFilter } from './GradeRangeFilter';
 import { type GradeRangeSelection, gradeRangeToApiParams } from '../../utils/grades';
-import { trackHeatMapAction, trackAreaView } from '../../services/analytics';
+import { trackHeatMapAction } from '../../services/analytics';
 
 type ViewMode = 'map' | 'list';
 
