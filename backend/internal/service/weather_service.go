@@ -441,13 +441,22 @@ func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, force
 			log.Printf("Updated historical weather for location %d (%d hours)", loc.ID, len(historical))
 		}
 
-		// Fetch and save forecast data (next 7 days) to database
+		// Fetch and save forecast data (next 16 days) to database
 		// This is CRITICAL for boulder drying 6-day forecasts to work
 		forecast, err := s.weatherClient.GetForecast(loc.Latitude, loc.Longitude)
 		if err != nil {
 			log.Printf("Failed to fetch forecast weather for location %d: %v", loc.ID, err)
 		} else {
-			// Save forecast data to database
+			// CRITICAL: Delete ALL future forecast data before saving fresh data.
+			// This prevents stale forecasts from persisting when timestamps don't
+			// exactly match (e.g., due to previous timezone bugs or model changes).
+			if err := s.weatherRepo.DeleteFutureForLocation(ctx, loc.ID); err != nil {
+				log.Printf("ERROR: failed to delete future weather data for location %d: %v", loc.ID, err)
+			} else {
+				log.Printf("Purged stale future forecasts for location %d", loc.ID)
+			}
+
+			// Save fresh forecast data to database
 			for i := range forecast {
 				forecast[i].LocationID = loc.ID
 				if err := s.weatherRepo.Save(ctx, &forecast[i]); err != nil {

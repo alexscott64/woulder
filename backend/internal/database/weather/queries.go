@@ -87,6 +87,15 @@ const (
 		   OR created_at < NOW() - INTERVAL '1 day' * $2)
 	`
 
+	// queryDeleteFutureForLocation deletes ALL future forecast data for a specific location.
+	// This purges stale forecasts before saving fresh data, ensuring no stale
+	// future values persist (e.g., from timezone bugs or model changes).
+	queryDeleteFutureForLocation = `
+		DELETE FROM woulder.weather_data
+		WHERE location_id = $1
+		  AND timestamp > NOW()
+	`
+
 	// queryUpsertDailyAggregates rolls up hourly weather_data rows into daily aggregates
 	// for a location over an inclusive local-date range in America/Los_Angeles.
 	queryUpsertDailyAggregates = `

@@ -129,6 +129,12 @@ func (r *PostgresRepository) DeleteOldForLocation(ctx context.Context, locationI
 	return err
 }
 
+// DeleteFutureForLocation deletes ALL future forecast data for a specific location.
+func (r *PostgresRepository) DeleteFutureForLocation(ctx context.Context, locationID int) error {
+	_, err := r.db.ExecContext(ctx, queryDeleteFutureForLocation, locationID)
+	return err
+}
+
 // UpsertDailyAggregates upserts daily weather rollups for a location/date range.
 func (r *PostgresRepository) UpsertDailyAggregates(ctx context.Context, locationID int, startDate, endDate string) error {
 	_, err := r.db.ExecContext(ctx, queryUpsertDailyAggregates, locationID, startDate, endDate)

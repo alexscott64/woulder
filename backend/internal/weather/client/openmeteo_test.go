@@ -4,216 +4,184 @@ import (
 	"testing"
 )
 
-func TestMergePrecipitationData(t *testing.T) {
+func TestParseTimestampUTC(t *testing.T) {
 	tests := []struct {
-		name    string
-		namData []*float64
-		bmData  []float64
-		want    []float64
+		name      string
+		input     string
+		wantYear  int
+		wantMonth int
+		wantDay   int
+		wantHour  int
+		wantErr   bool
 	}{
 		{
-			name: "NAM data available for first 3 hours, fallback to best_match after",
-			namData: []*float64{
-				ptrFloat64(0.1), ptrFloat64(0.2), ptrFloat64(0.3), nil, nil,
-			},
-			bmData: []float64{0.05, 0.15, 0.25, 0.35, 0.45},
-			want:   []float64{0.1, 0.2, 0.3, 0.35, 0.45},
+			name:      "bare timestamp treated as UTC",
+			input:     "2026-03-14T15:00",
+			wantYear:  2026,
+			wantMonth: 3,
+			wantDay:   14,
+			wantHour:  15,
+			wantErr:   false,
 		},
 		{
-			name: "All NAM data available",
-			namData: []*float64{
-				ptrFloat64(0.1), ptrFloat64(0.2), ptrFloat64(0.3),
-			},
-			bmData: []float64{0.05, 0.15, 0.25},
-			want:   []float64{0.1, 0.2, 0.3},
+			name:      "midnight UTC stays midnight UTC",
+			input:     "2026-03-11T00:00",
+			wantYear:  2026,
+			wantMonth: 3,
+			wantDay:   11,
+			wantHour:  0,
+			wantErr:   false,
 		},
 		{
-			name: "No NAM data (all nil), use best_match",
-			namData: []*float64{
-				nil, nil, nil,
-			},
-			bmData: []float64{0.05, 0.15, 0.25},
-			want:   []float64{0.05, 0.15, 0.25},
+			name:      "RFC3339 timestamp with Z suffix",
+			input:     "2026-03-14T15:00:00Z",
+			wantYear:  2026,
+			wantMonth: 3,
+			wantDay:   14,
+			wantHour:  15,
+			wantErr:   false,
 		},
 		{
-			name: "NAM array shorter than best_match",
-			namData: []*float64{
-				ptrFloat64(0.1), ptrFloat64(0.2),
-			},
-			bmData: []float64{0.05, 0.15, 0.25, 0.35, 0.45},
-			want:   []float64{0.1, 0.2, 0.25, 0.35, 0.45},
+			name:      "RFC3339 timestamp with offset",
+			input:     "2026-03-14T08:00:00-07:00",
+			wantYear:  2026,
+			wantMonth: 3,
+			wantDay:   14,
+			wantHour:  15, // 8am Pacific = 3pm UTC
+			wantErr:   false,
 		},
 		{
-			name:    "Empty best_match array",
-			namData: []*float64{ptrFloat64(0.1), ptrFloat64(0.2)},
-			bmData:  []float64{},
-			want:    []float64{},
-		},
-		{
-			name:    "Both empty",
-			namData: []*float64{},
-			bmData:  []float64{},
-			want:    []float64{},
-		},
-		{
-			name: "Zero values are preserved (not treated as nil)",
-			namData: []*float64{
-				ptrFloat64(0.0), ptrFloat64(0.5), ptrFloat64(0.0), nil,
-			},
-			bmData: []float64{0.1, 0.2, 0.3, 0.4},
-			want:   []float64{0.0, 0.5, 0.0, 0.4},
-		},
-		{
-			name: "Simulates real NAM CONUS (60 hours then null)",
-			namData: func() []*float64 {
-				result := make([]*float64, 72)
-				for i := 0; i < 60; i++ {
-					result[i] = ptrFloat64(float64(i) * 0.01)
-				}
-				// Hours 60-71 are nil (NAM CONUS doesn't provide data)
-				for i := 60; i < 72; i++ {
-					result[i] = nil
-				}
-				return result
-			}(),
-			bmData: func() []float64 {
-				result := make([]float64, 72)
-				for i := 0; i < 72; i++ {
-					result[i] = float64(i) * 0.02
-				}
-				return result
-			}(),
-			want: func() []float64 {
-				result := make([]float64, 72)
-				// First 60 hours from NAM
-				for i := 0; i < 60; i++ {
-					result[i] = float64(i) * 0.01
-				}
-				// Last 12 hours from best_match
-				for i := 60; i < 72; i++ {
-					result[i] = float64(i) * 0.02
-				}
-				return result
-			}(),
+			name:    "invalid format",
+			input:   "not-a-timestamp",
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := mergePrecipitationData(tt.namData, tt.bmData)
-
-			if len(got) != len(tt.want) {
-				t.Errorf("mergePrecipitationData() length = %v, want %v", len(got), len(tt.want))
+			got, err := parseTimestampUTC(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("parseTimestampUTC(%q) expected error, got nil", tt.input)
+				}
 				return
 			}
+			if err != nil {
+				t.Fatalf("parseTimestampUTC(%q) unexpected error: %v", tt.input, err)
+			}
 
-			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Errorf("mergePrecipitationData()[%d] = %v, want %v", i, got[i], tt.want[i])
-				}
+			if got.Year() != tt.wantYear {
+				t.Errorf("Year = %d, want %d", got.Year(), tt.wantYear)
+			}
+			if int(got.Month()) != tt.wantMonth {
+				t.Errorf("Month = %d, want %d", got.Month(), tt.wantMonth)
+			}
+			if got.Day() != tt.wantDay {
+				t.Errorf("Day = %d, want %d", got.Day(), tt.wantDay)
+			}
+			if got.Hour() != tt.wantHour {
+				t.Errorf("Hour = %d, want %d", got.Hour(), tt.wantHour)
+			}
+			if got.Location().String() != "UTC" {
+				t.Errorf("Location = %q, want UTC", got.Location().String())
 			}
 		})
 	}
 }
 
-// Helper function to create float64 pointers
-func ptrFloat64(f float64) *float64 {
-	return &f
+func TestParseSunTimestamp(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantHour int // Expected UTC hour
+		wantErr  bool
+	}{
+		{
+			name:     "bare sunrise timestamp as Pacific (PST, UTC-8)",
+			input:    "2026-01-15T07:30",
+			wantHour: 15, // 7:30am PST = 3:30pm UTC
+			wantErr:  false,
+		},
+		{
+			name:     "bare sunset timestamp as Pacific (PDT, UTC-7)",
+			input:    "2026-06-15T20:45",
+			wantHour: 3, // 8:45pm PDT = 3:45am+1 UTC
+			wantErr:  false,
+		},
+		{
+			name:    "invalid format",
+			input:   "not-a-timestamp",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSunTimestamp(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("parseSunTimestamp(%q) expected error, got nil", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseSunTimestamp(%q) unexpected error: %v", tt.input, err)
+			}
+
+			if got.Hour() != tt.wantHour {
+				t.Errorf("Hour = %d, want %d (input: %s, parsed UTC: %s)", got.Hour(), tt.wantHour, tt.input, got.String())
+			}
+			if got.Location().String() != "UTC" {
+				t.Errorf("Location = %q, want UTC", got.Location().String())
+			}
+		})
+	}
 }
 
-func TestMergePrecipitationData_NilSafety(t *testing.T) {
-	// Test that nil values are handled safely
-	t.Run("nil NAM data", func(t *testing.T) {
-		bmData := []float64{0.1, 0.2, 0.3}
-		got := mergePrecipitationData(nil, bmData)
+func TestIsNightTime(t *testing.T) {
+	tests := []struct {
+		name    string
+		time    string
+		sunrise string
+		sunset  string
+		want    bool
+	}{
+		{
+			name:    "midday is not night",
+			time:    "2026-03-14T12:00",
+			sunrise: "2026-03-14T06:30",
+			sunset:  "2026-03-14T18:30",
+			want:    false,
+		},
+		{
+			name:    "before sunrise is night",
+			time:    "2026-03-14T05:00",
+			sunrise: "2026-03-14T06:30",
+			sunset:  "2026-03-14T18:30",
+			want:    true,
+		},
+		{
+			name:    "after sunset is night",
+			time:    "2026-03-14T20:00",
+			sunrise: "2026-03-14T06:30",
+			sunset:  "2026-03-14T18:30",
+			want:    true,
+		},
+		{
+			name:    "at sunset is night",
+			time:    "2026-03-14T18:30",
+			sunrise: "2026-03-14T06:30",
+			sunset:  "2026-03-14T18:30",
+			want:    true,
+		},
+	}
 
-		if len(got) != len(bmData) {
-			t.Errorf("Expected length %d, got %d", len(bmData), len(got))
-		}
-
-		for i := range got {
-			if got[i] != bmData[i] {
-				t.Errorf("Index %d: got %v, want %v", i, got[i], bmData[i])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isNightTime(tt.time, tt.sunrise, tt.sunset)
+			if got != tt.want {
+				t.Errorf("isNightTime(%q, %q, %q) = %v, want %v", tt.time, tt.sunrise, tt.sunset, got, tt.want)
 			}
-		}
-	})
-
-	t.Run("nil best_match data", func(t *testing.T) {
-		namData := []*float64{ptrFloat64(0.1), ptrFloat64(0.2)}
-		got := mergePrecipitationData(namData, nil)
-
-		if len(got) != 0 {
-			t.Errorf("Expected empty result for nil bmData, got length %d", len(got))
-		}
-	})
-
-	t.Run("both nil", func(t *testing.T) {
-		got := mergePrecipitationData(nil, nil)
-
-		if len(got) != 0 {
-			t.Errorf("Expected empty result for both nil, got length %d", len(got))
-		}
-	})
-}
-
-func TestMergePrecipitationData_EdgeCases(t *testing.T) {
-	t.Run("very long arrays", func(t *testing.T) {
-		// Test with 168 hours (7 days)
-		namData := make([]*float64, 168)
-		bmData := make([]float64, 168)
-
-		// NAM provides first 60 hours
-		for i := 0; i < 60; i++ {
-			namData[i] = ptrFloat64(1.0)
-			bmData[i] = 0.5
-		}
-		// After 60 hours, NAM is nil
-		for i := 60; i < 168; i++ {
-			namData[i] = nil
-			bmData[i] = 0.5
-		}
-
-		got := mergePrecipitationData(namData, bmData)
-
-		// Check first 60 use NAM
-		for i := 0; i < 60; i++ {
-			if got[i] != 1.0 {
-				t.Errorf("Hour %d should use NAM (1.0), got %v", i, got[i])
-			}
-		}
-
-		// Check remaining use best_match
-		for i := 60; i < 168; i++ {
-			if got[i] != 0.5 {
-				t.Errorf("Hour %d should use best_match (0.5), got %v", i, got[i])
-			}
-		}
-	})
-
-	t.Run("single element arrays", func(t *testing.T) {
-		namData := []*float64{ptrFloat64(0.123)}
-		bmData := []float64{0.456}
-		got := mergePrecipitationData(namData, bmData)
-
-		if len(got) != 1 {
-			t.Fatalf("Expected length 1, got %d", len(got))
-		}
-		if got[0] != 0.123 {
-			t.Errorf("Expected 0.123, got %v", got[0])
-		}
-	})
-
-	t.Run("large precipitation values", func(t *testing.T) {
-		// Test with extreme weather (10 inches of rain)
-		namData := []*float64{ptrFloat64(10.5), nil}
-		bmData := []float64{5.2, 3.8}
-		got := mergePrecipitationData(namData, bmData)
-
-		if got[0] != 10.5 {
-			t.Errorf("Expected 10.5, got %v", got[0])
-		}
-		if got[1] != 3.8 {
-			t.Errorf("Expected 3.8, got %v", got[1])
-		}
-	})
+		})
+	}
 }

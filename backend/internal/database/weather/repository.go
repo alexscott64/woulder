@@ -43,6 +43,11 @@ type Repository interface {
 	// - The record was created more than daysToKeep ago (stale forecasts)
 	DeleteOldForLocation(ctx context.Context, locationID int, daysToKeep int) error
 
+	// DeleteFutureForLocation deletes ALL future forecast data for a specific location.
+	// This ensures stale forecasts are purged before saving fresh data,
+	// preventing stale data from persisting when timestamps don't exactly match.
+	DeleteFutureForLocation(ctx context.Context, locationID int) error
+
 	// UpsertDailyAggregates upserts daily weather rollups for a location and date range.
 	// startDate and endDate are inclusive date boundaries in YYYY-MM-DD format.
 	UpsertDailyAggregates(ctx context.Context, locationID int, startDate, endDate string) error
