@@ -439,7 +439,7 @@ func (h *Handler) RefreshWeather(c *gin.Context) {
 
 	log.Println("Manual weather refresh triggered")
 
-	err := h.weatherService.RefreshAllWeather(ctx)
+	err := h.weatherService.RefreshAllWeatherWithOptions(ctx, true)
 	if err != nil {
 		log.Printf("Error during manual refresh: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
