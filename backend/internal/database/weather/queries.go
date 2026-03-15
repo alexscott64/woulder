@@ -7,6 +7,8 @@ const (
 	// querySave inserts or updates weather data.
 	// Uses ON CONFLICT to handle upserts efficiently.
 	// Indexes: (location_id, timestamp) UNIQUE for upsert performance
+	// NOTE: created_at is reset on conflict so freshness checks using created_at
+	// correctly reflect the last time data was fetched from the API.
 	querySave = `
 		INSERT INTO woulder.weather_data (
 			location_id, timestamp, temperature, feels_like, precipitation,
@@ -24,7 +26,8 @@ const (
 			cloud_cover = EXCLUDED.cloud_cover,
 			pressure = EXCLUDED.pressure,
 			description = EXCLUDED.description,
-			icon = EXCLUDED.icon
+			icon = EXCLUDED.icon,
+			created_at = CURRENT_TIMESTAMP
 	`
 
 	// queryGetHistorical retrieves past weather data for a location.

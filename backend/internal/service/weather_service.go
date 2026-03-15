@@ -76,8 +76,8 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 
 	cachedCurrent, err := s.weatherRepo.GetCurrent(ctx, locationID)
 	if err == nil && cachedCurrent != nil {
-		// Check if cached data is fresh (less than 1 hour old)
-		age := time.Since(cachedCurrent.Timestamp)
+		// Check if cached data is fresh (created/updated less than 1 hour ago)
+		age := time.Since(cachedCurrent.CreatedAt)
 		if age < 1*time.Hour {
 			log.Printf("Using cached weather data for location %d (age: %v)", locationID, age.Round(time.Minute))
 			current = cachedCurrent
@@ -94,7 +94,7 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 		}
 	}
 
-	// 3. If no cached data or data is stale, fetch from API
+	// 3. If no cached data or data is stale, fetch from API and persist to DB
 	if current == nil {
 		log.Printf("Cache miss or stale data, fetching fresh weather for location %d", locationID)
 		var fetchErr error
@@ -104,6 +104,23 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 		if fetchErr != nil {
 			return nil, fmt.Errorf("failed to fetch weather: %w", fetchErr)
 		}
+
+		// Persist fresh data to DB so subsequent requests use the cache.
+		// Delete stale future forecasts first, then save all hourly data.
+		current.LocationID = locationID
+		if err := s.weatherRepo.DeleteFutureForLocation(ctx, locationID); err != nil {
+			log.Printf("Warning: failed to purge stale forecasts for location %d: %v", locationID, err)
+		}
+		if err := s.weatherRepo.Save(ctx, current); err != nil {
+			log.Printf("Warning: failed to save current weather for location %d: %v", locationID, err)
+		}
+		for i := range hourlyForecast {
+			hourlyForecast[i].LocationID = locationID
+			if err := s.weatherRepo.Save(ctx, &hourlyForecast[i]); err != nil {
+				log.Printf("Warning: failed to save forecast hour for location %d: %v", locationID, err)
+			}
+		}
+		log.Printf("Persisted fresh weather data for location %d (%d hours)", locationID, len(hourlyForecast))
 	}
 
 	// Extract sunrise/sunset
@@ -355,8 +372,8 @@ func (s *WeatherService) IsWeatherDataFresh(ctx context.Context, maxAge time.Dur
 			return false, nil
 		}
 
-		// Check if weather data is too old
-		age := time.Since(weather.Timestamp)
+		// Check if weather data was fetched/created too long ago
+		age := time.Since(weather.CreatedAt)
 		if age > maxAge {
 			return false, nil
 		}

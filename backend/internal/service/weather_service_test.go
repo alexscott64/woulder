@@ -419,6 +419,254 @@ func TestWeatherService_GetAllWeather_IncludesClimbHistory(t *testing.T) {
 	}
 }
 
+// TestWeatherService_GetLocationWeather_PersistsFreshData verifies that when the
+// per-request path fetches fresh weather from the API (cache miss or stale), it
+// persists the data to the DB: DeleteFutureForLocation is called, then Save is
+// called for each hourly forecast entry plus the current entry.
+func TestWeatherService_GetLocationWeather_PersistsFreshData(t *testing.T) {
+	var (
+		deleteFutureCalled bool
+		deleteFutureLocID  int
+		saveCount          int
+	)
+
+	mockWeatherRepo := &MockWeatherRepository{
+		// Return nil to simulate cache miss → forces API fetch path
+		GetCurrentFn: func(ctx context.Context, locationID int) (*models.WeatherData, error) {
+			return nil, nil
+		},
+		GetHistoricalFn: func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error) {
+			return []models.WeatherData{}, nil
+		},
+		DeleteFutureForLocationFn: func(ctx context.Context, locationID int) error {
+			deleteFutureCalled = true
+			deleteFutureLocID = locationID
+			return nil
+		},
+		SaveFn: func(ctx context.Context, data *models.WeatherData) error {
+			saveCount++
+			return nil
+		},
+	}
+
+	mockLocationsRepo := &MockLocationsRepository{
+		GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
+			return &models.Location{
+				ID:        id,
+				Name:      "Index",
+				Latitude:  47.82061272,
+				Longitude: -121.55492795,
+			}, nil
+		},
+	}
+
+	mockRocksRepo := &MockRocksRepository{
+		GetRockTypesByLocationFn: func(ctx context.Context, locationID int) ([]models.RockType, error) {
+			return []models.RockType{
+				{ID: 1, Name: "Granite", BaseDryingHours: 4.0, PorosityPercent: 1.0},
+			}, nil
+		},
+		GetSunExposureByLocationFn: func(ctx context.Context, locationID int) (*models.LocationSunExposure, error) {
+			return &models.LocationSunExposure{
+				LocationID:         locationID,
+				SouthFacingPercent: 50,
+			}, nil
+		},
+	}
+
+	weatherClient := weather.NewWeatherService("test_api_key")
+	service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, weatherClient, nil)
+
+	forecast, err := service.GetLocationWeather(context.Background(), 2)
+	if err != nil {
+		// Weather API may fail in tests (no network, rate limits, etc.)
+		// That's okay — the test is about the DB persistence path
+		t.Skipf("Skipping: weather API call failed (expected in CI): %v", err)
+	}
+
+	assert.NotNil(t, forecast)
+	assert.Equal(t, 2, forecast.LocationID)
+
+	// Verify DeleteFutureForLocation was called with the correct location ID
+	assert.True(t, deleteFutureCalled, "DeleteFutureForLocation must be called when persisting fresh data")
+	assert.Equal(t, 2, deleteFutureLocID)
+
+	// Verify Save was called at least once (current + forecast hours)
+	// GetCurrentAndForecast returns 16 days = 384 hours + 1 current = 385+ saves
+	assert.Greater(t, saveCount, 100, "Save should be called for current + all forecast hours (got %d)", saveCount)
+}
+
+// TestWeatherService_GetLocationWeather_StaleCreatedAtTriggersRefresh verifies that
+// cached data with a CreatedAt older than 1 hour is treated as stale, triggering
+// a fresh API fetch and DB persistence.
+func TestWeatherService_GetLocationWeather_StaleCreatedAtTriggersRefresh(t *testing.T) {
+	var (
+		deleteFutureCalled bool
+		saveCount          int
+	)
+
+	staleTime := time.Now().Add(-2 * time.Hour) // 2 hours ago → stale
+
+	mockWeatherRepo := &MockWeatherRepository{
+		GetCurrentFn: func(ctx context.Context, locationID int) (*models.WeatherData, error) {
+			return &models.WeatherData{
+				LocationID:  locationID,
+				Timestamp:   time.Now(), // Timestamp is current hour
+				CreatedAt:   staleTime,  // But created_at is 2hrs old → stale
+				Temperature: 40.0,
+			}, nil
+		},
+		GetHistoricalFn: func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error) {
+			return []models.WeatherData{}, nil
+		},
+		DeleteFutureForLocationFn: func(ctx context.Context, locationID int) error {
+			deleteFutureCalled = true
+			return nil
+		},
+		SaveFn: func(ctx context.Context, data *models.WeatherData) error {
+			saveCount++
+			return nil
+		},
+	}
+
+	mockLocationsRepo := &MockLocationsRepository{
+		GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
+			return &models.Location{
+				ID:        id,
+				Name:      "Index",
+				Latitude:  47.82061272,
+				Longitude: -121.55492795,
+			}, nil
+		},
+	}
+
+	mockRocksRepo := &MockRocksRepository{
+		GetRockTypesByLocationFn: func(ctx context.Context, locationID int) ([]models.RockType, error) {
+			return []models.RockType{
+				{ID: 1, Name: "Granite", BaseDryingHours: 4.0, PorosityPercent: 1.0},
+			}, nil
+		},
+		GetSunExposureByLocationFn: func(ctx context.Context, locationID int) (*models.LocationSunExposure, error) {
+			return &models.LocationSunExposure{
+				LocationID:         locationID,
+				SouthFacingPercent: 50,
+			}, nil
+		},
+	}
+
+	weatherClient := weather.NewWeatherService("test_api_key")
+	service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, weatherClient, nil)
+
+	forecast, err := service.GetLocationWeather(context.Background(), 2)
+	if err != nil {
+		t.Skipf("Skipping: weather API call failed (expected in CI): %v", err)
+	}
+
+	assert.NotNil(t, forecast)
+
+	// Verify the stale cache triggered a refresh with DB persistence
+	assert.True(t, deleteFutureCalled, "DeleteFutureForLocation must be called when CreatedAt is stale")
+	assert.Greater(t, saveCount, 100, "Save should be called for fresh data persistence (got %d)", saveCount)
+}
+
+// TestWeatherService_GetLocationWeather_FreshCacheDoesNotPersist verifies that
+// fresh cached data (CreatedAt < 1 hour) is served without re-fetching or saving.
+func TestWeatherService_GetLocationWeather_FreshCacheDoesNotPersist(t *testing.T) {
+	var (
+		deleteFutureCalled bool
+		saveCount          int
+	)
+
+	freshTime := time.Now().Add(-10 * time.Minute) // 10 minutes ago → fresh
+
+	mockWeatherRepo := &MockWeatherRepository{
+		GetCurrentFn: func(ctx context.Context, locationID int) (*models.WeatherData, error) {
+			return &models.WeatherData{
+				LocationID:    locationID,
+				Timestamp:     time.Now(),
+				CreatedAt:     freshTime,
+				Temperature:   40.0,
+				Precipitation: 0.1,
+				Humidity:      80,
+				WindSpeed:     5.0,
+				CloudCover:    50,
+				Pressure:      1013,
+				Description:   "Cloudy",
+				Icon:          "04d",
+			}, nil
+		},
+		GetForecastFn: func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error) {
+			// Return some cached forecast data
+			forecast := make([]models.WeatherData, 48)
+			for i := range forecast {
+				forecast[i] = models.WeatherData{
+					LocationID:    locationID,
+					Timestamp:     time.Now().Add(time.Duration(i+1) * time.Hour),
+					CreatedAt:     freshTime,
+					Temperature:   42.0,
+					Precipitation: 0.05,
+					Humidity:      75,
+					WindSpeed:     4.0,
+					CloudCover:    60,
+					Pressure:      1012,
+					Description:   "Partly Cloudy",
+					Icon:          "03d",
+				}
+			}
+			return forecast, nil
+		},
+		GetHistoricalFn: func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error) {
+			return []models.WeatherData{}, nil
+		},
+		DeleteFutureForLocationFn: func(ctx context.Context, locationID int) error {
+			deleteFutureCalled = true
+			return nil
+		},
+		SaveFn: func(ctx context.Context, data *models.WeatherData) error {
+			saveCount++
+			return nil
+		},
+	}
+
+	mockLocationsRepo := &MockLocationsRepository{
+		GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
+			return &models.Location{
+				ID:        id,
+				Name:      "Index",
+				Latitude:  47.82061272,
+				Longitude: -121.55492795,
+			}, nil
+		},
+	}
+
+	mockRocksRepo := &MockRocksRepository{
+		GetRockTypesByLocationFn: func(ctx context.Context, locationID int) ([]models.RockType, error) {
+			return []models.RockType{
+				{ID: 1, Name: "Granite", BaseDryingHours: 4.0, PorosityPercent: 1.0},
+			}, nil
+		},
+		GetSunExposureByLocationFn: func(ctx context.Context, locationID int) (*models.LocationSunExposure, error) {
+			return &models.LocationSunExposure{
+				LocationID:         locationID,
+				SouthFacingPercent: 50,
+			}, nil
+		},
+	}
+
+	weatherClient := weather.NewWeatherService("test_api_key")
+	service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, weatherClient, nil)
+
+	forecast, err := service.GetLocationWeather(context.Background(), 2)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, forecast)
+	assert.Equal(t, 2, forecast.LocationID)
+
+	// Fresh cache should NOT trigger any DB writes
+	assert.False(t, deleteFutureCalled, "DeleteFutureForLocation should NOT be called for fresh cache")
+	assert.Equal(t, 0, saveCount, "Save should NOT be called for fresh cache")
+}
+
 // Helper function
 func intPtr(i int) *int {
 	return &i
