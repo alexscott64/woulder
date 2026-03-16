@@ -81,6 +81,115 @@ func TestHeatMapService_GetHeatMapData(t *testing.T) {
 		}
 	})
 
+	t.Run("passes grade orders filter to repository", func(t *testing.T) {
+		var receivedGradeOrders []int
+		mockRepo := &MockHeatMapRepository{
+			GetHeatMapDataFn: func(ctx context.Context, startDate, endDate time.Time, bounds *heatmap.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool, gradeOrders []int) ([]models.HeatMapPoint, error) {
+				receivedGradeOrders = gradeOrders
+				return []models.HeatMapPoint{
+					{
+						MPAreaID:     1,
+						Name:         "Boulder Area",
+						TotalTicks:   50,
+						LastActivity: now.AddDate(0, 0, -5),
+					},
+				}, nil
+			},
+		}
+
+		service := NewHeatMapService(mockRepo)
+
+		// Test boulder V9-V17 filtering (the reported bug scenario)
+		boulderGradeOrders := []int{9, 10, 11, 12, 13, 14, 15, 16, 17}
+		points, err := service.GetHeatMapData(ctx, thirtyDaysAgo, now, nil, 1, 500, []string{"Boulder"}, false, boulderGradeOrders)
+
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+
+		if len(points) != 1 {
+			t.Fatalf("Expected 1 point, got %d", len(points))
+		}
+
+		if len(receivedGradeOrders) != 9 {
+			t.Fatalf("Expected 9 grade orders passed to repo, got %d", len(receivedGradeOrders))
+		}
+
+		if receivedGradeOrders[0] != 9 || receivedGradeOrders[8] != 17 {
+			t.Errorf("Expected grade orders [9..17], got %v", receivedGradeOrders)
+		}
+	})
+
+	t.Run("passes multi-type grade filters to repository", func(t *testing.T) {
+		var receivedGradeOrders []int
+		var receivedRouteTypes []string
+		mockRepo := &MockHeatMapRepository{
+			GetHeatMapDataFn: func(ctx context.Context, startDate, endDate time.Time, bounds *heatmap.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool, gradeOrders []int) ([]models.HeatMapPoint, error) {
+				receivedGradeOrders = gradeOrders
+				receivedRouteTypes = routeTypes
+				return []models.HeatMapPoint{}, nil
+			},
+		}
+
+		service := NewHeatMapService(mockRepo)
+
+		// Multi-type: Boulder V0-V2 + Ice WI1-WI3
+		multiGradeOrders := []int{0, 1, 2, 200, 201, 202}
+		multiRouteTypes := []string{"Boulder", "Ice"}
+		_, err := service.GetHeatMapData(ctx, thirtyDaysAgo, now, nil, 1, 500, multiRouteTypes, false, multiGradeOrders)
+
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+
+		if len(receivedGradeOrders) != 6 {
+			t.Fatalf("Expected 6 grade orders, got %d", len(receivedGradeOrders))
+		}
+
+		if len(receivedRouteTypes) != 2 {
+			t.Fatalf("Expected 2 route types, got %d", len(receivedRouteTypes))
+		}
+
+		// Verify boulder orders (0-2) and WI orders (200-202) are both present
+		hasV0 := false
+		hasWI1 := false
+		for _, o := range receivedGradeOrders {
+			if o == 0 {
+				hasV0 = true
+			}
+			if o == 200 {
+				hasWI1 = true
+			}
+		}
+		if !hasV0 {
+			t.Error("Expected V0 (order 0) in grade orders")
+		}
+		if !hasWI1 {
+			t.Error("Expected WI1 (order 200) in grade orders")
+		}
+	})
+
+	t.Run("nil grade orders passes through (no filtering)", func(t *testing.T) {
+		var receivedGradeOrders []int
+		mockRepo := &MockHeatMapRepository{
+			GetHeatMapDataFn: func(ctx context.Context, startDate, endDate time.Time, bounds *heatmap.GeoBounds, minActivity, limit int, routeTypes []string, lightweight bool, gradeOrders []int) ([]models.HeatMapPoint, error) {
+				receivedGradeOrders = gradeOrders
+				return []models.HeatMapPoint{}, nil
+			},
+		}
+
+		service := NewHeatMapService(mockRepo)
+		_, err := service.GetHeatMapData(ctx, thirtyDaysAgo, now, nil, 1, 500, nil, false, nil)
+
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+
+		if receivedGradeOrders != nil {
+			t.Errorf("Expected nil grade orders (no filter), got %v", receivedGradeOrders)
+		}
+	})
+
 	t.Run("validates bounds", func(t *testing.T) {
 		mockRepo := &MockHeatMapRepository{}
 		service := NewHeatMapService(mockRepo)

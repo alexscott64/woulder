@@ -171,6 +171,7 @@ export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack }:
                       icon={<MapPin className="w-4 h-4" />}
                       label="Routes"
                       count={detail.top_routes?.length || 0}
+                      maxCount={100}
                     />
                     <TabButton
                       active={selectedTab === 'ticks'}
@@ -178,6 +179,7 @@ export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack }:
                       icon={<Activity className="w-4 h-4" />}
                       label="Ticks"
                       count={detail.recent_ticks?.length || 0}
+                      maxCount={100}
                     />
                     <TabButton
                       active={selectedTab === 'comments'}
@@ -185,6 +187,7 @@ export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack }:
                       icon={<MessageSquare className="w-4 h-4" />}
                       label="Comments"
                       count={detail.recent_comments?.length || 0}
+                      maxCount={100}
                     />
                   </div>
                 </div>
@@ -196,13 +199,13 @@ export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack }:
                       <div className="flex items-start gap-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-xs">
                         <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                         <div className="text-blue-700 dark:text-blue-300">
-                          <p className="font-medium mb-0.5">Top {detail.top_routes?.length || 0} most active routes</p>
+                          <p className="font-medium mb-0.5">Top {formatCappedCount(detail.top_routes?.length || 0, 100)} most active routes</p>
                           <p>Sorted by number of ticks in the selected time period. Click to see tick details.</p>
                         </div>
                       </div>
                       {detail.top_routes && detail.top_routes.length > 0 && (
                         <>
-                          {detail.top_routes.slice(0, 20).map((route) => (
+                          {detail.top_routes.map((route) => (
                             <button
                               key={route.mp_route_id}
                               onClick={() => handleRouteClick(route.mp_route_id)}
@@ -241,13 +244,13 @@ export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack }:
                       <div className="flex items-start gap-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-xs">
                         <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                         <div className="text-blue-700 dark:text-blue-300">
-                          <p className="font-medium mb-0.5">Showing {detail.recent_ticks?.length || 0} most recent ticks</p>
+                          <p className="font-medium mb-0.5">Showing {formatCappedCount(detail.recent_ticks?.length || 0, 100)} most recent ticks</p>
                           <p>Total: {detail.total_ticks} ticks in the selected time period</p>
                         </div>
                       </div>
                       {detail.recent_ticks && detail.recent_ticks.length > 0 && (
                         <>
-                          {detail.recent_ticks.slice(0, 20).map((tick, index) => (
+                          {detail.recent_ticks.map((tick, index) => (
                             <div
                               key={`${tick.mp_route_id}-${index}`}
                               className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3"
@@ -283,13 +286,13 @@ export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack }:
                       <div className="flex items-start gap-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-xs">
                         <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                         <div className="text-blue-700 dark:text-blue-300">
-                          <p className="font-medium mb-0.5">Showing {detail.recent_comments?.length || 0} most recent comments</p>
+                          <p className="font-medium mb-0.5">Showing {formatCappedCount(detail.recent_comments?.length || 0, 100)} most recent comments</p>
                           <p>Comments on routes in this area during the selected time period</p>
                         </div>
                       </div>
                       {detail.recent_comments && detail.recent_comments.length > 0 && (
                         <>
-                          {detail.recent_comments.slice(0, 20).map((comment) => (
+                          {detail.recent_comments.map((comment) => (
                             <div
                               key={comment.id}
                               className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3"
@@ -469,6 +472,11 @@ export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack }:
   );
 }
 
+/** Format a count with a cap — returns "100+" when count >= max */
+function formatCappedCount(count: number, max: number): string {
+  return count >= max ? `${max}+` : String(count);
+}
+
 function StatCard({ icon, label, value, subtitle }: { icon: React.ReactNode; label: string; value: number; subtitle?: string }) {
   return (
     <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-2 sm:p-3">
@@ -488,19 +496,22 @@ function StatCard({ icon, label, value, subtitle }: { icon: React.ReactNode; lab
   );
 }
 
-function TabButton({ 
-  active, 
-  onClick, 
-  icon, 
-  label, 
-  count 
-}: { 
-  active: boolean; 
-  onClick: () => void; 
-  icon: React.ReactNode; 
-  label: string; 
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+  count,
+  maxCount
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
   count: number;
+  maxCount?: number;
 }) {
+  const displayCount = maxCount && count >= maxCount ? `${maxCount}+` : count;
   return (
     <button
       onClick={onClick}
@@ -517,7 +528,7 @@ function TabButton({
           ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
           : 'bg-gray-100 dark:bg-gray-700'
       }`}>
-        {count}
+        {displayCount}
       </span>
     </button>
   );

@@ -264,6 +264,154 @@ func TestSlashGrade(t *testing.T) {
 	}
 }
 
+func TestParseGradeOrders(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []int
+	}{
+		{
+			name:  "empty string",
+			input: "",
+			want:  nil,
+		},
+		{
+			name:  "single boulder grade V9",
+			input: "9",
+			want:  []int{9},
+		},
+		{
+			name:  "boulder V9-V17 range",
+			input: "9,10,11,12,13,14,15,16,17",
+			want:  []int{9, 10, 11, 12, 13, 14, 15, 16, 17},
+		},
+		{
+			name:  "YDS grades 5.10a-5.12d",
+			input: "106,107,108,109,110,111,112,113,114,115,116,117",
+			want:  []int{106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117},
+		},
+		{
+			name:  "multi-type: boulder + ice filtering",
+			input: "0,1,2,200,201,202",
+			want:  []int{0, 1, 2, 200, 201, 202},
+		},
+		{
+			name:  "multi-type: boulder V9-V17 + WI grades",
+			input: "9,10,11,12,13,14,15,16,17,200,201,202,203,204,205,206",
+			want:  []int{9, 10, 11, 12, 13, 14, 15, 16, 17, 200, 201, 202, 203, 204, 205, 206},
+		},
+		{
+			name:  "with spaces",
+			input: " 9 , 10 , 11 ",
+			want:  []int{9, 10, 11},
+		},
+		{
+			name:  "invalid entries skipped",
+			input: "9,abc,11,xyz",
+			want:  []int{9, 11},
+		},
+		{
+			name:  "negative values skipped",
+			input: "9,-1,10",
+			want:  []int{9, 10},
+		},
+		{
+			name:  "all invalid returns nil",
+			input: "abc,def",
+			want:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseGradeOrders(tt.input)
+			if tt.want == nil {
+				if got != nil {
+					t.Errorf("ParseGradeOrders(%q) = %v, want nil", tt.input, got)
+				}
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Errorf("ParseGradeOrders(%q) length = %d, want %d", tt.input, len(got), len(tt.want))
+				return
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("ParseGradeOrders(%q)[%d] = %d, want %d", tt.input, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestGradeOrdersMatchExpectedValues(t *testing.T) {
+	// Verify that grade order values used in the API match the expected grades.
+	// This test ensures the frontend grade_orders parameter values are correct.
+
+	// Boulder V9-V17 should be orders 9-17
+	for i := 9; i <= 17; i++ {
+		grade := OrderToGrade(i)
+		if grade == "" {
+			t.Errorf("OrderToGrade(%d) = empty, expected V%d", i, i)
+		}
+		expectedGrade := "V" + string(rune('0'+i))
+		if i >= 10 {
+			// Need proper string conversion for V10+
+			switch i {
+			case 10:
+				expectedGrade = "V10"
+			case 11:
+				expectedGrade = "V11"
+			case 12:
+				expectedGrade = "V12"
+			case 13:
+				expectedGrade = "V13"
+			case 14:
+				expectedGrade = "V14"
+			case 15:
+				expectedGrade = "V15"
+			case 16:
+				expectedGrade = "V16"
+			case 17:
+				expectedGrade = "V17"
+			}
+		}
+		if grade != expectedGrade {
+			t.Errorf("OrderToGrade(%d) = %q, want %q", i, grade, expectedGrade)
+		}
+	}
+
+	// WI1-WI7 should be orders 200-206
+	for i := 0; i < 7; i++ {
+		grade := OrderToGrade(200 + i)
+		if grade == "" {
+			t.Errorf("OrderToGrade(%d) = empty, expected WI%d", 200+i, i+1)
+		}
+	}
+
+	// Multi-type filtering: all grade families should have distinct order ranges
+	// (no collisions between boulder, YDS, WI, Mixed, AI)
+	boulderMax := ToOrder("V17") // 17
+	ydsMin := ToOrder("5.4")     // 100
+	ydsMax := ToOrder("5.15d")   // 129
+	wiMin := ToOrder("WI1")      // 200
+	mixedMin := ToOrder("M1")    // 300
+
+	if boulderMax >= ydsMin {
+		t.Errorf("Boulder max order (%d) overlaps with YDS min (%d)", boulderMax, ydsMin)
+	}
+	if ydsMax >= wiMin {
+		t.Errorf("YDS max order (%d) overlaps with WI min (%d)", ydsMax, wiMin)
+	}
+	if wiMin >= mixedMin {
+		// WI and Mixed should not overlap
+		wiMax := ToOrder("WI7") // 206
+		if wiMax >= mixedMin {
+			t.Errorf("WI max order (%d) overlaps with Mixed min (%d)", wiMax, mixedMin)
+		}
+	}
+}
+
 func intPtr(v int) *int {
 	return &v
 }

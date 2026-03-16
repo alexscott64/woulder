@@ -30,34 +30,34 @@ const (
 					AND a.longitude BETWEEN $5 AND $6
 				))
 				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int[] IS NULL OR r.grade_order IS NULL OR r.grade_order = ANY($10))
-			
-			UNION ALL
-			
-			-- Kaya ascents matched to MP routes
-			SELECT
-				a.mp_area_id,
-				ka.kaya_ascent_id as activity_id,
-				ka.date as climbed_at,
-				ku.username as user_name,
-				mr.mp_route_id
-			FROM woulder.mp_areas a
-			JOIN woulder.mp_routes r ON r.mp_area_id = a.mp_area_id
-			JOIN woulder.kaya_mp_route_matches mr ON mr.mp_route_id = r.mp_route_id
-			JOIN woulder.kaya_climbs kc ON kc.slug = mr.kaya_climb_id
-			JOIN woulder.kaya_ascents ka ON ka.kaya_climb_slug = kc.slug
-			JOIN woulder.kaya_users ku ON ku.kaya_user_id = ka.kaya_user_id
-			WHERE ka.date >= $1
-				AND ka.date <= $2
-				AND a.latitude IS NOT NULL
-				AND a.longitude IS NOT NULL
-				AND ($3::float IS NULL OR (
-					a.latitude BETWEEN $3 AND $4
-					AND a.longitude BETWEEN $5 AND $6
-				))
-				AND mr.match_confidence >= 0.60
-				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int[] IS NULL OR r.grade_order IS NULL OR r.grade_order = ANY($10))
+					AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
+				
+				UNION ALL
+				
+				-- Kaya ascents matched to MP routes
+				SELECT
+					a.mp_area_id,
+					ka.kaya_ascent_id as activity_id,
+					ka.date as climbed_at,
+					ku.username as user_name,
+					mr.mp_route_id
+				FROM woulder.mp_areas a
+				JOIN woulder.mp_routes r ON r.mp_area_id = a.mp_area_id
+				JOIN woulder.kaya_mp_route_matches mr ON mr.mp_route_id = r.mp_route_id
+				JOIN woulder.kaya_climbs kc ON kc.slug = mr.kaya_climb_id
+				JOIN woulder.kaya_ascents ka ON ka.kaya_climb_slug = kc.slug
+				JOIN woulder.kaya_users ku ON ku.kaya_user_id = ka.kaya_user_id
+				WHERE ka.date >= $1
+					AND ka.date <= $2
+					AND a.latitude IS NOT NULL
+					AND a.longitude IS NOT NULL
+					AND ($3::float IS NULL OR (
+						a.latitude BETWEEN $3 AND $4
+						AND a.longitude BETWEEN $5 AND $6
+					))
+					AND mr.match_confidence >= 0.60
+					AND ($7::text[] IS NULL OR r.route_type = ANY($7))
+					AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
 		)
 		SELECT
 			a.mp_area_id,
@@ -103,34 +103,34 @@ const (
 					AND a.longitude BETWEEN $5 AND $6
 				))
 				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int[] IS NULL OR r.grade_order IS NULL OR r.grade_order = ANY($10))
-			
-			UNION ALL
-			
-			-- Kaya ascents matched to MP routes
-			SELECT
-				a.mp_area_id,
-				ka.kaya_ascent_id as activity_id,
-				ka.date as climbed_at,
-				ku.username as user_name,
-				mr.mp_route_id
-			FROM woulder.mp_areas a
-			JOIN woulder.mp_routes r ON r.mp_area_id = a.mp_area_id
-			JOIN woulder.kaya_mp_route_matches mr ON mr.mp_route_id = r.mp_route_id
-			JOIN woulder.kaya_climbs kc ON kc.slug = mr.kaya_climb_id
-			JOIN woulder.kaya_ascents ka ON ka.kaya_climb_slug = kc.slug
-			JOIN woulder.kaya_users ku ON ku.kaya_user_id = ka.kaya_user_id
-			WHERE ka.date >= $1
-				AND ka.date <= $2
-				AND a.latitude IS NOT NULL
-				AND a.longitude IS NOT NULL
-				AND ($3::float IS NULL OR (
-					a.latitude BETWEEN $3 AND $4
-					AND a.longitude BETWEEN $5 AND $6
-				))
-				AND mr.match_confidence >= 0.60
-				AND ($7::text[] IS NULL OR r.route_type = ANY($7))
-				AND ($10::int[] IS NULL OR r.grade_order IS NULL OR r.grade_order = ANY($10))
+					AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
+				
+				UNION ALL
+				
+				-- Kaya ascents matched to MP routes
+				SELECT
+					a.mp_area_id,
+					ka.kaya_ascent_id as activity_id,
+					ka.date as climbed_at,
+					ku.username as user_name,
+					mr.mp_route_id
+				FROM woulder.mp_areas a
+				JOIN woulder.mp_routes r ON r.mp_area_id = a.mp_area_id
+				JOIN woulder.kaya_mp_route_matches mr ON mr.mp_route_id = r.mp_route_id
+				JOIN woulder.kaya_climbs kc ON kc.slug = mr.kaya_climb_id
+				JOIN woulder.kaya_ascents ka ON ka.kaya_climb_slug = kc.slug
+				JOIN woulder.kaya_users ku ON ku.kaya_user_id = ka.kaya_user_id
+				WHERE ka.date >= $1
+					AND ka.date <= $2
+					AND a.latitude IS NOT NULL
+					AND a.longitude IS NOT NULL
+					AND ($3::float IS NULL OR (
+						a.latitude BETWEEN $3 AND $4
+						AND a.longitude BETWEEN $5 AND $6
+					))
+					AND mr.match_confidence >= 0.60
+					AND ($7::text[] IS NULL OR r.route_type = ANY($7))
+					AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
 		)
 		SELECT
 			a.mp_area_id,
@@ -250,7 +250,7 @@ const (
 		)
 		SELECT * FROM combined_ticks
 		ORDER BY climbed_at DESC
-		LIMIT 20
+		LIMIT 100
 	`
 
 	// queryRecentComments retrieves recent comments for routes in an area.
@@ -272,7 +272,7 @@ const (
 			AND c.commented_at >= $2
 			AND c.commented_at <= $3
 		ORDER BY c.commented_at DESC
-		LIMIT 10
+		LIMIT 100
 	`
 
 	// queryActivityTimeline retrieves daily activity aggregation for an area.
@@ -359,7 +359,7 @@ const (
 		FROM combined_activity
 		GROUP BY mp_route_id, name, rating
 		ORDER BY COUNT(activity_id) DESC
-		LIMIT 10
+		LIMIT 100
 	`
 
 	// queryRoutesByBounds retrieves routes within geographic bounds with activity.
