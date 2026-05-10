@@ -149,33 +149,39 @@ func parseTimestampUTC(timeStr string) (time.Time, error) {
 	return timestamp.UTC(), nil
 }
 
-// parseSunTimestamp parses sunrise/sunset timestamps which use America/Los_Angeles timezone
-// from the daily endpoint. These need Pacific→UTC conversion.
+// parseSunTimestamp parses sunrise/sunset timestamps from the daily endpoint.
+// These are returned in UTC (since we request timezone=UTC) and need to be
+// converted to RFC3339 format so the frontend can properly interpret the timezone.
 func parseSunTimestamp(timeStr string) (time.Time, error) {
-	// Try RFC3339 first
+	// Try RFC3339 first (already has timezone info)
 	timestamp, err := time.Parse(time.RFC3339, timeStr)
 	if err == nil {
 		return timestamp.UTC(), nil
 	}
 
-	// Parse as Pacific time for sunrise/sunset
+	// Parse bare timestamp as UTC (Open-Meteo returns UTC when timezone=UTC is set)
 	timestamp, err = time.Parse("2006-01-02T15:04", timeStr)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to parse sun timestamp '%s': %w", timeStr, err)
 	}
 
-	pacificTZ, err := time.LoadLocation("America/Los_Angeles")
-	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to load Pacific timezone: %w", err)
-	}
-
-	timestampInPacific := time.Date(
+	// Interpret as UTC since the API was called with timezone=UTC
+	return time.Date(
 		timestamp.Year(), timestamp.Month(), timestamp.Day(),
 		timestamp.Hour(), timestamp.Minute(), timestamp.Second(), 0,
-		pacificTZ,
-	)
+		time.UTC,
+	), nil
+}
 
-	return timestampInPacific.UTC(), nil
+// formatSunTimestampUTC takes a bare timestamp from Open-Meteo (e.g., "2026-04-10T13:25")
+// returned in UTC and converts it to RFC3339 format (e.g., "2026-04-10T13:25:00Z")
+// so the frontend can correctly interpret the timezone and display in local time.
+func formatSunTimestampUTC(timeStr string) string {
+	parsed, err := parseSunTimestamp(timeStr)
+	if err != nil {
+		return timeStr // Return original on parse failure
+	}
+	return parsed.Format(time.RFC3339)
 }
 
 // GetCurrentWeather fetches current weather with both current conditions and hourly forecast
@@ -238,10 +244,11 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 
 // GetCurrentAndForecast fetches both current weather and forecast in a single API call.
 // Uses default Open-Meteo model with timezone=UTC for consistent timestamp handling.
-// Daily sunrise/sunset uses America/Los_Angeles for correct local times.
+// Daily sunrise/sunset is also returned in UTC and converted to RFC3339 for proper frontend display.
 func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *SunTimes, error) {
-	// Hourly data uses timezone=UTC for consistent timestamp storage.
-	// Daily sunrise/sunset is requested separately with Pacific timezone for correct local times.
+	// All data (hourly, current, daily) uses timezone=UTC for consistent timestamp handling.
+	// Sunrise/sunset timestamps are converted to RFC3339 with Z suffix so the frontend
+	// can correctly interpret them as UTC and display in the user's local timezone.
 	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&daily=sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=16",
 		openMeteoForecastURL, lat, lon)
 
@@ -278,14 +285,14 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 	var sunTimes *SunTimes
 	if data.Daily != nil && len(data.Daily.Sunrise) > 0 && len(data.Daily.Sunset) > 0 {
 		sunTimes = &SunTimes{
-			Sunrise: data.Daily.Sunrise[0],
-			Sunset:  data.Daily.Sunset[0],
+			Sunrise: formatSunTimestampUTC(data.Daily.Sunrise[0]),
+			Sunset:  formatSunTimestampUTC(data.Daily.Sunset[0]),
 		}
 		for i := 0; i < len(data.Daily.Time) && i < len(data.Daily.Sunrise) && i < len(data.Daily.Sunset); i++ {
 			sunTimes.Daily = append(sunTimes.Daily, DailySunTime{
 				Date:    data.Daily.Time[i],
-				Sunrise: data.Daily.Sunrise[i],
-				Sunset:  data.Daily.Sunset[i],
+				Sunrise: formatSunTimestampUTC(data.Daily.Sunrise[i]),
+				Sunset:  formatSunTimestampUTC(data.Daily.Sunset[i]),
 			})
 		}
 	}

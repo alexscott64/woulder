@@ -3,7 +3,6 @@ import { RiverData } from '../types/river';
 import { API_BASE_URL } from '../services/api';
 import { WindAnalyzer } from '../utils/weather/analyzers';
 import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl } from './weather/weatherDisplay';
-import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, ChevronRight, Sunrise, Sunset, Footprints } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
@@ -17,12 +16,11 @@ interface WeatherCardProps {
   onToggleExpand: (expanded: boolean, todayConditionLevel?: 'good' | 'marginal' | 'bad' | 'do_not_climb') => void;
 }
 
-// Format sun time from ISO string (e.g., "2025-12-27T07:54") to "7:54 AM"
+// Format sun time from ISO string (e.g., "2025-12-27T07:54:00Z") to "7:54 AM" in Pacific timezone
 function formatSunTime(isoTime: string | undefined): string {
   if (!isoTime) return '--';
   try {
-    const date = new Date(isoTime);
-    return format(date, 'h:mm a');
+    return formatInTimeZone(isoTime, 'America/Los_Angeles', 'h:mm a');
   } catch {
     return '--';
   }

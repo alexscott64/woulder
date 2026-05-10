@@ -97,15 +97,15 @@ func TestParseSunTimestamp(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name:     "bare sunrise timestamp as Pacific (PST, UTC-8)",
+			name:     "bare sunrise timestamp as UTC",
 			input:    "2026-01-15T07:30",
-			wantHour: 15, // 7:30am PST = 3:30pm UTC
+			wantHour: 7, // Already UTC from API (timezone=UTC)
 			wantErr:  false,
 		},
 		{
-			name:     "bare sunset timestamp as Pacific (PDT, UTC-7)",
+			name:     "bare sunset timestamp as UTC",
 			input:    "2026-06-15T20:45",
-			wantHour: 3, // 8:45pm PDT = 3:45am+1 UTC
+			wantHour: 20, // Already UTC from API (timezone=UTC)
 			wantErr:  false,
 		},
 		{
