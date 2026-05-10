@@ -150,9 +150,24 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 		analyticsHistorical = historical
 	}
 
+	// Filter hourlyForecast to future-only entries for downstream consumers.
+	// The Open-Meteo API now returns past_hours=12 of spin-up data (used by the rock
+	// temperature calculator) at the START of hourlyForecast. Cached entries from
+	// weatherRepo.GetForecast are already future-only via SQL, but the fresh-fetch
+	// path includes past hours. Anything semantically "future" (rain next 48h,
+	// today's condition, daily snow depth forecast, snow depth integration) must
+	// not double-count those past hours, so we filter here.
+	nowUTC := time.Now().UTC()
+	futureForecast := make([]models.WeatherData, 0, len(hourlyForecast))
+	for _, h := range hourlyForecast {
+		if !h.Timestamp.Before(nowUTC) {
+			futureForecast = append(futureForecast, h)
+		}
+	}
+
 	// 5. Calculate snow depth
-	snowDepth := s.calculateSnowDepth(location, current, hourlyForecast, analyticsHistorical)
-	dailySnowDepth := s.calculateDailySnowDepth(location, current, hourlyForecast, analyticsHistorical)
+	snowDepth := s.calculateSnowDepth(location, current, futureForecast, analyticsHistorical)
+	dailySnowDepth := s.calculateDailySnowDepth(location, current, futureForecast, analyticsHistorical)
 
 	// 6. Calculate rock drying status (use high-fidelity recent hourly history)
 	rockStatus, err := s.calculateRockDryingStatus(ctx, location, current, historical, snowDepth)
@@ -162,9 +177,9 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 
 	// 7. Calculate climbing conditions
 	conditionCalc := &weatherPkg.ConditionCalculator{}
-	todayCondition := conditionCalc.CalculateTodayCondition(current, hourlyForecast, historical)
-	rainLast48h := conditionCalc.CalculateRainLast48h(historical, hourlyForecast)
-	rainNext48h := s.calculateRainNext48h(hourlyForecast)
+	todayCondition := conditionCalc.CalculateTodayCondition(current, futureForecast, historical)
+	rainLast48h := conditionCalc.CalculateRainLast48h(historical, futureForecast)
+	rainNext48h := s.calculateRainNext48h(futureForecast)
 
 	// 8. Calculate pest conditions (use analytics history)
 	pestConditions := s.calculatePestConditions(current, analyticsHistorical)

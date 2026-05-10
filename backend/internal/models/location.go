@@ -37,16 +37,16 @@ type WeatherData struct {
 	ID                 int       `json:"id" db:"id"`
 	LocationID         int       `json:"location_id" db:"location_id"`
 	Timestamp          time.Time `json:"timestamp" db:"timestamp"`
-	Temperature        float64   `json:"temperature" db:"temperature"`               // Fahrenheit
-	FeelsLike          float64   `json:"feels_like" db:"feels_like"`                 // Fahrenheit
-	Precipitation      float64   `json:"precipitation" db:"precipitation"`           // inches
-	Humidity           int       `json:"humidity" db:"humidity"`                     // percentage
-	WindSpeed          float64   `json:"wind_speed" db:"wind_speed"`                 // mph
-	WindDirection      int       `json:"wind_direction" db:"wind_direction"`         // degrees
-	CloudCover         int       `json:"cloud_cover" db:"cloud_cover"`               // percentage
-	Pressure           int       `json:"pressure" db:"pressure"`                     // hPa
-	Description        string    `json:"description" db:"description"`               // e.g. "light rain"
-	Icon               string    `json:"icon" db:"icon"`                             // OpenWeatherMap icon code
+	Temperature        float64   `json:"temperature" db:"temperature"`                 // Fahrenheit
+	FeelsLike          float64   `json:"feels_like" db:"feels_like"`                   // Fahrenheit
+	Precipitation      float64   `json:"precipitation" db:"precipitation"`             // inches
+	Humidity           int       `json:"humidity" db:"humidity"`                       // percentage
+	WindSpeed          float64   `json:"wind_speed" db:"wind_speed"`                   // mph
+	WindDirection      int       `json:"wind_direction" db:"wind_direction"`           // degrees
+	CloudCover         int       `json:"cloud_cover" db:"cloud_cover"`                 // percentage
+	Pressure           int       `json:"pressure" db:"pressure"`                       // hPa
+	Description        string    `json:"description" db:"description"`                 // e.g. "light rain"
+	Icon               string    `json:"icon" db:"icon"`                               // OpenWeatherMap icon code
 	ShortwaveRadiation float64   `json:"shortwave_radiation" db:"shortwave_radiation"` // W/m^2 total solar radiation on horizontal
 	DirectRadiation    float64   `json:"direct_radiation" db:"direct_radiation"`       // W/m^2 direct beam on horizontal
 	DiffuseRadiation   float64   `json:"diffuse_radiation" db:"diffuse_radiation"`     // W/m^2 diffuse on horizontal
@@ -97,23 +97,24 @@ type PestConditions struct {
 
 // WeatherForecast represents forecast data
 type WeatherForecast struct {
-	LocationID       int                 `json:"location_id"`
-	Location         Location            `json:"location"`
-	Current          WeatherData         `json:"current"`
-	Hourly           []WeatherData       `json:"hourly"`
-	Historical       []WeatherData       `json:"historical"`
-	Sunrise          string              `json:"sunrise,omitempty"`            // Today's sunrise time (ISO 8601)
-	Sunset           string              `json:"sunset,omitempty"`             // Today's sunset time (ISO 8601)
-	DailySunTimes    []DailySunTimes     `json:"daily_sun_times"`              // Sunrise/sunset for each forecast day
-	RockDryingStatus *RockDryingStatus   `json:"rock_drying_status,omitempty"` // Rock drying status (current day)
-	SnowDepthInches  *float64            `json:"snow_depth_inches,omitempty"`  // Current snow depth on ground in inches
-	DailySnowDepth   map[string]float64  `json:"daily_snow_depth,omitempty"`   // Snow depth forecast by date (YYYY-MM-DD)
-	TodayCondition   *ClimbingCondition  `json:"today_condition,omitempty"`    // Today's overall climbing condition
-	RainLast48h      *float64            `json:"rain_last_48h,omitempty"`      // Total rain in last 48 hours (inches)
-	RainNext48h      *float64            `json:"rain_next_48h,omitempty"`      // Forecast rain in next 48 hours (inches)
-	PestConditions   *PestConditions     `json:"pest_conditions,omitempty"`    // Pest activity levels (mosquitoes, outdoor pests)
-	LastClimbedInfo  *LastClimbedInfo    `json:"last_climbed_info,omitempty"`  // DEPRECATED: Most recent climb (use climb_history instead)
-	ClimbHistory     []ClimbHistoryEntry `json:"climb_history,omitempty"`      // Recent climb history at this location (from Mountain Project)
+	LocationID            int                    `json:"location_id"`
+	Location              Location               `json:"location"`
+	Current               WeatherData            `json:"current"`
+	Hourly                []WeatherData          `json:"hourly"`
+	Historical            []WeatherData          `json:"historical"`
+	Sunrise               string                 `json:"sunrise,omitempty"`                 // Today's sunrise time (ISO 8601)
+	Sunset                string                 `json:"sunset,omitempty"`                  // Today's sunset time (ISO 8601)
+	DailySunTimes         []DailySunTimes        `json:"daily_sun_times"`                   // Sunrise/sunset for each forecast day
+	RockDryingStatus      *RockDryingStatus      `json:"rock_drying_status,omitempty"`      // Rock drying status (current day)
+	RockTemperatureStatus *RockTemperatureStatus `json:"rock_temperature_status,omitempty"` // Rock surface temp + friction conditions
+	SnowDepthInches       *float64               `json:"snow_depth_inches,omitempty"`       // Current snow depth on ground in inches
+	DailySnowDepth        map[string]float64     `json:"daily_snow_depth,omitempty"`        // Snow depth forecast by date (YYYY-MM-DD)
+	TodayCondition        *ClimbingCondition     `json:"today_condition,omitempty"`         // Today's overall climbing condition
+	RainLast48h           *float64               `json:"rain_last_48h,omitempty"`           // Total rain in last 48 hours (inches)
+	RainNext48h           *float64               `json:"rain_next_48h,omitempty"`           // Forecast rain in next 48 hours (inches)
+	PestConditions        *PestConditions        `json:"pest_conditions,omitempty"`         // Pest activity levels (mosquitoes, outdoor pests)
+	LastClimbedInfo       *LastClimbedInfo       `json:"last_climbed_info,omitempty"`       // DEPRECATED: Most recent climb (use climb_history instead)
+	ClimbHistory          []ClimbHistoryEntry    `json:"climb_history,omitempty"`           // Recent climb history at this location (from Mountain Project)
 }
 
 // RiverData represents river gauge information with current conditions

@@ -39,6 +39,7 @@ func TestPostgresRepository_Save(t *testing.T) {
 			data.LocationID, data.Timestamp, data.Temperature, data.FeelsLike,
 			data.Precipitation, data.Humidity, data.WindSpeed, data.WindDirection,
 			data.CloudCover, data.Pressure, data.Description, data.Icon,
+			data.ShortwaveRadiation, data.DirectRadiation, data.DiffuseRadiation, data.DewpointF,
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
@@ -65,15 +66,21 @@ func TestPostgresRepository_GetHistorical(t *testing.T) {
 	rows := sqlmock.NewRows([]string{
 		"id", "location_id", "timestamp", "temperature", "feels_like",
 		"precipitation", "humidity", "wind_speed", "wind_direction",
-		"cloud_cover", "pressure", "description", "icon", "created_at",
+		"cloud_cover", "pressure", "description", "icon",
+		"shortwave_radiation", "direct_radiation", "diffuse_radiation", "dewpoint_f",
+		"created_at",
 	}).AddRow(
 		1, 10, now.Add(-24*time.Hour), 65.0, 63.0,
 		0.0, 50, 5.0, 90,
-		25, 1015, "Clear", "01d", now.Add(-25*time.Hour),
+		25, 1015, "Clear", "01d",
+		0.0, 0.0, 0.0, 0.0,
+		now.Add(-25*time.Hour),
 	).AddRow(
 		2, 10, now.Add(-12*time.Hour), 70.0, 68.0,
 		0.0, 55, 7.0, 120,
-		30, 1014, "Few clouds", "02d", now.Add(-13*time.Hour),
+		30, 1014, "Few clouds", "02d",
+		0.0, 0.0, 0.0, 0.0,
+		now.Add(-13*time.Hour),
 	)
 
 	mock.ExpectQuery("SELECT (.+) FROM woulder.weather_data").
@@ -110,7 +117,9 @@ func TestPostgresRepository_GetHistorical_Empty(t *testing.T) {
 	rows := sqlmock.NewRows([]string{
 		"id", "location_id", "timestamp", "temperature", "feels_like",
 		"precipitation", "humidity", "wind_speed", "wind_direction",
-		"cloud_cover", "pressure", "description", "icon", "created_at",
+		"cloud_cover", "pressure", "description", "icon",
+		"shortwave_radiation", "direct_radiation", "diffuse_radiation", "dewpoint_f",
+		"created_at",
 	})
 
 	mock.ExpectQuery("SELECT (.+) FROM woulder.weather_data").
@@ -144,15 +153,21 @@ func TestPostgresRepository_GetForecast(t *testing.T) {
 	rows := sqlmock.NewRows([]string{
 		"id", "location_id", "timestamp", "temperature", "feels_like",
 		"precipitation", "humidity", "wind_speed", "wind_direction",
-		"cloud_cover", "pressure", "description", "icon", "created_at",
+		"cloud_cover", "pressure", "description", "icon",
+		"shortwave_radiation", "direct_radiation", "diffuse_radiation", "dewpoint_f",
+		"created_at",
 	}).AddRow(
 		3, 10, now.Add(6*time.Hour), 75.0, 73.0,
 		0.1, 60, 12.0, 180,
-		70, 1012, "Partly cloudy", "03d", now,
+		70, 1012, "Partly cloudy", "03d",
+		0.0, 0.0, 0.0, 0.0,
+		now,
 	).AddRow(
 		4, 10, now.Add(12*time.Hour), 80.0, 78.0,
 		0.2, 65, 15.0, 200,
-		80, 1011, "Cloudy", "04d", now,
+		80, 1011, "Cloudy", "04d",
+		0.0, 0.0, 0.0, 0.0,
+		now,
 	)
 
 	mock.ExpectQuery("SELECT (.+) FROM woulder.weather_data").
@@ -190,11 +205,15 @@ func TestPostgresRepository_GetCurrent(t *testing.T) {
 	rows := sqlmock.NewRows([]string{
 		"id", "location_id", "timestamp", "temperature", "feels_like",
 		"precipitation", "humidity", "wind_speed", "wind_direction",
-		"cloud_cover", "pressure", "description", "icon", "created_at",
+		"cloud_cover", "pressure", "description", "icon",
+		"shortwave_radiation", "direct_radiation", "diffuse_radiation", "dewpoint_f",
+		"created_at",
 	}).AddRow(
 		5, 10, now, 72.0, 70.0,
 		0.0, 55, 8.0, 150,
-		40, 1013, "Clear", "01d", now.Add(-1*time.Hour),
+		40, 1013, "Clear", "01d",
+		0.0, 0.0, 0.0, 0.0,
+		now.Add(-1*time.Hour),
 	)
 
 	mock.ExpectQuery("SELECT (.+) FROM woulder.weather_data").
