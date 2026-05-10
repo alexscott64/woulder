@@ -54,6 +54,13 @@ type WeatherConfig struct {
 	OpenWeatherMapAPIKey  string
 	MountainProjectAPIKey string
 	PreferOpenMeteo       bool
+	// OfflineMode, when true, instructs the weather service to skip all
+	// Open-Meteo / OpenWeatherMap API calls on the per-request hot path
+	// and serve weather data exclusively from the local database. This is
+	// intended for development to avoid hitting Open-Meteo rate limits
+	// while iterating on the UI. Refresh the DB manually with
+	// `cmd/sync_weather`. Loaded from WEATHER_OFFLINE_MODE (default false).
+	OfflineMode bool
 }
 
 // CacheConfig holds cache-related configuration
@@ -96,6 +103,7 @@ func Load() (*Config, error) {
 			OpenWeatherMapAPIKey:  getEnv("OPENWEATHERMAP_API_KEY", ""),
 			MountainProjectAPIKey: getEnv("MOUNTAIN_PROJECT_API_KEY", ""),
 			PreferOpenMeteo:       true, // Open-Meteo is primary, OpenWeatherMap is fallback
+			OfflineMode:           getEnvAsBool("WEATHER_OFFLINE_MODE", false),
 		},
 		Cache: CacheConfig{
 			DurationMinutes: getEnvAsInt("CACHE_DURATION", 10),

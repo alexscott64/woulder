@@ -49,6 +49,13 @@ type WeatherService struct {
 	pestAnalyzer         *pests.PestAnalyzer
 	climbTrackingService *ClimbTrackingService
 
+	// offlineMode, when true, disables all per-request Open-Meteo /
+	// OpenWeatherMap API calls. Weather data is read exclusively from the
+	// local DB cache (`weather` repository). Intended for dev workflows
+	// where the user pairs this flag with the `cmd/sync_weather` command
+	// to refresh DB data on demand. See WEATHER_OFFLINE_MODE in config.
+	offlineMode bool
+
 	// Background refresh management
 	refreshMutex sync.Mutex
 	lastRefresh  time.Time
@@ -74,6 +81,17 @@ func NewWeatherService(
 	}
 }
 
+// SetOfflineMode toggles offline mode on the service. When enabled, all
+// per-request Open-Meteo / OpenWeatherMap API calls are skipped and weather
+// data is loaded purely from the local DB. Wire this from config in main.go
+// (see WeatherConfig.OfflineMode).
+func (s *WeatherService) SetOfflineMode(enabled bool) {
+	s.offlineMode = enabled
+	if enabled {
+		log.Println("WeatherService: offline mode ENABLED — Open-Meteo API calls disabled, serving from DB only")
+	}
+}
+
 // GetLocationWeather retrieves complete weather forecast for a location
 // Uses cached data from database if available and fresh (< 1 hour old)
 // includeClimbHistory controls whether to fetch climb history (expensive query)
@@ -89,6 +107,10 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 		return nil, fmt.Errorf("location not found: %w", err)
 	}
 
+	if s.offlineMode {
+		log.Printf("weather: offline mode — using DB only for location %d", locationID)
+	}
+
 	// 2. Try to get current weather from database cache first
 	var current *models.WeatherData
 	var hourlyForecast []models.WeatherData
@@ -96,10 +118,13 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 
 	cachedCurrent, err := s.weatherRepo.GetCurrent(ctx, locationID)
 	if err == nil && cachedCurrent != nil {
-		// Check if cached data is fresh (created/updated less than 1 hour ago)
+		// In offline mode we always trust the cache regardless of age.
+		// Otherwise, only use cache when fresh (< 1h old).
 		age := time.Since(cachedCurrent.CreatedAt)
-		if age < 1*time.Hour {
-			log.Printf("Using cached weather data for location %d (age: %v)", locationID, age.Round(time.Minute))
+		if s.offlineMode || age < 1*time.Hour {
+			if !s.offlineMode {
+				log.Printf("Using cached weather data for location %d (age: %v)", locationID, age.Round(time.Minute))
+			}
 			current = cachedCurrent
 
 			// Also get cached forecast data (next 7 days)
@@ -115,32 +140,55 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 	}
 
 	// 3. If no cached data or data is stale, fetch from API and persist to DB
+	//    (skipped entirely in offline mode — see below).
 	if current == nil {
-		log.Printf("Cache miss or stale data, fetching fresh weather for location %d", locationID)
-		var fetchErr error
-		current, hourlyForecast, sunTimes, fetchErr = s.weatherClient.GetCurrentAndForecast(
-			location.Latitude, location.Longitude,
-		)
-		if fetchErr != nil {
-			return nil, fmt.Errorf("failed to fetch weather: %w", fetchErr)
-		}
-
-		// Persist fresh data to DB so subsequent requests use the cache.
-		// Delete stale future forecasts first, then save all hourly data.
-		current.LocationID = locationID
-		if err := s.weatherRepo.DeleteFutureForLocation(ctx, locationID); err != nil {
-			log.Printf("Warning: failed to purge stale forecasts for location %d: %v", locationID, err)
-		}
-		if err := s.weatherRepo.Save(ctx, current); err != nil {
-			log.Printf("Warning: failed to save current weather for location %d: %v", locationID, err)
-		}
-		for i := range hourlyForecast {
-			hourlyForecast[i].LocationID = locationID
-			if err := s.weatherRepo.Save(ctx, &hourlyForecast[i]); err != nil {
-				log.Printf("Warning: failed to save forecast hour for location %d: %v", locationID, err)
+		if s.offlineMode {
+			// Offline mode: do NOT call the API. Log a warning and continue
+			// with whatever (possibly empty) data we can scrape from the DB.
+			// Downstream calculators handle nil/empty inputs via existing
+			// nil checks, so we synthesize a minimal `current` row to keep
+			// the response shape stable.
+			log.Printf("weather: offline mode — no cached current weather for location %d; serving empty/synthetic data (run `cmd/sync_weather` to refresh)", locationID)
+			now := time.Now().UTC()
+			current = &models.WeatherData{
+				LocationID: locationID,
+				Timestamp:  now,
+				CreatedAt:  now,
 			}
+			// Try to pull whatever forecast rows are in the DB.
+			hourlyForecast, err = s.weatherRepo.GetForecast(ctx, locationID, 168)
+			if err != nil {
+				log.Printf("Warning: offline mode — failed to load forecast from DB for location %d: %v", locationID, err)
+				hourlyForecast = []models.WeatherData{}
+			}
+			sunTimes = nil
+		} else {
+			log.Printf("Cache miss or stale data, fetching fresh weather for location %d", locationID)
+			var fetchErr error
+			current, hourlyForecast, sunTimes, fetchErr = s.weatherClient.GetCurrentAndForecast(
+				location.Latitude, location.Longitude,
+			)
+			if fetchErr != nil {
+				return nil, fmt.Errorf("failed to fetch weather: %w", fetchErr)
+			}
+
+			// Persist fresh data to DB so subsequent requests use the cache.
+			// Delete stale future forecasts first, then save all hourly data.
+			current.LocationID = locationID
+			if err := s.weatherRepo.DeleteFutureForLocation(ctx, locationID); err != nil {
+				log.Printf("Warning: failed to purge stale forecasts for location %d: %v", locationID, err)
+			}
+			if err := s.weatherRepo.Save(ctx, current); err != nil {
+				log.Printf("Warning: failed to save current weather for location %d: %v", locationID, err)
+			}
+			for i := range hourlyForecast {
+				hourlyForecast[i].LocationID = locationID
+				if err := s.weatherRepo.Save(ctx, &hourlyForecast[i]); err != nil {
+					log.Printf("Warning: failed to save forecast hour for location %d: %v", locationID, err)
+				}
+			}
+			log.Printf("Persisted fresh weather data for location %d (%d hours)", locationID, len(hourlyForecast))
 		}
-		log.Printf("Persisted fresh weather data for location %d (%d hours)", locationID, len(hourlyForecast))
 	}
 
 	// Extract sunrise/sunset
@@ -501,6 +549,10 @@ func (s *WeatherService) RefreshAllWeather(ctx context.Context) error {
 
 // RefreshAllWeatherWithOptions refreshes weather with control over freshness check
 func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, forceRefresh bool) error {
+	if s.offlineMode {
+		log.Println("weather: offline mode — skipping RefreshAllWeather (run `cmd/sync_weather` to refresh DB)")
+		return nil
+	}
 	s.refreshMutex.Lock()
 	if s.isRefreshing {
 		s.refreshMutex.Unlock()
@@ -623,6 +675,17 @@ func (s *WeatherService) StartBackgroundRefresh(interval time.Duration) {
 
 // GetWeatherByCoordinates fetches weather for arbitrary coordinates
 func (s *WeatherService) GetWeatherByCoordinates(ctx context.Context, lat, lon float64) (*models.WeatherForecast, error) {
+	if s.offlineMode {
+		// No DB cache exists for arbitrary coordinates — return a stub
+		// rather than calling the API. This endpoint is rarely used in dev.
+		log.Printf("weather: offline mode — GetWeatherByCoordinates(%.4f,%.4f) returning empty stub", lat, lon)
+		now := time.Now().UTC()
+		return &models.WeatherForecast{
+			Current:    models.WeatherData{Timestamp: now, CreatedAt: now},
+			Hourly:     []models.WeatherData{},
+			Historical: []models.WeatherData{},
+		}, nil
+	}
 	// Fetch weather from API
 	current, hourlyForecast, sunTimes, err := s.weatherClient.GetCurrentAndForecast(lat, lon)
 	if err != nil {

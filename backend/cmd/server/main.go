@@ -52,6 +52,7 @@ func main() {
 	recoverInterruptedJobs(jobMonitor, climbTrackingService)
 
 	weatherServiceLayer := service.NewWeatherService(db.Weather(), db.Locations(), db.Rocks(), weatherClient, climbTrackingService)
+	weatherServiceLayer.SetOfflineMode(cfg.Weather.OfflineMode)
 	riverServiceLayer := service.NewRiverService(db.Rivers(), riverClient)
 	boulderDryingService := service.NewBoulderDryingService(db.Boulders(), db.Weather(), db.Locations(), db.Rocks(), db.MountainProject(), weatherClient)
 	heatMapService := service.NewHeatMapService(db.HeatMap())
