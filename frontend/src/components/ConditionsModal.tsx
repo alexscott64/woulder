@@ -1,14 +1,24 @@
 import { X, Info, Stone, Waves, Bug, Droplet, AlertTriangle, AlertCircle, TrendingUp, Clock, CalendarCheck } from 'lucide-react';
 import { format } from 'date-fns';
-import { RockDryingStatus, WeatherCondition, PestConditions, PestLevel } from '../types/weather';
+import { RockDryingStatus, WeatherCondition, PestConditions, PestLevel, RockTemperatureStatus } from '../types/weather';
 import { RiverData } from '../types/river';
 import { useState } from 'react';
 import { formatDryTime } from '../utils/weather/formatters';
-import { getConditionBadgeStyles, getConditionColor } from './weather/weatherDisplay';
+import {
+  getConditionBadgeStyles,
+  getConditionColor,
+  ROCK_CONDITION_COLORS,
+  ROCK_CONDITION_LABELS,
+  FRICTION_QUALITY_COLORS,
+  FRICTION_QUALITY_LABELS,
+  CONDENSATION_OVERLAY_CLASS,
+  formatSendWindow,
+} from './weather/weatherDisplay';
 
 interface ConditionsModalProps {
   locationName: string;
   rockStatus?: RockDryingStatus;
+  rockTempStatus?: RockTemperatureStatus;
   pestConditions?: PestConditions;
   riverData?: RiverData[];
   todayCondition: WeatherCondition;
@@ -20,6 +30,7 @@ type TabType = 'today' | 'rock' | 'rivers' | 'pests';
 export function ConditionsModal({
   locationName,
   rockStatus,
+  rockTempStatus,
   pestConditions,
   riverData,
   todayCondition,
@@ -27,7 +38,7 @@ export function ConditionsModal({
 }: ConditionsModalProps) {
   // Determine which tabs are available and set initial tab
   const availableTabs: TabType[] = ['today']; // Always show today
-  if (rockStatus) availableTabs.push('rock');
+  if (rockStatus || rockTempStatus) availableTabs.push('rock');
   if (riverData && riverData.length > 0) availableTabs.push('rivers');
   if (pestConditions) availableTabs.push('pests');
 
@@ -44,6 +55,20 @@ export function ConditionsModal({
       case 'pests':
         return <Bug className="w-3.5 h-3.5" />;
     }
+  };
+
+  // Combined Rock-tab dot color: worst signal between rock-drying and rock-temperature.
+  const rockTabStatusColor = (
+    drying?: RockDryingStatus,
+    temp?: RockTemperatureStatus
+  ): string => {
+    if (drying?.status === 'critical') return 'bg-red-500';
+    if (drying?.status === 'poor') return 'bg-orange-500';
+    if (temp?.condition === 'very_poor') return 'bg-red-500';
+    if (temp?.condition === 'poor' || temp?.friction_quality === 'poor') return 'bg-orange-500';
+    if (drying?.status === 'fair') return 'bg-yellow-500';
+    if (temp?.friction_quality === 'reduced') return 'bg-yellow-500';
+    return 'bg-green-500';
   };
 
   const getRockStatusColor = (status: string) => {
@@ -173,21 +198,8 @@ export function ConditionsModal({
           dotColor = 'bg-green-500';
           break;
       }
-    } else if (tab === 'rock' && rockStatus) {
-      switch (rockStatus.status) {
-        case 'critical':
-          dotColor = 'bg-red-500';
-          break;
-        case 'poor':
-          dotColor = 'bg-red-500';
-          break;
-        case 'fair':
-          dotColor = 'bg-yellow-500';
-          break;
-        case 'good':
-          dotColor = 'bg-green-500';
-          break;
-      }
+    } else if (tab === 'rock' && (rockStatus || rockTempStatus)) {
+      dotColor = rockTabStatusColor(rockStatus, rockTempStatus);
     } else if (tab === 'rivers' && riverData) {
       const allSafe = riverData.every(r => r.is_safe);
       const anySafe = riverData.some(r => r.is_safe);
@@ -319,80 +331,95 @@ export function ConditionsModal({
             </div>
           )}
 
-          {/* Rock Conditions Tab */}
-          {activeTab === 'rock' && rockStatus && (
+          {/* Rock Conditions Tab (drying + surface temperature/friction) */}
+          {activeTab === 'rock' && (rockStatus || rockTempStatus) && (
             <div className="space-y-2 sm:space-y-3">
-              {/* Status Card */}
-              <div className={`rounded-lg p-3 sm:p-4 ${getRockStatusBgColor(rockStatus.status)}`}>
-                <div className="flex items-center justify-between mb-1.5 sm:mb-2">
-                  <span className="text-xs sm:text-sm font-semibold text-gray-900 dark:text-white">Current Status</span>
-                  <span className={`text-xs sm:text-sm font-bold ${getRockStatusColor(rockStatus.status)}`}>
-                    {getRockStatusText(rockStatus.status)}
-                  </span>
-                </div>
-                <p className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">
-                  {rockStatus.message}
-                </p>
-              </div>
-
-              {/* Rock Type Category */}
-              <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 sm:p-4">
-                <div className="mb-1.5">
-                  <span className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Rock Type Category</span>
-                </div>
-                <p className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">
-                  {rockStatus.primary_group_name}
-                </p>
-                <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Specific types: {rockStatus.rock_types.join(', ')}
-                </p>
-              </div>
-
-              {/* Drying Timeline */}
-              {rockStatus.is_wet && rockStatus.hours_until_dry > 0 && (
-                <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 sm:p-4">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Estimated Dry Time</span>
-                    <span className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">
-                      {formatDryTime(rockStatus.hours_until_dry)}
-                    </span>
-                  </div>
-                  {rockStatus.last_rain_timestamp && (
-                    <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
-                      Last rain: {formatLastRain(rockStatus.last_rain_timestamp)}
+              {rockStatus && (
+                <>
+                  {/* Status Card */}
+                  <div className={`rounded-lg p-3 sm:p-4 ${getRockStatusBgColor(rockStatus.status)}`}>
+                    <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+                      <span className="text-xs sm:text-sm font-semibold text-gray-900 dark:text-white">Current Status</span>
+                      <span className={`text-xs sm:text-sm font-bold ${getRockStatusColor(rockStatus.status)}`}>
+                        {getRockStatusText(rockStatus.status)}
+                      </span>
+                    </div>
+                    <p className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">
+                      {rockStatus.message}
                     </p>
-                  )}
-                </div>
-              )}
+                  </div>
 
-              {/* Wet-Sensitive Warning */}
-              {rockStatus.is_wet_sensitive && rockStatus.is_wet && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-2 sm:p-3">
-                  <div className="flex items-start gap-1.5 sm:gap-2">
-                    <Info className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-xs sm:text-sm font-semibold text-red-900 dark:text-red-200 mb-0.5 sm:mb-1">
-                        Wet-Sensitive Rock Warning
-                      </p>
-                      <p className="text-[10px] sm:text-xs text-red-800 dark:text-red-300">
-                        {rockStatus.primary_group_name} is permanently damaged when climbed wet. Climbing on wet rock can break holds and ruin routes. Please wait until completely dry.
-                      </p>
+                  {/* Rock Type Category */}
+                  <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 sm:p-4">
+                    <div className="mb-1.5">
+                      <span className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Rock Type Category</span>
+                    </div>
+                    <p className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">
+                      {rockStatus.primary_group_name}
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Specific types: {rockStatus.rock_types.join(', ')}
+                    </p>
+                  </div>
+
+                  {/* Drying Timeline */}
+                  {rockStatus.is_wet && rockStatus.hours_until_dry > 0 && (
+                    <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 sm:p-4">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">Estimated Dry Time</span>
+                        <span className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">
+                          {formatDryTime(rockStatus.hours_until_dry)}
+                        </span>
+                      </div>
+                      {rockStatus.last_rain_timestamp && (
+                        <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
+                          Last rain: {formatLastRain(rockStatus.last_rain_timestamp)}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Wet-Sensitive Warning */}
+                  {rockStatus.is_wet_sensitive && rockStatus.is_wet && (
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-2 sm:p-3">
+                      <div className="flex items-start gap-1.5 sm:gap-2">
+                        <Info className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs sm:text-sm font-semibold text-red-900 dark:text-red-200 mb-0.5 sm:mb-1">
+                            Wet-Sensitive Rock Warning
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-red-800 dark:text-red-300">
+                            {rockStatus.primary_group_name} is permanently damaged when climbed wet. Climbing on wet rock can break holds and ruin routes. Please wait until completely dry.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Info Box */}
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-2 sm:p-3">
+                    <div className="flex items-start gap-1.5 sm:gap-2">
+                      <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-[10px] sm:text-xs text-blue-800 dark:text-blue-200">
+                          <strong>How it's calculated:</strong> Drying time is estimated based on rock type porosity, recent precipitation, temperature, humidity, wind, cloud cover, and sun exposure.
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </>
               )}
 
-              {/* Info Box */}
-              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-2 sm:p-3">
-                <div className="flex items-start gap-1.5 sm:gap-2">
-                  <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-[10px] sm:text-xs text-blue-800 dark:text-blue-200">
-                      <strong>How it's calculated:</strong> Drying time is estimated based on rock type porosity, recent precipitation, temperature, humidity, wind, cloud cover, and sun exposure.
-                    </p>
-                  </div>
-                </div>
-              </div>
+              {/* Rock surface temperature & friction (appended to the same Rock tab) */}
+              {rockTempStatus && (
+                <>
+                  {rockStatus && <hr className="my-4 border-gray-200 dark:border-gray-700" />}
+                  <h3 className="text-sm sm:text-base font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                    Surface temperature &amp; friction
+                  </h3>
+                  <RockTempTabContent status={rockTempStatus} />
+                </>
+              )}
             </div>
           )}
 
@@ -591,6 +618,149 @@ export function ConditionsModal({
             Close
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== Rock Temperature Tab content =====
+
+interface RockTempTabContentProps {
+  status: RockTemperatureStatus;
+}
+
+function RockTempTabContent({ status: s }: RockTempTabContentProps) {
+  const fmtTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+  const showCondensationPanel = !!s.condensation && s.condensation.severity !== 'none';
+  const hasSendWindows = !!s.send_windows && s.send_windows.length > 0;
+  const hasHourly = !!s.hourly_forecast && s.hourly_forecast.length > 0;
+
+  return (
+    <div className="space-y-3 sm:space-y-4">
+      {/* Headline row */}
+      <div className="rounded-lg p-3 sm:p-4 bg-gray-50 dark:bg-gray-900">
+        <div className="flex items-center flex-wrap gap-2 sm:gap-3">
+          <span
+            className="rounded-full px-3 py-1 text-xs sm:text-sm font-semibold text-white"
+            style={{ backgroundColor: FRICTION_QUALITY_COLORS[s.friction_quality] }}
+          >
+            {FRICTION_QUALITY_LABELS[s.friction_quality]} friction
+          </span>
+          <span className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
+            {s.estimated_surface_temp_f.toFixed(0)}°F
+          </span>
+          <span className={`text-xs sm:text-sm font-medium ${s.temp_differential_f > 0 ? 'text-red-500 dark:text-red-400' : 'text-blue-500 dark:text-blue-400'}`}>
+            {s.temp_differential_f > 0 ? '+' : ''}
+            {s.temp_differential_f.toFixed(0)}°F over air
+          </span>
+          <span
+            className="inline-block w-3 h-3 rounded-full ml-auto"
+            style={{ backgroundColor: ROCK_CONDITION_COLORS[s.condition] }}
+            title={ROCK_CONDITION_LABELS[s.condition]}
+          />
+          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+            {ROCK_CONDITION_LABELS[s.condition]}
+          </span>
+        </div>
+        <p className="text-xs sm:text-sm text-gray-700 dark:text-gray-300 mt-2">{s.message}</p>
+      </div>
+
+      {/* Condensation panel */}
+      {showCondensationPanel && s.condensation && (
+        <div className="rounded-lg bg-blue-50 dark:bg-blue-950/40 p-2.5 sm:p-3 border border-blue-200 dark:border-blue-700/40">
+          <div className="text-xs sm:text-sm font-semibold text-blue-900 dark:text-blue-200">
+            {s.condensation.severity === 'heavy' ? 'Surface is wet' : 'Surface is damp'}
+          </div>
+          <div className="text-xs sm:text-sm text-blue-800 dark:text-gray-300 mt-0.5">
+            {s.condensation.reason}
+          </div>
+          <div className="text-[10px] sm:text-xs text-gray-600 dark:text-gray-400 mt-1">
+            Surface vs dewpoint: {s.condensation.surface_vs_dewpoint > 0 ? '+' : ''}
+            {s.condensation.surface_vs_dewpoint.toFixed(1)}°F
+            {s.condensation.clears_at && ` • Clears at ${fmtTime(s.condensation.clears_at)}`}
+          </div>
+        </div>
+      )}
+
+      {/* Send windows */}
+      {hasSendWindows && (
+        <div>
+          <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1.5 sm:mb-2">
+            Send Windows
+          </h4>
+          <ul className="space-y-1">
+            {s.send_windows!.map((w, i) => (
+              <li
+                key={i}
+                className="flex items-center gap-2 text-xs sm:text-sm text-gray-700 dark:text-gray-300"
+              >
+                <span
+                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: ROCK_CONDITION_COLORS[w.condition] }}
+                />
+                <span className="flex-1">{formatSendWindow(w)}</span>
+                <span className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-500 flex-shrink-0">
+                  peak {w.peak_temp_f.toFixed(0)}°F
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Hourly timeline */}
+      {hasHourly && (
+        <div>
+          <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1.5 sm:mb-2">
+            Next 24h
+          </h4>
+          <div className="flex gap-px overflow-x-auto rounded">
+            {s.hourly_forecast!.slice(0, 24).map((h, i) => {
+              const hourStr = new Date(h.time).toLocaleTimeString(undefined, { hour: 'numeric' });
+              const title = `${hourStr}: ${h.surface_f.toFixed(0)}°F ${ROCK_CONDITION_LABELS[h.condition]}${h.condensing ? ' (damp)' : ''}`;
+              return (
+                <div
+                  key={i}
+                  title={title}
+                  className={`w-4 h-8 flex-shrink-0 ${h.condensing ? CONDENSATION_OVERLAY_CLASS : ''}`}
+                  style={{ backgroundColor: ROCK_CONDITION_COLORS[h.condition] }}
+                />
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-gray-500 dark:text-gray-400">
+            {(['prime', 'good', 'marginal', 'poor', 'very_poor', 'too_cold'] as const).map((c) => (
+              <span key={c} className="inline-flex items-center gap-1">
+                <span className="inline-block w-2 h-2 rounded-sm" style={{ backgroundColor: ROCK_CONDITION_COLORS[c] }} />
+                {ROCK_CONDITION_LABELS[c]}
+              </span>
+            ))}
+            <span className="inline-flex items-center gap-1">
+              <span className={`inline-block w-2 h-2 rounded-sm bg-gray-400 ${CONDENSATION_OVERLAY_CLASS}`} />
+              condensing
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Confidence */}
+      <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
+        <div>Confidence: {s.confidence_score}/100</div>
+        {s.confidence_factors && s.confidence_factors.length > 0 && (
+          <ul className="list-disc list-inside mt-1 space-y-0.5">
+            {s.confidence_factors.map((f, i) => (
+              <li key={i}>{f}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Inputs footer */}
+      <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-500 pt-2 border-t border-gray-200 dark:border-gray-700">
+        Rock type: {s.rock_type} • Air: {s.air_temp_f.toFixed(0)}°F • Surface: {s.estimated_surface_temp_f.toFixed(0)}°F
+        {s.condensation && ` • Dewpoint: ${s.condensation.dewpoint_f.toFixed(0)}°F`}
       </div>
     </div>
   );

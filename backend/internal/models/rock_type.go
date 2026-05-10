@@ -79,6 +79,7 @@ type RockTemperatureStatus struct {
 	Message               string            `json:"message"`
 	SendWindows           []SendWindow      `json:"send_windows,omitempty"`
 	HourlyForecast        []RockTempHour    `json:"hourly_forecast,omitempty"`
+	DailyForecast         []DailyRockTemp   `json:"daily_forecast,omitempty"`
 	Condensation          *CondensationInfo `json:"condensation,omitempty"`
 	ConfidenceScore       int               `json:"confidence_score"`
 	ConfidenceFactors     []string          `json:"confidence_factors,omitempty"`
@@ -121,4 +122,18 @@ type RockTempHour struct {
 	DewpointF  float64   `json:"dewpoint_f"`
 	Condensing bool      `json:"condensing"`
 	Condition  string    `json:"condition"`
+}
+
+// DailyRockTemp summarizes one calendar day of rock surface temperature
+// conditions for a location. Times are in the location's local timezone
+// at the boundary; the LocalDate field is YYYY-MM-DD in that timezone.
+type DailyRockTemp struct {
+	LocalDate        string      `json:"local_date"`                 // YYYY-MM-DD, location-local
+	PeakSurfaceTempF float64     `json:"peak_surface_temp_f"`        // hottest hour of the day
+	MinSurfaceTempF  float64     `json:"min_surface_temp_f"`         // coldest hour of the day
+	PeakCondition    string      `json:"peak_condition"`             // tier of peak hour
+	OverallCondition string      `json:"overall_condition"`          // worst tier observed (best->worst: prime,good,marginal,poor,very_poor; too_cold treated separately)
+	HasCondensation  bool        `json:"has_condensation"`           // any hour was condensing
+	BestSendWindow   *SendWindow `json:"best_send_window,omitempty"` // single best window of the day, prime preferred over good
+	WindowCount      int         `json:"window_count"`               // count of all windows on this day
 }

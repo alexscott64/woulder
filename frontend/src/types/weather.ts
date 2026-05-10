@@ -54,6 +54,73 @@ export interface RockDryingStatus {
   primary_group_name: string;
 }
 
+// ===== Rock Temperature (surface temp / friction / condensation) =====
+
+export type RockCondition = 'prime' | 'good' | 'marginal' | 'poor' | 'very_poor' | 'too_cold';
+export type FrictionQuality = 'excellent' | 'good' | 'reduced' | 'poor';
+export type CondensationSeverity = 'none' | 'light' | 'heavy';
+
+export interface RockTempTransition {
+  time: string;
+  to_condition: RockCondition;
+}
+
+export interface CondensationInfo {
+  active: boolean;
+  dewpoint_f: number;
+  surface_vs_dewpoint: number;
+  clears_at?: string;
+  severity: CondensationSeverity;
+  reason: string;
+}
+
+export interface SendWindow {
+  start_time: string;
+  end_time: string;
+  duration_h: number;
+  condition: 'prime' | 'good';
+  avg_temp_f: number;
+  peak_temp_f: number;
+  dry_throughout: boolean;
+}
+
+export interface RockTempHour {
+  time: string;
+  surface_f: number;
+  air_f: number;
+  dewpoint_f: number;
+  condensing: boolean;
+  condition: RockCondition;
+}
+
+export interface DailyRockTemp {
+  local_date: string;            // YYYY-MM-DD
+  peak_surface_temp_f: number;
+  min_surface_temp_f: number;
+  peak_condition: RockCondition;
+  overall_condition: RockCondition;
+  has_condensation: boolean;
+  best_send_window?: SendWindow;
+  window_count: number;
+}
+
+export interface RockTemperatureStatus {
+  estimated_surface_temp_f: number;
+  air_temp_f: number;
+  temp_differential_f: number;
+  condition: RockCondition;
+  friction_quality: FrictionQuality;
+  next_transition?: RockTempTransition;
+  message: string;
+  send_windows?: SendWindow[];
+  hourly_forecast?: RockTempHour[];
+  daily_forecast?: DailyRockTemp[];
+  condensation?: CondensationInfo;
+  confidence_score: number;
+  confidence_factors?: string[];
+  rock_type: string;
+}
+
 export interface ClimbHistoryEntry {
   mp_route_id: number;       // Mountain Project route ID for linking
   route_name: string;
@@ -185,6 +252,7 @@ export interface WeatherForecast {
   rain_last_48h?: number; // Total rain in last 48 hours (inches, calculated by backend)
   rain_next_48h?: number; // Forecast rain in next 48 hours (inches, calculated by backend)
   pest_conditions?: PestConditions; // Pest activity levels (calculated by backend)
+  rock_temperature_status?: RockTemperatureStatus; // Rock surface temperature, friction, and condensation (current/today, ~24h hourly)
   last_climbed_info?: LastClimbedInfo; // DEPRECATED: Most recent climb (use climb_history instead)
   climb_history?: ClimbHistoryEntry[]; // Recent climb history at this location (from Mountain Project)
 }

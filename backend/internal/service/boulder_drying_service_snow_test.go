@@ -120,7 +120,7 @@ func TestGetLocationRockDryingStatus_WithSnow(t *testing.T) {
 	}
 
 	service := NewBoulderDryingService(mockBouldersRepo, mockWeatherRepo, mockLocationsRepo, mockRocksRepo, mockMPRepo, mockWeatherClient)
-	dryingStatus, _, err := service.getLocationRockDryingStatus(context.Background(), locationID)
+	dryingStatus, _, _, err := service.getLocationRockDryingStatus(context.Background(), locationID)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)

@@ -16,28 +16,29 @@ type DryingForecastPeriod struct {
 	StartTime     time.Time `json:"start_time"`
 	EndTime       time.Time `json:"end_time"`
 	IsDry         bool      `json:"is_dry"`
-	Status        string    `json:"status"` // "dry", "drying", "wet"
+	Status        string    `json:"status"`                    // "dry", "drying", "wet"
 	HoursUntilDry float64   `json:"hours_until_dry,omitempty"` // Only present if wet
 	RainAmount    float64   `json:"rain_amount,omitempty"`     // Inches of rain in this period
 }
 
 // BoulderDryingStatus represents the drying status for a specific boulder
 type BoulderDryingStatus struct {
-	MPRouteID           int64                   `json:"mp_route_id"`
-	IsWet               bool                    `json:"is_wet"`
-	IsSafe              bool                    `json:"is_safe"`
-	HoursUntilDry       float64                 `json:"hours_until_dry"`
-	Status              string                  `json:"status"` // "critical", "poor", "fair", "good"
-	Message             string                  `json:"message"`
-	ConfidenceScore     int                     `json:"confidence_score"` // 0-100
-	LastRainTimestamp   *time.Time              `json:"last_rain_timestamp,omitempty"` // Pointer to allow null
-	SunExposureHours    float64                 `json:"sun_exposure_hours"`     // Hours of direct sun next 6 days
-	TreeCoveragePercent float64                 `json:"tree_coverage_percent"` // 0-100
-	RockType            string                  `json:"rock_type"`
-	Aspect              string                  `json:"aspect"`      // N, NE, E, SE, S, SW, W, NW
-	Latitude            float64                 `json:"latitude"`    // Boulder GPS
-	Longitude           float64                 `json:"longitude"`   // Boulder GPS
-	Forecast            []DryingForecastPeriod  `json:"forecast,omitempty"` // 6-day dry/wet forecast
+	MPRouteID             int64                         `json:"mp_route_id"`
+	IsWet                 bool                          `json:"is_wet"`
+	IsSafe                bool                          `json:"is_safe"`
+	HoursUntilDry         float64                       `json:"hours_until_dry"`
+	Status                string                        `json:"status"` // "critical", "poor", "fair", "good"
+	Message               string                        `json:"message"`
+	ConfidenceScore       int                           `json:"confidence_score"`              // 0-100
+	LastRainTimestamp     *time.Time                    `json:"last_rain_timestamp,omitempty"` // Pointer to allow null
+	SunExposureHours      float64                       `json:"sun_exposure_hours"`            // Hours of direct sun next 6 days
+	TreeCoveragePercent   float64                       `json:"tree_coverage_percent"`         // 0-100
+	RockType              string                        `json:"rock_type"`
+	Aspect                string                        `json:"aspect"`                            // N, NE, E, SE, S, SW, W, NW
+	Latitude              float64                       `json:"latitude"`                          // Boulder GPS
+	Longitude             float64                       `json:"longitude"`                         // Boulder GPS
+	Forecast              []DryingForecastPeriod        `json:"forecast,omitempty"`                // 6-day dry/wet forecast
+	RockTemperatureStatus *models.RockTemperatureStatus `json:"rock_temperature_status,omitempty"` // boulder-level rock surface temp status (Followup 6B)
 }
 
 // Calculator computes boulder-specific drying times
@@ -70,9 +71,9 @@ func (c *Calculator) CalculateBoulderDryingStatus(
 	hourlyForecast []models.WeatherData,
 ) (*BoulderDryingStatus, error) {
 	status := &BoulderDryingStatus{
-		MPRouteID:         route.MPRouteID,
-		RockType:          locationDrying.PrimaryRockType,
-		ConfidenceScore:   100, // Start at full confidence, reduce for missing data
+		MPRouteID:       route.MPRouteID,
+		RockType:        locationDrying.PrimaryRockType,
+		ConfidenceScore: 100, // Start at full confidence, reduce for missing data
 	}
 
 	// Extract GPS coordinates
@@ -273,14 +274,14 @@ func (c *Calculator) estimateSunExposureFromAspect(aspect string) float64 {
 	// Rough estimate of daily sun hours based on aspect (winter PNW)
 	// Multiply by 6 days for total forecast period
 	dailySunHours := map[string]float64{
-		"N":  2.0,  // Minimal sun
-		"NE": 3.0,  // Morning sun only
-		"E":  4.0,  // Morning sun
-		"SE": 6.0,  // Morning + midday sun
-		"S":  8.0,  // Maximum sun exposure
-		"SW": 6.0,  // Afternoon sun
-		"W":  4.0,  // Afternoon sun only
-		"NW": 3.0,  // Late afternoon only
+		"N":  2.0, // Minimal sun
+		"NE": 3.0, // Morning sun only
+		"E":  4.0, // Morning sun
+		"SE": 6.0, // Morning + midday sun
+		"S":  8.0, // Maximum sun exposure
+		"SW": 6.0, // Afternoon sun
+		"W":  4.0, // Afternoon sun only
+		"NW": 3.0, // Late afternoon only
 	}
 
 	if hours, ok := dailySunHours[aspect]; ok {

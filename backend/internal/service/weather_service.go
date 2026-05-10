@@ -18,6 +18,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/weather/calculator"
 	"github.com/alexscott64/woulder/backend/internal/weather/client"
 	"github.com/alexscott64/woulder/backend/internal/weather/rock_drying"
+	"github.com/alexscott64/woulder/backend/internal/weather/rock_temp"
 	sunpkg "github.com/alexscott64/woulder/backend/internal/weather/sun"
 )
 
@@ -27,6 +28,7 @@ type WeatherService struct {
 	rocksRepo            rocks.Repository
 	weatherClient        *weatherPkg.WeatherService
 	rockCalculator       *rock_drying.Calculator
+	rockTempCalculator   *rock_temp.Calculator
 	pestAnalyzer         *pests.PestAnalyzer
 	climbTrackingService *ClimbTrackingService
 
@@ -49,6 +51,7 @@ func NewWeatherService(
 		rocksRepo:            rocksRepo,
 		weatherClient:        client,
 		rockCalculator:       &rock_drying.Calculator{},
+		rockTempCalculator:   &rock_temp.Calculator{},
 		pestAnalyzer:         &pests.PestAnalyzer{},
 		climbTrackingService: climbService,
 	}
@@ -175,6 +178,35 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 		log.Printf("Warning: failed to calculate rock drying: %v", err)
 	}
 
+	// 6b. Calculate rock surface temperature status (heat + condensation/friction).
+	//     Uses up to ~12h of past-hour spin-up data (from Open-Meteo past_hours=12)
+	//     for thermal-lag warm-up so the current rock temp isn't biased by an
+	//     arbitrary initial condition.
+	//
+	//     Source pastHourly from hourlyForecast (fresh-fetch path includes
+	//     past_hours=12 at the head) OR from historical (cache path, where
+	//     hourlyForecast is future-only via SQL).
+	pastHourly := make([]models.WeatherData, 0, 12)
+	for _, h := range hourlyForecast {
+		if h.Timestamp.Before(nowUTC) {
+			pastHourly = append(pastHourly, h)
+		}
+	}
+	if len(pastHourly) == 0 {
+		// Cache path: hourlyForecast is future-only; pull spin-up from historical.
+		// historical is sorted ASC, so we just take the tail within the last 12h.
+		cutoff := nowUTC.Add(-12 * time.Hour)
+		for _, h := range historical {
+			if !h.Timestamp.Before(cutoff) && h.Timestamp.Before(nowUTC) {
+				pastHourly = append(pastHourly, h)
+			}
+		}
+	}
+	rockTempStatus, err := s.calculateRockTempStatus(ctx, location, current, pastHourly, futureForecast)
+	if err != nil {
+		log.Printf("Warning: failed to calculate rock temp: %v", err)
+	}
+
 	// 7. Calculate climbing conditions
 	conditionCalc := &weatherPkg.ConditionCalculator{}
 	todayCondition := conditionCalc.CalculateTodayCondition(current, futureForecast, historical)
@@ -230,23 +262,24 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 	}
 
 	forecast := &models.WeatherForecast{
-		LocationID:       locationID,
-		Location:         *location,
-		Current:          *current,
-		Hourly:           hourlyForecast,
-		Historical:       historical,
-		Sunrise:          sunrise,
-		Sunset:           sunset,
-		DailySunTimes:    dailySunTimes,
-		RockDryingStatus: rockStatus,
-		SnowDepthInches:  snowDepth,
-		DailySnowDepth:   dailySnowDepth,
-		TodayCondition:   &todayCondition,
-		RainLast48h:      &rainLast48h,
-		RainNext48h:      &rainNext48h,
-		PestConditions:   pestConditions,
-		LastClimbedInfo:  lastClimbedInfo,
-		ClimbHistory:     climbHistory,
+		LocationID:            locationID,
+		Location:              *location,
+		Current:               *current,
+		Hourly:                hourlyForecast,
+		Historical:            historical,
+		Sunrise:               sunrise,
+		Sunset:                sunset,
+		DailySunTimes:         dailySunTimes,
+		RockDryingStatus:      rockStatus,
+		RockTemperatureStatus: rockTempStatus,
+		SnowDepthInches:       snowDepth,
+		DailySnowDepth:        dailySnowDepth,
+		TodayCondition:        &todayCondition,
+		RainLast48h:           &rainLast48h,
+		RainNext48h:           &rainNext48h,
+		PestConditions:        pestConditions,
+		LastClimbedInfo:       lastClimbedInfo,
+		ClimbHistory:          climbHistory,
 	}
 
 	return forecast, nil
@@ -369,6 +402,51 @@ func (s *WeatherService) calculateRockDryingStatus(
 		snowDepth,
 	)
 
+	return &status, nil
+}
+
+// calculateRockTempStatus computes the rock surface-temperature / friction status
+// for a location. Inputs come from existing schema (location_rock_types,
+// location_sun_exposure, locations) plus the freshly-fetched forecast.
+//
+// pastHourly is the ~12h pre-now slice fetched via Open-Meteo's past_hours=12
+// param (used for thermal-lag spin-up). forecast is the future-only forecast
+// (already filtered by getLocationWeatherWithOptions).
+//
+// Returns nil if no rock-type data is available; the calculator's degraded path
+// will still produce a low-confidence status if invoked, but for parity with
+// rock_drying we skip the response field entirely when there's literally no
+// rock-type information for the location.
+func (s *WeatherService) calculateRockTempStatus(
+	ctx context.Context,
+	location *models.Location,
+	current *models.WeatherData,
+	pastHourly []models.WeatherData,
+	forecast []models.WeatherData,
+) (*models.RockTemperatureStatus, error) {
+	rockTypes, err := s.rocksRepo.GetRockTypesByLocation(ctx, location.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rock types: %w", err)
+	}
+	if len(rockTypes) == 0 {
+		// No rock-type data — skip rock temp entirely (matches rock_drying behavior).
+		return nil, nil
+	}
+
+	sunExposure, _ := s.rocksRepo.GetSunExposureByLocation(ctx, location.ID)
+
+	// Resolve rock type group (no boulder override at the location level — boulder
+	// services pass overrides directly to the calculator).
+	rockTypeGroup, _ := rock_temp.ResolveRockTypeGroup(rockTypes, "")
+
+	status := s.rockTempCalculator.Calculate(rock_temp.Inputs{
+		RockTypeGroup: rockTypeGroup,
+		SunExposure:   sunExposure,
+		Location:      location,
+		PastHourly:    pastHourly,
+		Forecast:      forecast,
+		Now:           current,
+	})
 	return &status, nil
 }
 

@@ -6,9 +6,17 @@ import {
   getConditionBadgeStyles,
   getWeatherIconUrl,
   getSnowDepthColor,
-  getSnowDescription
+  getSnowDescription,
+  ROCK_CONDITION_COLORS,
+  ROCK_CONDITION_LABELS,
+  FRICTION_QUALITY_COLORS,
+  FRICTION_QUALITY_LABELS,
+  formatNextTransition,
+  formatSendWindow,
+  formatSendWindowRange,
+  pickAdaptiveDisplay,
 } from '../weatherDisplay';
-import { ConditionLevel } from '../../../types/weather';
+import type { ConditionLevel, RockTemperatureStatus, SendWindow } from '../../../types/weather';
 
 describe('weatherDisplay', () => {
   describe('getConditionColor', () => {
@@ -171,6 +179,189 @@ describe('weatherDisplay', () => {
       expect(getSnowDescription(12)).toBe('Very deep snow');
       expect(getSnowDescription(24)).toBe('Very deep snow');
       expect(getSnowDescription(48)).toBe('Very deep snow');
+    });
+  });
+
+  // ===== Rock temperature helpers =====
+
+  describe('ROCK_CONDITION_COLORS', () => {
+    it('has all 6 condition keys with valid hex strings', () => {
+      const keys = ['prime', 'good', 'marginal', 'poor', 'very_poor', 'too_cold'] as const;
+      expect(Object.keys(ROCK_CONDITION_COLORS).sort()).toEqual([...keys].sort());
+      for (const k of keys) {
+        expect(ROCK_CONDITION_COLORS[k]).toMatch(/^#[0-9a-f]{6}$/i);
+      }
+    });
+
+    it('has matching labels for each condition', () => {
+      const keys = ['prime', 'good', 'marginal', 'poor', 'very_poor', 'too_cold'] as const;
+      for (const k of keys) {
+        expect(typeof ROCK_CONDITION_LABELS[k]).toBe('string');
+        expect(ROCK_CONDITION_LABELS[k].length).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  describe('FRICTION_QUALITY_COLORS', () => {
+    it('has all 4 friction-quality keys with valid hex strings', () => {
+      const keys = ['excellent', 'good', 'reduced', 'poor'] as const;
+      expect(Object.keys(FRICTION_QUALITY_COLORS).sort()).toEqual([...keys].sort());
+      for (const k of keys) {
+        expect(FRICTION_QUALITY_COLORS[k]).toMatch(/^#[0-9a-f]{6}$/i);
+        expect(typeof FRICTION_QUALITY_LABELS[k]).toBe('string');
+      }
+    });
+  });
+
+  describe('formatNextTransition', () => {
+    it('returns null when no transition is provided', () => {
+      expect(formatNextTransition(undefined, 'prime')).toBeNull();
+    });
+
+    it('returns a string containing the current label and "until"', () => {
+      const result = formatNextTransition(
+        { time: '2025-06-15T18:00:00Z', to_condition: 'marginal' },
+        'prime'
+      );
+      expect(result).not.toBeNull();
+      expect(result!).toContain('Prime');
+      expect(result!).toContain('until');
+      // Time formatting is locale-dependent, but should contain a digit
+      expect(result!).toMatch(/\d/);
+    });
+  });
+
+  describe('formatSendWindow', () => {
+    const baseWindow: SendWindow = {
+      start_time: '2025-06-15T13:00:00Z',
+      end_time: '2025-06-15T14:30:00Z',
+      duration_h: 1.5,
+      condition: 'prime',
+      avg_temp_f: 55,
+      peak_temp_f: 60,
+      dry_throughout: true,
+    };
+
+    it('omits "may be damp" suffix when dry_throughout is true', () => {
+      const out = formatSendWindow(baseWindow);
+      expect(out).not.toContain('may be damp');
+      expect(out).toContain('Prime');
+    });
+
+    it('includes "may be damp" suffix when dry_throughout is false', () => {
+      const out = formatSendWindow({ ...baseWindow, dry_throughout: false });
+      expect(out).toContain('may be damp');
+    });
+
+    it('formats durations >= 1h as e.g. "1.5h"', () => {
+      expect(formatSendWindow(baseWindow)).toContain('1.5h');
+    });
+
+    it('formats durations < 1h as minutes (e.g. 0.5h -> "30min")', () => {
+      const short: SendWindow = { ...baseWindow, duration_h: 0.5 };
+      expect(formatSendWindow(short)).toContain('30min');
+      expect(formatSendWindow(short)).not.toContain('0.5h');
+    });
+
+    it('uses "Good" tier label when condition is good', () => {
+      expect(formatSendWindow({ ...baseWindow, condition: 'good' })).toContain('Good');
+    });
+  });
+
+  describe('formatSendWindowRange', () => {
+    it('returns a hour-granularity start–end range', () => {
+      const w: SendWindow = {
+        start_time: '2025-06-15T13:00:00Z',
+        end_time: '2025-06-15T17:00:00Z',
+        duration_h: 4,
+        condition: 'prime',
+        avg_temp_f: 60,
+        peak_temp_f: 65,
+        dry_throughout: true,
+      };
+      const out = formatSendWindowRange(w);
+      // Locale-dependent, but should contain a dash and digits and not seconds/minutes detail
+      expect(out).toMatch(/\d+.*[–-].*\d+/);
+      expect(out).not.toContain(':00');
+    });
+  });
+
+  describe('pickAdaptiveDisplay', () => {
+    const mkRock = (overrides: Partial<RockTemperatureStatus> = {}): RockTemperatureStatus => ({
+      estimated_surface_temp_f: 70,
+      air_temp_f: 60,
+      temp_differential_f: 10,
+      condition: 'prime',
+      friction_quality: 'excellent',
+      message: '',
+      confidence_score: 90,
+      rock_type: 'Granite',
+      ...overrides,
+    });
+
+    it('returns snow when snow depth > 0 (regardless of rock_temp)', () => {
+      const result = pickAdaptiveDisplay(5, mkRock());
+      expect(result).toEqual({ kind: 'snow', depthInches: 5 });
+    });
+
+    it('returns wet/heavy when severity is heavy', () => {
+      const result = pickAdaptiveDisplay(0, mkRock({
+        condition: 'good',
+        condensation: {
+          active: true, dewpoint_f: 65, surface_vs_dewpoint: -2,
+          severity: 'heavy', reason: 'condensing',
+        },
+      }));
+      expect(result.kind).toBe('wet');
+      if (result.kind === 'wet') expect(result.severity).toBe('heavy');
+    });
+
+    it('returns hot when condition is very_poor and severity is none', () => {
+      const result = pickAdaptiveDisplay(0, mkRock({
+        condition: 'very_poor',
+        estimated_surface_temp_f: 130,
+      }));
+      expect(result.kind).toBe('hot');
+      if (result.kind === 'hot') expect(result.surfaceF).toBe(130);
+    });
+
+    it('returns wet/light when severity is light and condition is good', () => {
+      const result = pickAdaptiveDisplay(0, mkRock({
+        condition: 'good',
+        condensation: {
+          active: false, dewpoint_f: 55, surface_vs_dewpoint: 0.5,
+          severity: 'light', reason: 'near dewpoint',
+        },
+      }));
+      expect(result.kind).toBe('wet');
+      if (result.kind === 'wet') expect(result.severity).toBe('light');
+    });
+
+    it('returns rock with condition=prime when severity is none and condition is prime', () => {
+      const result = pickAdaptiveDisplay(0, mkRock({ condition: 'prime' }));
+      expect(result.kind).toBe('rock');
+      if (result.kind === 'rock') expect(result.condition).toBe('prime');
+    });
+
+    it('returns unknown when no snow and no rock_temp', () => {
+      expect(pickAdaptiveDisplay(null, null)).toEqual({ kind: 'unknown' });
+      expect(pickAdaptiveDisplay(undefined, undefined)).toEqual({ kind: 'unknown' });
+    });
+
+    it('treats poor temp as priority over light condensation (heat drives the decision)', () => {
+      const result = pickAdaptiveDisplay(0, mkRock({
+        condition: 'poor',
+        condensation: {
+          active: false, dewpoint_f: 60, surface_vs_dewpoint: 1,
+          severity: 'light', reason: 'near dewpoint',
+        },
+      }));
+      expect(result.kind).toBe('hot');
+    });
+
+    it('treats snow=0 as no snow (falls through to rock_temp logic)', () => {
+      const result = pickAdaptiveDisplay(0, mkRock({ condition: 'good' }));
+      expect(result.kind).toBe('rock');
     });
   });
 });
