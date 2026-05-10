@@ -344,6 +344,61 @@ export function formatSendWindowDetail(w: SendWindow): string {
 }
 
 /**
+ * Compact hour label used in dense day cards.
+ * Lowercase a/p, no space, no leading zero.
+ * Examples: 0 → "12a", 6 → "6a", 12 → "12p", 23 → "11p".
+ */
+function formatCompactHour(hour: number): string {
+  const h = ((hour % 24) + 24) % 24;
+  if (h === 0) return '12a';
+  if (h === 12) return '12p';
+  if (h < 12) return `${h}a`;
+  return `${h - 12}p`;
+}
+
+/**
+ * Compact "start–end" hour range for a send window, used in the
+ * day-card grid. Uses an en-dash and lowercase am/pm marker.
+ *
+ * Examples:
+ *   "11p–10a" (overnight)
+ *   "6a–2p"
+ *   "12a–7a"
+ *
+ * The minute component of the underlying timestamps is intentionally
+ * dropped — these cards are for at-a-glance scanning, not minute-precise
+ * planning. Use `formatSendWindowDetail` when minutes matter.
+ */
+export function formatCompactTimeRange(startISO: string, endISO: string): string {
+  const start = new Date(startISO);
+  const end = new Date(endISO);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return '';
+  return `${formatCompactHour(start.getHours())}–${formatCompactHour(end.getHours())}`;
+}
+
+/**
+ * Compact duration label for a send window, used alongside
+ * `formatCompactTimeRange`.
+ *
+ * Examples:
+ *   "11h"   (whole hours ≥ 1)
+ *   "1.5h"  (fractional hours, one decimal)
+ *   "30m"   (sub-1h, rounded to whole minutes)
+ */
+export function formatCompactDuration(hours: number): string {
+  if (!isFinite(hours) || hours <= 0) return '0m';
+  if (hours < 1) {
+    return `${Math.round(hours * 60)}m`;
+  }
+  // Whole-hour fast-path avoids "11.0h"
+  const rounded = Math.round(hours * 10) / 10;
+  if (rounded === Math.floor(rounded)) {
+    return `${Math.floor(rounded)}h`;
+  }
+  return `${rounded}h`;
+}
+
+/**
  * Tagged enum returned by pickAdaptiveDisplay so the WeatherCard's
  * adaptive 3rd column can switch on .kind without re-deriving priorities.
  */

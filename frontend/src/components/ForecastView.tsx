@@ -8,11 +8,11 @@ import {
   getSnowDepthColor,
   ROCK_CONDITION_COLORS,
   ROCK_CONDITION_LABELS,
-  formatSendWindowRange,
+  formatCompactTimeRange,
 } from './weather/weatherDisplay';
 import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
-import { Droplets, Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Cloud } from 'lucide-react';
+import { Droplets, Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Cloud, Thermometer } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { ConditionDetailsModal } from './ConditionDetailsModal';
 
@@ -715,35 +715,50 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
                 {day.description}
               </div>
 
-              {/* Per-day rock-temp indicator (driven by backend daily_forecast) */}
+              {/*
+                Per-day rock-temp indicator. Single-line format prefixed
+                with the Thermometer icon (matches WeatherCard's adaptive
+                3rd-column rock-temp display) so users learn this pill
+                represents friction/rock-temp at a glance.
+                Format: 🌡 Good · 58°F · 12a–1p
+              */}
               {dailyRock && (
-                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 space-y-1">
-                  <div
-                    className="flex items-center justify-center gap-1 text-xs text-gray-700 dark:text-gray-300"
-                    title={`Peak ${dailyRock.peak_surface_temp_f.toFixed(0)}°F / Min ${dailyRock.min_surface_temp_f.toFixed(0)}°F — ${ROCK_CONDITION_LABELS[dailyRock.overall_condition]} (peak ${ROCK_CONDITION_LABELS[dailyRock.peak_condition]})`}
-                  >
-                    <span
-                      className="inline-block w-2 h-2 rounded-full"
-                      style={{ backgroundColor: ROCK_CONDITION_COLORS[dailyRock.overall_condition] }}
-                    />
-                    <span className="font-medium">{ROCK_CONDITION_LABELS[dailyRock.overall_condition]}</span>
-                    <span className="text-gray-500 dark:text-gray-400">
-                      Peak {Math.round(dailyRock.peak_surface_temp_f)}°F
-                    </span>
-                  </div>
+                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                   {dailyRock.best_send_window ? (
                     <div
-                      className="flex items-center justify-center gap-1 text-[10px] text-gray-600 dark:text-gray-400"
-                      title={dailyRock.best_send_window.dry_throughout ? 'Dry send window' : 'May be damp early'}
+                      className="flex items-center justify-center gap-1 text-xs text-gray-700 dark:text-gray-300"
+                      title={`Rock surface temp — ${ROCK_CONDITION_LABELS[dailyRock.overall_condition]} • Peak ${dailyRock.peak_surface_temp_f.toFixed(0)}°F${dailyRock.best_send_window.dry_throughout ? '' : ' • may be damp early'}`}
                     >
-                      {!dailyRock.best_send_window.dry_throughout && <span>💧</span>}
-                      <span>Send: {formatSendWindowRange(dailyRock.best_send_window)}</span>
+                      <Thermometer
+                        className="w-3 h-3 flex-shrink-0"
+                        style={{ color: ROCK_CONDITION_COLORS[dailyRock.overall_condition] }}
+                      />
+                      <span className="font-medium">{ROCK_CONDITION_LABELS[dailyRock.overall_condition]}</span>
+                      <span className="text-gray-400 dark:text-gray-500">·</span>
+                      <span>{Math.round(dailyRock.peak_surface_temp_f)}°F</span>
+                      <span className="text-gray-400 dark:text-gray-500">·</span>
+                      <span className="text-gray-600 dark:text-gray-400">
+                        {formatCompactTimeRange(
+                          dailyRock.best_send_window.start_time,
+                          dailyRock.best_send_window.end_time,
+                        )}
+                      </span>
+                      {!dailyRock.best_send_window.dry_throughout && (
+                        <span className="text-gray-400" title="May be damp early">💧</span>
+                      )}
                     </div>
-                  ) : dailyRock.has_condensation ? (
-                    <div className="flex items-center justify-center gap-1 text-[10px] text-gray-500 dark:text-gray-400">
-                      <span>💧 Damp early</span>
+                  ) : (
+                    <div
+                      className="flex items-center justify-center gap-1 text-xs text-gray-500 dark:text-gray-400"
+                      title={`Rock surface temp — ${ROCK_CONDITION_LABELS[dailyRock.overall_condition]} • Peak ${dailyRock.peak_surface_temp_f.toFixed(0)}°F`}
+                    >
+                      <Thermometer
+                        className="w-3 h-3 flex-shrink-0"
+                        style={{ color: ROCK_CONDITION_COLORS[dailyRock.overall_condition] }}
+                      />
+                      <span>No prime windows</span>
                     </div>
-                  ) : null}
+                  )}
                 </div>
               )}
             </div>

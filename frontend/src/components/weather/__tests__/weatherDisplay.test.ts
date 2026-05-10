@@ -18,6 +18,8 @@ import {
   formatTimeAxisLabel,
   computeWindowGanttPlacement,
   formatSendWindowDetail,
+  formatCompactTimeRange,
+  formatCompactDuration,
   pickAdaptiveDisplay,
 } from '../weatherDisplay';
 import type { ConditionLevel, RockTemperatureStatus, SendWindow } from '../../../types/weather';
@@ -501,6 +503,65 @@ describe('weatherDisplay', () => {
         expect(computeWindowGanttPlacement(w, 'bad')).toEqual({
           leftPercent: 0,
           widthPercent: 0,
+        });
+      });
+    
+      describe('formatCompactTimeRange', () => {
+        // Build a local-zone ISO so getHours() returns the intended hour
+        // regardless of the test runner's timezone.
+        const local = (h: number) => {
+          const d = new Date(2025, 5, 15, h, 0, 0, 0); // June 15 2025
+          return d.toISOString();
+        };
+    
+        it('formats a morning range with lowercase a/p and en-dash', () => {
+          // Built off a local Date, so reading via getHours roundtrips.
+          const start = new Date(2025, 5, 15, 6, 0).toISOString();
+          const end = new Date(2025, 5, 15, 14, 0).toISOString();
+          expect(formatCompactTimeRange(start, end)).toBe('6a–2p');
+        });
+    
+        it('special-cases midnight as 12a', () => {
+          expect(formatCompactTimeRange(local(0), local(7))).toBe('12a–7a');
+        });
+    
+        it('special-cases noon as 12p', () => {
+          expect(formatCompactTimeRange(local(12), local(15))).toBe('12p–3p');
+        });
+    
+        it('handles overnight windows (end hour numerically before start)', () => {
+          // 11pm Sunday -> 10am Monday is fine; we render endpoints regardless
+          // of date, since the day-card row already scopes the day visually.
+          const start = new Date(2025, 5, 15, 23, 0).toISOString();
+          const end = new Date(2025, 5, 16, 10, 0).toISOString();
+          expect(formatCompactTimeRange(start, end)).toBe('11p–10a');
+        });
+    
+        it('returns empty string for invalid input', () => {
+          expect(formatCompactTimeRange('garbage', 'also bad')).toBe('');
+        });
+      });
+    
+      describe('formatCompactDuration', () => {
+        it('returns whole-hour suffix for integer hours', () => {
+          expect(formatCompactDuration(11)).toBe('11h');
+          expect(formatCompactDuration(1)).toBe('1h');
+        });
+    
+        it('returns minutes for sub-1h durations', () => {
+          expect(formatCompactDuration(0.5)).toBe('30m');
+          expect(formatCompactDuration(0.25)).toBe('15m');
+        });
+    
+        it('keeps one decimal for fractional hours', () => {
+          expect(formatCompactDuration(1.5)).toBe('1.5h');
+          expect(formatCompactDuration(2.7)).toBe('2.7h');
+        });
+    
+        it('handles edge cases gracefully', () => {
+          expect(formatCompactDuration(0)).toBe('0m');
+          expect(formatCompactDuration(-1)).toBe('0m');
+          expect(formatCompactDuration(NaN)).toBe('0m');
         });
       });
     });
