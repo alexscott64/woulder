@@ -47,10 +47,10 @@ type WeatherData struct {
 	Pressure           int       `json:"pressure" db:"pressure"`                     // hPa
 	Description        string    `json:"description" db:"description"`               // e.g. "light rain"
 	Icon               string    `json:"icon" db:"icon"`                             // OpenWeatherMap icon code
-	ShortwaveRadiation float64   `json:"shortwave_radiation,omitempty"`               // W/m² total solar radiation
-	DirectRadiation    float64   `json:"direct_radiation,omitempty"`                  // W/m² direct beam radiation
-	DiffuseRadiation   float64   `json:"diffuse_radiation,omitempty"`                 // W/m² diffuse/scattered radiation
-	DewpointF          float64   `json:"dewpoint_f,omitempty"`                        // Fahrenheit dewpoint temperature
+	ShortwaveRadiation float64   `json:"shortwave_radiation" db:"shortwave_radiation"` // W/m^2 total solar radiation on horizontal
+	DirectRadiation    float64   `json:"direct_radiation" db:"direct_radiation"`       // W/m^2 direct beam on horizontal
+	DiffuseRadiation   float64   `json:"diffuse_radiation" db:"diffuse_radiation"`     // W/m^2 diffuse on horizontal
+	DewpointF          float64   `json:"dewpoint_f" db:"dewpoint_f"`                   // Fahrenheit
 	CreatedAt          time.Time `json:"created_at" db:"created_at"`
 }
 
