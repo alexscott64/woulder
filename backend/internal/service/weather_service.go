@@ -22,6 +22,23 @@ import (
 	sunpkg "github.com/alexscott64/woulder/backend/internal/weather/sun"
 )
 
+// defaultLocationTimezone is used when a Location has no explicit
+// Timezone set. The rest of the codebase currently hard-codes Pacific
+// for all locations; this keeps that behaviour while letting callers
+// override per-location in the future.
+const defaultLocationTimezone = "America/Los_Angeles"
+
+// locationTimezone returns the IANA timezone name to use for the given
+// location's local-time calculations (send-window midnight splits,
+// per-day aggregation). Falls back to defaultLocationTimezone when the
+// Location is nil or its Timezone field is empty.
+func locationTimezone(loc *models.Location) string {
+	if loc == nil || loc.Timezone == "" {
+		return defaultLocationTimezone
+	}
+	return loc.Timezone
+}
+
 type WeatherService struct {
 	weatherRepo          weather.Repository
 	locationsRepo        locations.Repository
@@ -446,6 +463,7 @@ func (s *WeatherService) calculateRockTempStatus(
 		PastHourly:    pastHourly,
 		Forecast:      forecast,
 		Now:           current,
+		TimezoneName:  locationTimezone(location),
 	})
 	return &status, nil
 }

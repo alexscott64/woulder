@@ -12,7 +12,10 @@ import {
   FRICTION_QUALITY_COLORS,
   FRICTION_QUALITY_LABELS,
   CONDENSATION_OVERLAY_CLASS,
-  formatSendWindow,
+  formatWeekdayLong,
+  formatTimeAxisLabel,
+  computeWindowGanttPlacement,
+  formatSendWindowDetail,
 } from './weather/weatherDisplay';
 
 interface ConditionsModalProps {
@@ -634,8 +637,21 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
     new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
   const showCondensationPanel = !!s.condensation && s.condensation.severity !== 'none';
-  const hasSendWindows = !!s.send_windows && s.send_windows.length > 0;
   const hasHourly = !!s.hourly_forecast && s.hourly_forecast.length > 0;
+  const dailyForecast = s.daily_forecast ?? [];
+  const hasDaily = dailyForecast.length > 0;
+
+  // Today's local date for highlighting in the Gantt. Uses the
+  // browser's local zone (which matches the location TZ for the
+  // typical user — the backend already keys per-day buckets to the
+  // location's local date).
+  const todayKey = (() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  })();
 
   return (
     <div className="space-y-3 sm:space-y-4">
@@ -684,38 +700,15 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
         </div>
       )}
 
-      {/* Send windows */}
-      {hasSendWindows && (
-        <div>
-          <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1.5 sm:mb-2">
-            Send Windows
-          </h4>
-          <ul className="space-y-1">
-            {s.send_windows!.map((w, i) => (
-              <li
-                key={i}
-                className="flex items-center gap-2 text-xs sm:text-sm text-gray-700 dark:text-gray-300"
-              >
-                <span
-                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: ROCK_CONDITION_COLORS[w.condition] }}
-                />
-                <span className="flex-1">{formatSendWindow(w)}</span>
-                <span className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-500 flex-shrink-0">
-                  peak {w.peak_temp_f.toFixed(0)}°F
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Hourly timeline */}
+      {/* Hourly timeline (next 24h surface-temp bar graph) */}
       {hasHourly && (
         <div>
-          <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1.5 sm:mb-2">
-            Next 24h
+          <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 mb-0.5">
+            Surface Temperature
           </h4>
+          <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 mb-1.5 sm:mb-2">
+            Next 24 hours
+          </p>
           <div className="flex gap-px overflow-x-auto rounded">
             {s.hourly_forecast!.slice(0, 24).map((h, i) => {
               const hourStr = new Date(h.time).toLocaleTimeString(undefined, { hour: 'numeric' });
@@ -741,6 +734,177 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
               <span className={`inline-block w-2 h-2 rounded-sm bg-gray-400 ${CONDENSATION_OVERLAY_CLASS}`} />
               condensing
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Send Windows — 7-day Gantt + per-day detail list */}
+      {hasDaily && (
+        <div className="space-y-3">
+          <div>
+            <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 mb-0.5">
+              Send Windows
+            </h4>
+            <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 mb-1.5 sm:mb-2">
+              Next 7 days
+            </p>
+
+            {/* Time-axis legend: 12a / 6a / 12p / 6p / 12a aligned over the row track */}
+            <div className="flex items-center gap-2">
+              <div className="w-10 sm:w-12 flex-shrink-0" aria-hidden="true" />
+              <div className="relative flex-1 h-3">
+                {[0, 6, 12, 18, 24].map((h) => (
+                  <span
+                    key={h}
+                    className="absolute top-0 text-[9px] sm:text-[10px] text-gray-500 dark:text-gray-400 -translate-x-1/2"
+                    style={{ left: `${(h / 24) * 100}%` }}
+                  >
+                    {formatTimeAxisLabel(h)}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Day rows */}
+            <div className="space-y-1 mt-1">
+              {dailyForecast.map((day) => {
+                const isToday = day.local_date === todayKey;
+                const windows = (s.send_windows ?? []).filter((w) => {
+                  const p = computeWindowGanttPlacement(w, day.local_date);
+                  return p.widthPercent > 0;
+                });
+                return (
+                  <div key={day.local_date} className="flex items-center gap-2">
+                    <div
+                      className={`w-10 sm:w-12 flex-shrink-0 text-[10px] sm:text-xs ${
+                        isToday
+                          ? 'font-bold text-blue-600 dark:text-blue-300'
+                          : 'text-gray-600 dark:text-gray-400'
+                      }`}
+                      title={day.local_date}
+                    >
+                      {isToday ? 'Today' : formatWeekdayLong(day.local_date).slice(0, 3)}
+                    </div>
+                    <div
+                      className={`relative flex-1 h-4 sm:h-5 rounded overflow-hidden ${
+                        isToday
+                          ? 'bg-gray-200 dark:bg-gray-700 ring-1 ring-blue-400/40'
+                          : 'bg-gray-100 dark:bg-gray-800'
+                      }`}
+                    >
+                      {/* 6h gridlines for visual alignment with axis */}
+                      {[6, 12, 18].map((h) => (
+                        <span
+                          key={h}
+                          className="absolute top-0 bottom-0 w-px bg-gray-300/50 dark:bg-gray-600/40"
+                          style={{ left: `${(h / 24) * 100}%` }}
+                          aria-hidden="true"
+                        />
+                      ))}
+                      {windows.length === 0 ? null : (
+                        windows.map((w, i) => {
+                          const { leftPercent, widthPercent } = computeWindowGanttPlacement(
+                            w,
+                            day.local_date,
+                          );
+                          const tip = `${formatSendWindowDetail(w)}${w.dry_throughout ? '' : ' (may be damp early)'}`;
+                          return (
+                            <div
+                              key={i}
+                              title={tip}
+                              className="absolute top-0 bottom-0 rounded-sm"
+                              style={{
+                                left: `${leftPercent}%`,
+                                width: `${widthPercent}%`,
+                                backgroundColor: ROCK_CONDITION_COLORS[w.condition],
+                              }}
+                            />
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Legend */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[10px] text-gray-500 dark:text-gray-400">
+              <span className="inline-flex items-center gap-1">
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-sm"
+                  style={{ backgroundColor: ROCK_CONDITION_COLORS.prime }}
+                />
+                Prime
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-sm"
+                  style={{ backgroundColor: ROCK_CONDITION_COLORS.good }}
+                />
+                Good
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-gray-200 dark:bg-gray-700" />
+                no window
+              </span>
+            </div>
+          </div>
+
+          {/* Per-day grouped detail list */}
+          <div>
+            <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1.5 sm:mb-2">
+              Details
+            </h4>
+            <div className="space-y-2">
+              {dailyForecast.map((day) => {
+                const dayWindows = (s.send_windows ?? []).filter((w) => {
+                  const p = computeWindowGanttPlacement(w, day.local_date);
+                  return p.widthPercent > 0;
+                });
+                const isToday = day.local_date === todayKey;
+                return (
+                  <div key={day.local_date}>
+                    <h5
+                      className={`text-xs sm:text-sm ${
+                        isToday
+                          ? 'font-bold text-blue-700 dark:text-blue-300'
+                          : 'font-semibold text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      {isToday
+                        ? `Today (${formatWeekdayLong(day.local_date, new Date(0))})`
+                        : formatWeekdayLong(day.local_date)}
+                    </h5>
+                    {dayWindows.length === 0 ? (
+                      <p className="text-[11px] sm:text-xs text-gray-400 dark:text-gray-500 italic mt-0.5">
+                        no send windows
+                      </p>
+                    ) : (
+                      <ul className="space-y-0.5 mt-0.5">
+                        {dayWindows.map((w, i) => (
+                          <li
+                            key={i}
+                            className="flex items-center gap-2 text-[11px] sm:text-xs text-gray-700 dark:text-gray-300"
+                          >
+                            <span
+                              className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: ROCK_CONDITION_COLORS[w.condition] }}
+                            />
+                            <span className="flex-1">{formatSendWindowDetail(w)}</span>
+                            {!w.dry_throughout && (
+                              <span className="text-[10px] text-gray-500 dark:text-gray-500">
+                                damp early
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

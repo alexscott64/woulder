@@ -13,10 +13,15 @@ import (
 type Inputs struct {
 	RockTypeGroup string                      // canonical group name from rock_type_groups
 	SunExposure   *models.LocationSunExposure // may be nil
-	Location      *models.Location            // for elevation, lat, lon, timezone
+	Location      *models.Location            // for elevation, lat, lon
 	PastHourly    []models.WeatherData        // ~12h pre-now for spin-up
 	Forecast      []models.WeatherData        // future hours
 	Now           *models.WeatherData         // current observation
+	// TimezoneName is the IANA timezone name (e.g. "America/Los_Angeles")
+	// used by send-window midnight-splitting and per-day aggregation.
+	// Empty string is acceptable and downstream callers (DetectSendWindows,
+	// AggregateDaily) gracefully fall back to UTC.
+	TimezoneName string
 }
 
 // WeightedAspect computes a single representative aspect angle (degrees

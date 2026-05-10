@@ -447,7 +447,8 @@ func TestCalculate_DailyForecastPopulated(t *testing.T) {
 	}
 
 	// First day's peak should match max of hourly forecast hours that fall on
-	// that local date (UTC, since calculator passes "" tz).
+	// that local date. Inputs.TimezoneName was not set, so the calculator
+	// uses UTC for day-bucketing.
 	firstDate := st.DailyForecast[0].LocalDate
 	var maxSurf float64 = -1e9
 	for _, h := range st.HourlyForecast {
@@ -459,5 +460,63 @@ func TestCalculate_DailyForecastPopulated(t *testing.T) {
 	}
 	if math.Abs(st.DailyForecast[0].PeakSurfaceTempF-maxSurf) > 0.01 {
 		t.Errorf("day1 peak %.2f != max hourly %.2f", st.DailyForecast[0].PeakSurfaceTempF, maxSurf)
+	}
+}
+
+// TestCalculate_TimezoneNamePropagation verifies that Inputs.TimezoneName
+// flows through to both DetectSendWindows (for midnight-splitting) and
+// AggregateDaily (for per-day local-date bucketing). A run crossing
+// 2025-06-01 06:00 UTC -> 14:00 UTC (which is 2025-05-31 23:00 PT ->
+// 2025-06-01 07:00 PT) should produce daily buckets keyed by Pacific
+// local dates, not UTC.
+func TestCalculate_TimezoneNamePropagation(t *testing.T) {
+	// Build 24h forecast starting 2025-06-01 00:00 UTC. In PT this spans
+	// 2025-05-31 17:00 PT through 2025-06-01 17:00 PT, so we should see
+	// both local dates in DailyForecast.
+	start := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	past := mkHours(start.Add(-12*time.Hour), 12, func(_ int, w *models.WeatherData) {
+		w.Temperature = 55
+		w.DewpointF = 30
+		w.WindSpeed = 4
+		w.CloudCover = 30
+	})
+	fcst := mkHours(start, 24, func(_ int, w *models.WeatherData) {
+		w.Temperature = 55
+		w.DewpointF = 30
+		w.WindSpeed = 4
+		w.CloudCover = 30
+	})
+	now := fcst[0]
+
+	calc := &Calculator{}
+
+	// Run twice — once with no tz (UTC), once with America/Los_Angeles.
+	stUTC := calc.Calculate(Inputs{
+		RockTypeGroup: "Granite",
+		SunExposure:   southFacingVertical(0),
+		Location:      defaultLocation(),
+		PastHourly:    past,
+		Forecast:      fcst,
+		Now:           &now,
+	})
+	stPT := calc.Calculate(Inputs{
+		RockTypeGroup: "Granite",
+		SunExposure:   southFacingVertical(0),
+		Location:      defaultLocation(),
+		PastHourly:    past,
+		Forecast:      fcst,
+		Now:           &now,
+		TimezoneName:  "America/Los_Angeles",
+	})
+
+	// UTC bucketing: forecast starts exactly at UTC midnight 2025-06-01,
+	// so the first day key is "2025-06-01".
+	if len(stUTC.DailyForecast) == 0 || stUTC.DailyForecast[0].LocalDate != "2025-06-01" {
+		t.Fatalf("UTC: expected first day 2025-06-01, got %+v", stUTC.DailyForecast)
+	}
+	// PT bucketing: forecast hour 0 (UTC midnight) is 2025-05-31 17:00 PT,
+	// so the first day key must be "2025-05-31".
+	if len(stPT.DailyForecast) == 0 || stPT.DailyForecast[0].LocalDate != "2025-05-31" {
+		t.Fatalf("PT: expected first day 2025-05-31 (local date), got %+v", stPT.DailyForecast)
 	}
 }

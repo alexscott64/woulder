@@ -127,6 +127,7 @@ func (s *BoulderDryingService) calculateBoulderRockTempStatus(
 		PastHourly:    pastHourly,
 		Forecast:      futureForecast,
 		Now:           wctx.current,
+		TimezoneName:  locationTimezone(wctx.location),
 	})
 	return &status
 }

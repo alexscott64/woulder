@@ -4,15 +4,21 @@ import "time"
 
 // Location represents a saved weather location
 type Location struct {
-	ID             int       `json:"id" db:"id"`
-	Name           string    `json:"name" db:"name"`
-	Latitude       float64   `json:"latitude" db:"latitude"`
-	Longitude      float64   `json:"longitude" db:"longitude"`
-	ElevationFt    int       `json:"elevation_ft" db:"elevation_ft"`         // Elevation in feet above sea level
-	AreaID         int       `json:"area_id" db:"area_id"`                   // Foreign key to areas table
-	HasSeepageRisk bool      `json:"has_seepage_risk" db:"has_seepage_risk"` // Location has seepage/snowmelt issues
-	CreatedAt      time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
+	ID             int     `json:"id" db:"id"`
+	Name           string  `json:"name" db:"name"`
+	Latitude       float64 `json:"latitude" db:"latitude"`
+	Longitude      float64 `json:"longitude" db:"longitude"`
+	ElevationFt    int     `json:"elevation_ft" db:"elevation_ft"`         // Elevation in feet above sea level
+	AreaID         int     `json:"area_id" db:"area_id"`                   // Foreign key to areas table
+	HasSeepageRisk bool    `json:"has_seepage_risk" db:"has_seepage_risk"` // Location has seepage/snowmelt issues
+	// Timezone is the IANA timezone name for this location (e.g.
+	// "America/Los_Angeles"). It is not persisted in the database yet —
+	// service code populates it at runtime (currently a Pacific default
+	// matching the rest of the codebase). Empty string means "fall back
+	// to UTC" downstream.
+	Timezone  string    `json:"timezone,omitempty" db:"-"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // River represents a river crossing associated with a location

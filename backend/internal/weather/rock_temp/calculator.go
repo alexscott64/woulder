@@ -188,13 +188,14 @@ func (c *Calculator) Calculate(in Inputs) models.RockTemperatureStatus {
 	}
 
 	// 11. Send windows + next transition.
-	sendWindows := DetectSendWindows(windowEligibleHours, SendWindowOptions{})
+	// in.TimezoneName is an IANA name (e.g. "America/Los_Angeles") passed
+	// in by the service layer. Empty string is acceptable — both
+	// DetectSendWindows and AggregateDaily fall back to UTC gracefully.
+	tzName := in.TimezoneName
+	sendWindows := DetectSendWindows(windowEligibleHours, tzName, SendWindowOptions{})
 	next := NextTransition(hourlyForecast, tempCondition)
 
 	// Aggregate hourly forecast into per-day summaries for the ForecastView.
-	// Use the location's local timezone if available (lat-based fallback to UTC for
-	// now; weather_service can later pass a real IANA tz string).
-	tzName := "" // TODO: wire from in.Location once timezone field is available
 	dailyForecast := AggregateDaily(hourlyForecast, sendWindows, tzName)
 
 	// 12. Confidence.

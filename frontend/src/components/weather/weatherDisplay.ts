@@ -251,6 +251,98 @@ export function formatSendWindowRange(w: SendWindow): string {
   return `${start}–${end}`;
 }
 
+// ===== Send-window Gantt helpers =====
+
+/**
+ * Day-of-week + month/day label for a backend `local_date` (YYYY-MM-DD).
+ * Returns "Today" if the date matches today (in the browser's local zone).
+ * Otherwise returns e.g. "Saturday" (long weekday name).
+ *
+ * `today` is an optional injection point for tests; defaults to `new Date()`.
+ */
+export function formatWeekdayLong(localDate: string, today?: Date): string {
+  // Parse YYYY-MM-DD as a *local* date so the weekday matches the
+  // user's intuition. Splitting avoids the UTC-midnight pitfall of
+  // `new Date('2025-06-15')`.
+  const [y, m, d] = localDate.split('-').map((p) => parseInt(p, 10));
+  if (!y || !m || !d) return localDate;
+  const date = new Date(y, m - 1, d);
+
+  const now = today ?? new Date();
+  if (
+    now.getFullYear() === y &&
+    now.getMonth() + 1 === m &&
+    now.getDate() === d
+  ) {
+    return 'Today';
+  }
+  return date.toLocaleDateString(undefined, { weekday: 'long' });
+}
+
+/**
+ * Compact time-axis label for an hour-of-day 0..24.
+ * 0 / 24 → "12a", 6 → "6a", 12 → "12p", 18 → "6p".
+ */
+export function formatTimeAxisLabel(hour: number): string {
+  const h = ((hour % 24) + 24) % 24;
+  if (h === 0) return '12a';
+  if (h === 12) return '12p';
+  if (h < 12) return `${h}a`;
+  return `${h - 12}p`;
+}
+
+/**
+ * Compute where a SendWindow should render along a 24-hour day-row,
+ * expressed as left/width percentages of the row width.
+ *
+ * The day row represents `dayLocalDate 00:00 -> 24:00` in the user's
+ * browser timezone (which, for the typical case of viewing one's own
+ * climbing area, matches the location's IANA timezone — the backend
+ * already splits multi-day windows at local midnight, so each window
+ * lies within a single local day).
+ *
+ * If the window does not intersect the day at all, returns
+ * `{ leftPercent: 0, widthPercent: 0 }`. Callers should treat that as
+ * "do not render".
+ */
+export function computeWindowGanttPlacement(
+  window: SendWindow,
+  dayLocalDate: string
+): { leftPercent: number; widthPercent: number } {
+  const [y, m, d] = dayLocalDate.split('-').map((p) => parseInt(p, 10));
+  if (!y || !m || !d) return { leftPercent: 0, widthPercent: 0 };
+
+  const dayStart = new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
+  const dayEnd = dayStart + 24 * 3600 * 1000;
+
+  const start = new Date(window.start_time).getTime();
+  const end = new Date(window.end_time).getTime();
+
+  // Clip to the day.
+  const clippedStart = Math.max(start, dayStart);
+  const clippedEnd = Math.min(end, dayEnd);
+  if (clippedEnd <= clippedStart) {
+    return { leftPercent: 0, widthPercent: 0 };
+  }
+
+  const leftPercent = ((clippedStart - dayStart) / (24 * 3600 * 1000)) * 100;
+  const widthPercent = ((clippedEnd - clippedStart) / (24 * 3600 * 1000)) * 100;
+  return { leftPercent, widthPercent };
+}
+
+/**
+ * Compact send-window line used in the per-day detail list.
+ * Example: "11 PM → 10 AM • 11h • peak 55°F"
+ */
+export function formatSendWindowDetail(w: SendWindow): string {
+  const start = new Date(w.start_time).toLocaleTimeString(undefined, { hour: 'numeric' });
+  const end = new Date(w.end_time).toLocaleTimeString(undefined, { hour: 'numeric' });
+  const dur = w.duration_h >= 1
+    ? `${Math.round(w.duration_h * 10) / 10}h`
+    : `${Math.round(w.duration_h * 60)}min`;
+  return `${start} → ${end} • ${dur} • peak ${Math.round(w.peak_temp_f)}°F`;
+}
+
 /**
  * Tagged enum returned by pickAdaptiveDisplay so the WeatherCard's
  * adaptive 3rd column can switch on .kind without re-deriving priorities.

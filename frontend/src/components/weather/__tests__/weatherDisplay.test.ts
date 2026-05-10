@@ -14,6 +14,10 @@ import {
   formatNextTransition,
   formatSendWindow,
   formatSendWindowRange,
+  formatWeekdayLong,
+  formatTimeAxisLabel,
+  computeWindowGanttPlacement,
+  formatSendWindowDetail,
   pickAdaptiveDisplay,
 } from '../weatherDisplay';
 import type { ConditionLevel, RockTemperatureStatus, SendWindow } from '../../../types/weather';
@@ -268,6 +272,38 @@ describe('weatherDisplay', () => {
     });
   });
 
+  describe('formatSendWindowDetail', () => {
+    it('includes start, end, duration and peak temp', () => {
+      const w: SendWindow = {
+        start_time: '2025-06-15T13:00:00Z',
+        end_time: '2025-06-15T17:00:00Z',
+        duration_h: 4,
+        condition: 'prime',
+        avg_temp_f: 55,
+        peak_temp_f: 60.4,
+        dry_throughout: true,
+      };
+      const out = formatSendWindowDetail(w);
+      expect(out).toContain('→');
+      expect(out).toContain('4h');
+      // Rounded peak.
+      expect(out).toContain('60°F');
+    });
+
+    it('formats short durations as minutes', () => {
+      const w: SendWindow = {
+        start_time: '2025-06-15T13:00:00Z',
+        end_time: '2025-06-15T13:30:00Z',
+        duration_h: 0.5,
+        condition: 'good',
+        avg_temp_f: 55,
+        peak_temp_f: 58,
+        dry_throughout: true,
+      };
+      expect(formatSendWindowDetail(w)).toContain('30min');
+    });
+  });
+
   describe('formatSendWindowRange', () => {
     it('returns a hour-granularity start–end range', () => {
       const w: SendWindow = {
@@ -362,6 +398,111 @@ describe('weatherDisplay', () => {
     it('treats snow=0 as no snow (falls through to rock_temp logic)', () => {
       const result = pickAdaptiveDisplay(0, mkRock({ condition: 'good' }));
       expect(result.kind).toBe('rock');
+    });
+  
+    // ===== Send-window Gantt helpers =====
+  
+    describe('formatWeekdayLong', () => {
+      it('returns "Today" when localDate matches the supplied "today"', () => {
+        const today = new Date(2025, 5, 14); // June 14 2025 local
+        expect(formatWeekdayLong('2025-06-14', today)).toBe('Today');
+      });
+  
+      it('returns a long weekday name for a non-today date', () => {
+        // 2025-06-15 is a Sunday.
+        const result = formatWeekdayLong('2025-06-15', new Date(2025, 5, 14));
+        expect(result).toBe('Sunday');
+      });
+  
+      it('returns the input string when given a malformed date', () => {
+        expect(formatWeekdayLong('not-a-date')).toBe('not-a-date');
+      });
+  
+      it('parses YYYY-MM-DD as a local date (not UTC midnight)', () => {
+        // 2025-01-01 is a Wednesday in any timezone when parsed as local.
+        // (new Date('2025-01-01') would be UTC midnight, which is Dec 31
+        // in the Americas — the helper must avoid that pitfall.)
+        const today = new Date(2024, 11, 30); // Dec 30 2024
+        const result = formatWeekdayLong('2025-01-01', today);
+        expect(result).toBe('Wednesday');
+      });
+    });
+  
+    describe('formatTimeAxisLabel', () => {
+      it('formats 0 as "12a"', () => {
+        expect(formatTimeAxisLabel(0)).toBe('12a');
+      });
+      it('formats 24 as "12a" (wraps)', () => {
+        expect(formatTimeAxisLabel(24)).toBe('12a');
+      });
+      it('formats 6 as "6a"', () => {
+        expect(formatTimeAxisLabel(6)).toBe('6a');
+      });
+      it('formats 12 as "12p"', () => {
+        expect(formatTimeAxisLabel(12)).toBe('12p');
+      });
+      it('formats 18 as "6p"', () => {
+        expect(formatTimeAxisLabel(18)).toBe('6p');
+      });
+      it('formats 11 as "11a" and 13 as "1p"', () => {
+        expect(formatTimeAxisLabel(11)).toBe('11a');
+        expect(formatTimeAxisLabel(13)).toBe('1p');
+      });
+    });
+  
+    describe('computeWindowGanttPlacement', () => {
+      // Build a window that's local-time aware by computing ISO strings
+      // from a Date constructed in the test runner's local zone — that
+      // way the test works regardless of the runner's TZ.
+      const mkLocalISO = (y: number, m: number, d: number, h: number) =>
+        new Date(y, m - 1, d, h, 0, 0, 0).toISOString();
+  
+      const baseWin = (start: string, end: string, hours: number): SendWindow => ({
+        start_time: start,
+        end_time: end,
+        duration_h: hours,
+        condition: 'prime',
+        avg_temp_f: 55,
+        peak_temp_f: 60,
+        dry_throughout: true,
+      });
+  
+      it('places a 6h–10h window at 25% left and 16.67% wide', () => {
+        const w = baseWin(mkLocalISO(2025, 6, 15, 6), mkLocalISO(2025, 6, 15, 10), 4);
+        const p = computeWindowGanttPlacement(w, '2025-06-15');
+        expect(p.leftPercent).toBeCloseTo(25, 4);
+        expect(p.widthPercent).toBeCloseTo((4 / 24) * 100, 4);
+      });
+  
+      it('places a full-day 0h–24h window at 0% left and 100% wide', () => {
+        const w = baseWin(mkLocalISO(2025, 6, 15, 0), mkLocalISO(2025, 6, 16, 0), 24);
+        const p = computeWindowGanttPlacement(w, '2025-06-15');
+        expect(p.leftPercent).toBeCloseTo(0, 4);
+        expect(p.widthPercent).toBeCloseTo(100, 4);
+      });
+  
+      it('clips a window that overshoots the day end', () => {
+        // 18:00 -> next day 06:00 = 12h, but only 6h falls on 2025-06-15.
+        const w = baseWin(mkLocalISO(2025, 6, 15, 18), mkLocalISO(2025, 6, 16, 6), 12);
+        const p = computeWindowGanttPlacement(w, '2025-06-15');
+        expect(p.leftPercent).toBeCloseTo(75, 4);
+        expect(p.widthPercent).toBeCloseTo(25, 4);
+      });
+  
+      it('returns zero width when the window does not intersect the day', () => {
+        const w = baseWin(mkLocalISO(2025, 6, 16, 6), mkLocalISO(2025, 6, 16, 10), 4);
+        const p = computeWindowGanttPlacement(w, '2025-06-15');
+        expect(p.widthPercent).toBe(0);
+        expect(p.leftPercent).toBe(0);
+      });
+  
+      it('returns zero placement for a malformed date', () => {
+        const w = baseWin(mkLocalISO(2025, 6, 15, 6), mkLocalISO(2025, 6, 15, 10), 4);
+        expect(computeWindowGanttPlacement(w, 'bad')).toEqual({
+          leftPercent: 0,
+          widthPercent: 0,
+        });
+      });
     });
   });
 });
