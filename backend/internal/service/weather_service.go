@@ -18,8 +18,26 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/weather/calculator"
 	"github.com/alexscott64/woulder/backend/internal/weather/client"
 	"github.com/alexscott64/woulder/backend/internal/weather/rock_drying"
+	"github.com/alexscott64/woulder/backend/internal/weather/rock_temp"
 	sunpkg "github.com/alexscott64/woulder/backend/internal/weather/sun"
 )
+
+// defaultLocationTimezone is used when a Location has no explicit
+// Timezone set. The rest of the codebase currently hard-codes Pacific
+// for all locations; this keeps that behaviour while letting callers
+// override per-location in the future.
+const defaultLocationTimezone = "America/Los_Angeles"
+
+// locationTimezone returns the IANA timezone name to use for the given
+// location's local-time calculations (send-window midnight splits,
+// per-day aggregation). Falls back to defaultLocationTimezone when the
+// Location is nil or its Timezone field is empty.
+func locationTimezone(loc *models.Location) string {
+	if loc == nil || loc.Timezone == "" {
+		return defaultLocationTimezone
+	}
+	return loc.Timezone
+}
 
 type WeatherService struct {
 	weatherRepo          weather.Repository
@@ -27,8 +45,16 @@ type WeatherService struct {
 	rocksRepo            rocks.Repository
 	weatherClient        *weatherPkg.WeatherService
 	rockCalculator       *rock_drying.Calculator
+	rockTempCalculator   *rock_temp.Calculator
 	pestAnalyzer         *pests.PestAnalyzer
 	climbTrackingService *ClimbTrackingService
+
+	// offlineMode, when true, disables all per-request Open-Meteo /
+	// OpenWeatherMap API calls. Weather data is read exclusively from the
+	// local DB cache (`weather` repository). Intended for dev workflows
+	// where the user pairs this flag with the `cmd/sync_weather` command
+	// to refresh DB data on demand. See WEATHER_OFFLINE_MODE in config.
+	offlineMode bool
 
 	// Background refresh management
 	refreshMutex sync.Mutex
@@ -49,8 +75,20 @@ func NewWeatherService(
 		rocksRepo:            rocksRepo,
 		weatherClient:        client,
 		rockCalculator:       &rock_drying.Calculator{},
+		rockTempCalculator:   &rock_temp.Calculator{},
 		pestAnalyzer:         &pests.PestAnalyzer{},
 		climbTrackingService: climbService,
+	}
+}
+
+// SetOfflineMode toggles offline mode on the service. When enabled, all
+// per-request Open-Meteo / OpenWeatherMap API calls are skipped and weather
+// data is loaded purely from the local DB. Wire this from config in main.go
+// (see WeatherConfig.OfflineMode).
+func (s *WeatherService) SetOfflineMode(enabled bool) {
+	s.offlineMode = enabled
+	if enabled {
+		log.Println("WeatherService: offline mode ENABLED — Open-Meteo API calls disabled, serving from DB only")
 	}
 }
 
@@ -69,6 +107,10 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 		return nil, fmt.Errorf("location not found: %w", err)
 	}
 
+	if s.offlineMode {
+		log.Printf("weather: offline mode — using DB only for location %d", locationID)
+	}
+
 	// 2. Try to get current weather from database cache first
 	var current *models.WeatherData
 	var hourlyForecast []models.WeatherData
@@ -76,10 +118,13 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 
 	cachedCurrent, err := s.weatherRepo.GetCurrent(ctx, locationID)
 	if err == nil && cachedCurrent != nil {
-		// Check if cached data is fresh (created/updated less than 1 hour ago)
+		// In offline mode we always trust the cache regardless of age.
+		// Otherwise, only use cache when fresh (< 1h old).
 		age := time.Since(cachedCurrent.CreatedAt)
-		if age < 1*time.Hour {
-			log.Printf("Using cached weather data for location %d (age: %v)", locationID, age.Round(time.Minute))
+		if s.offlineMode || age < 1*time.Hour {
+			if !s.offlineMode {
+				log.Printf("Using cached weather data for location %d (age: %v)", locationID, age.Round(time.Minute))
+			}
 			current = cachedCurrent
 
 			// Also get cached forecast data (next 7 days)
@@ -95,32 +140,55 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 	}
 
 	// 3. If no cached data or data is stale, fetch from API and persist to DB
+	//    (skipped entirely in offline mode — see below).
 	if current == nil {
-		log.Printf("Cache miss or stale data, fetching fresh weather for location %d", locationID)
-		var fetchErr error
-		current, hourlyForecast, sunTimes, fetchErr = s.weatherClient.GetCurrentAndForecast(
-			location.Latitude, location.Longitude,
-		)
-		if fetchErr != nil {
-			return nil, fmt.Errorf("failed to fetch weather: %w", fetchErr)
-		}
-
-		// Persist fresh data to DB so subsequent requests use the cache.
-		// Delete stale future forecasts first, then save all hourly data.
-		current.LocationID = locationID
-		if err := s.weatherRepo.DeleteFutureForLocation(ctx, locationID); err != nil {
-			log.Printf("Warning: failed to purge stale forecasts for location %d: %v", locationID, err)
-		}
-		if err := s.weatherRepo.Save(ctx, current); err != nil {
-			log.Printf("Warning: failed to save current weather for location %d: %v", locationID, err)
-		}
-		for i := range hourlyForecast {
-			hourlyForecast[i].LocationID = locationID
-			if err := s.weatherRepo.Save(ctx, &hourlyForecast[i]); err != nil {
-				log.Printf("Warning: failed to save forecast hour for location %d: %v", locationID, err)
+		if s.offlineMode {
+			// Offline mode: do NOT call the API. Log a warning and continue
+			// with whatever (possibly empty) data we can scrape from the DB.
+			// Downstream calculators handle nil/empty inputs via existing
+			// nil checks, so we synthesize a minimal `current` row to keep
+			// the response shape stable.
+			log.Printf("weather: offline mode — no cached current weather for location %d; serving empty/synthetic data (run `cmd/sync_weather` to refresh)", locationID)
+			now := time.Now().UTC()
+			current = &models.WeatherData{
+				LocationID: locationID,
+				Timestamp:  now,
+				CreatedAt:  now,
 			}
+			// Try to pull whatever forecast rows are in the DB.
+			hourlyForecast, err = s.weatherRepo.GetForecast(ctx, locationID, 168)
+			if err != nil {
+				log.Printf("Warning: offline mode — failed to load forecast from DB for location %d: %v", locationID, err)
+				hourlyForecast = []models.WeatherData{}
+			}
+			sunTimes = nil
+		} else {
+			log.Printf("Cache miss or stale data, fetching fresh weather for location %d", locationID)
+			var fetchErr error
+			current, hourlyForecast, sunTimes, fetchErr = s.weatherClient.GetCurrentAndForecast(
+				location.Latitude, location.Longitude,
+			)
+			if fetchErr != nil {
+				return nil, fmt.Errorf("failed to fetch weather: %w", fetchErr)
+			}
+
+			// Persist fresh data to DB so subsequent requests use the cache.
+			// Delete stale future forecasts first, then save all hourly data.
+			current.LocationID = locationID
+			if err := s.weatherRepo.DeleteFutureForLocation(ctx, locationID); err != nil {
+				log.Printf("Warning: failed to purge stale forecasts for location %d: %v", locationID, err)
+			}
+			if err := s.weatherRepo.Save(ctx, current); err != nil {
+				log.Printf("Warning: failed to save current weather for location %d: %v", locationID, err)
+			}
+			for i := range hourlyForecast {
+				hourlyForecast[i].LocationID = locationID
+				if err := s.weatherRepo.Save(ctx, &hourlyForecast[i]); err != nil {
+					log.Printf("Warning: failed to save forecast hour for location %d: %v", locationID, err)
+				}
+			}
+			log.Printf("Persisted fresh weather data for location %d (%d hours)", locationID, len(hourlyForecast))
 		}
-		log.Printf("Persisted fresh weather data for location %d (%d hours)", locationID, len(hourlyForecast))
 	}
 
 	// Extract sunrise/sunset
@@ -150,9 +218,24 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 		analyticsHistorical = historical
 	}
 
+	// Filter hourlyForecast to future-only entries for downstream consumers.
+	// The Open-Meteo API now returns past_hours=12 of spin-up data (used by the rock
+	// temperature calculator) at the START of hourlyForecast. Cached entries from
+	// weatherRepo.GetForecast are already future-only via SQL, but the fresh-fetch
+	// path includes past hours. Anything semantically "future" (rain next 48h,
+	// today's condition, daily snow depth forecast, snow depth integration) must
+	// not double-count those past hours, so we filter here.
+	nowUTC := time.Now().UTC()
+	futureForecast := make([]models.WeatherData, 0, len(hourlyForecast))
+	for _, h := range hourlyForecast {
+		if !h.Timestamp.Before(nowUTC) {
+			futureForecast = append(futureForecast, h)
+		}
+	}
+
 	// 5. Calculate snow depth
-	snowDepth := s.calculateSnowDepth(location, current, hourlyForecast, analyticsHistorical)
-	dailySnowDepth := s.calculateDailySnowDepth(location, current, hourlyForecast, analyticsHistorical)
+	snowDepth := s.calculateSnowDepth(location, current, futureForecast, analyticsHistorical)
+	dailySnowDepth := s.calculateDailySnowDepth(location, current, futureForecast, analyticsHistorical)
 
 	// 6. Calculate rock drying status (use high-fidelity recent hourly history)
 	rockStatus, err := s.calculateRockDryingStatus(ctx, location, current, historical, snowDepth)
@@ -160,11 +243,40 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 		log.Printf("Warning: failed to calculate rock drying: %v", err)
 	}
 
+	// 6b. Calculate rock surface temperature status (heat + condensation/friction).
+	//     Uses up to ~12h of past-hour spin-up data (from Open-Meteo past_hours=12)
+	//     for thermal-lag warm-up so the current rock temp isn't biased by an
+	//     arbitrary initial condition.
+	//
+	//     Source pastHourly from hourlyForecast (fresh-fetch path includes
+	//     past_hours=12 at the head) OR from historical (cache path, where
+	//     hourlyForecast is future-only via SQL).
+	pastHourly := make([]models.WeatherData, 0, 12)
+	for _, h := range hourlyForecast {
+		if h.Timestamp.Before(nowUTC) {
+			pastHourly = append(pastHourly, h)
+		}
+	}
+	if len(pastHourly) == 0 {
+		// Cache path: hourlyForecast is future-only; pull spin-up from historical.
+		// historical is sorted ASC, so we just take the tail within the last 12h.
+		cutoff := nowUTC.Add(-12 * time.Hour)
+		for _, h := range historical {
+			if !h.Timestamp.Before(cutoff) && h.Timestamp.Before(nowUTC) {
+				pastHourly = append(pastHourly, h)
+			}
+		}
+	}
+	rockTempStatus, err := s.calculateRockTempStatus(ctx, location, current, pastHourly, futureForecast)
+	if err != nil {
+		log.Printf("Warning: failed to calculate rock temp: %v", err)
+	}
+
 	// 7. Calculate climbing conditions
 	conditionCalc := &weatherPkg.ConditionCalculator{}
-	todayCondition := conditionCalc.CalculateTodayCondition(current, hourlyForecast, historical)
-	rainLast48h := conditionCalc.CalculateRainLast48h(historical, hourlyForecast)
-	rainNext48h := s.calculateRainNext48h(hourlyForecast)
+	todayCondition := conditionCalc.CalculateTodayCondition(current, futureForecast, historical)
+	rainLast48h := conditionCalc.CalculateRainLast48h(historical, futureForecast)
+	rainNext48h := s.calculateRainNext48h(futureForecast)
 
 	// 8. Calculate pest conditions (use analytics history)
 	pestConditions := s.calculatePestConditions(current, analyticsHistorical)
@@ -215,23 +327,24 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 	}
 
 	forecast := &models.WeatherForecast{
-		LocationID:       locationID,
-		Location:         *location,
-		Current:          *current,
-		Hourly:           hourlyForecast,
-		Historical:       historical,
-		Sunrise:          sunrise,
-		Sunset:           sunset,
-		DailySunTimes:    dailySunTimes,
-		RockDryingStatus: rockStatus,
-		SnowDepthInches:  snowDepth,
-		DailySnowDepth:   dailySnowDepth,
-		TodayCondition:   &todayCondition,
-		RainLast48h:      &rainLast48h,
-		RainNext48h:      &rainNext48h,
-		PestConditions:   pestConditions,
-		LastClimbedInfo:  lastClimbedInfo,
-		ClimbHistory:     climbHistory,
+		LocationID:            locationID,
+		Location:              *location,
+		Current:               *current,
+		Hourly:                hourlyForecast,
+		Historical:            historical,
+		Sunrise:               sunrise,
+		Sunset:                sunset,
+		DailySunTimes:         dailySunTimes,
+		RockDryingStatus:      rockStatus,
+		RockTemperatureStatus: rockTempStatus,
+		SnowDepthInches:       snowDepth,
+		DailySnowDepth:        dailySnowDepth,
+		TodayCondition:        &todayCondition,
+		RainLast48h:           &rainLast48h,
+		RainNext48h:           &rainNext48h,
+		PestConditions:        pestConditions,
+		LastClimbedInfo:       lastClimbedInfo,
+		ClimbHistory:          climbHistory,
 	}
 
 	return forecast, nil
@@ -357,6 +470,52 @@ func (s *WeatherService) calculateRockDryingStatus(
 	return &status, nil
 }
 
+// calculateRockTempStatus computes the rock surface-temperature / friction status
+// for a location. Inputs come from existing schema (location_rock_types,
+// location_sun_exposure, locations) plus the freshly-fetched forecast.
+//
+// pastHourly is the ~12h pre-now slice fetched via Open-Meteo's past_hours=12
+// param (used for thermal-lag spin-up). forecast is the future-only forecast
+// (already filtered by getLocationWeatherWithOptions).
+//
+// Returns nil if no rock-type data is available; the calculator's degraded path
+// will still produce a low-confidence status if invoked, but for parity with
+// rock_drying we skip the response field entirely when there's literally no
+// rock-type information for the location.
+func (s *WeatherService) calculateRockTempStatus(
+	ctx context.Context,
+	location *models.Location,
+	current *models.WeatherData,
+	pastHourly []models.WeatherData,
+	forecast []models.WeatherData,
+) (*models.RockTemperatureStatus, error) {
+	rockTypes, err := s.rocksRepo.GetRockTypesByLocation(ctx, location.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rock types: %w", err)
+	}
+	if len(rockTypes) == 0 {
+		// No rock-type data — skip rock temp entirely (matches rock_drying behavior).
+		return nil, nil
+	}
+
+	sunExposure, _ := s.rocksRepo.GetSunExposureByLocation(ctx, location.ID)
+
+	// Resolve rock type group (no boulder override at the location level — boulder
+	// services pass overrides directly to the calculator).
+	rockTypeGroup, _ := rock_temp.ResolveRockTypeGroup(rockTypes, "")
+
+	status := s.rockTempCalculator.Calculate(rock_temp.Inputs{
+		RockTypeGroup: rockTypeGroup,
+		SunExposure:   sunExposure,
+		Location:      location,
+		PastHourly:    pastHourly,
+		Forecast:      forecast,
+		Now:           current,
+		TimezoneName:  locationTimezone(location),
+	})
+	return &status, nil
+}
+
 // IsWeatherDataFresh checks if weather data is less than the specified duration old
 func (s *WeatherService) IsWeatherDataFresh(ctx context.Context, maxAge time.Duration) (bool, error) {
 	locations, err := s.locationsRepo.GetAll(ctx)
@@ -390,6 +549,10 @@ func (s *WeatherService) RefreshAllWeather(ctx context.Context) error {
 
 // RefreshAllWeatherWithOptions refreshes weather with control over freshness check
 func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, forceRefresh bool) error {
+	if s.offlineMode {
+		log.Println("weather: offline mode — skipping RefreshAllWeather (run `cmd/sync_weather` to refresh DB)")
+		return nil
+	}
 	s.refreshMutex.Lock()
 	if s.isRefreshing {
 		s.refreshMutex.Unlock()
@@ -512,6 +675,17 @@ func (s *WeatherService) StartBackgroundRefresh(interval time.Duration) {
 
 // GetWeatherByCoordinates fetches weather for arbitrary coordinates
 func (s *WeatherService) GetWeatherByCoordinates(ctx context.Context, lat, lon float64) (*models.WeatherForecast, error) {
+	if s.offlineMode {
+		// No DB cache exists for arbitrary coordinates — return a stub
+		// rather than calling the API. This endpoint is rarely used in dev.
+		log.Printf("weather: offline mode — GetWeatherByCoordinates(%.4f,%.4f) returning empty stub", lat, lon)
+		now := time.Now().UTC()
+		return &models.WeatherForecast{
+			Current:    models.WeatherData{Timestamp: now, CreatedAt: now},
+			Hourly:     []models.WeatherData{},
+			Historical: []models.WeatherData{},
+		}, nil
+	}
 	// Fetch weather from API
 	current, hourlyForecast, sunTimes, err := s.weatherClient.GetCurrentAndForecast(lat, lon)
 	if err != nil {

@@ -274,3 +274,98 @@ Then reset the database to apply changes.
 ---
 
 **Remember**: River crossing safety data should be treated as estimates. Always use your own judgment and experience when assessing river crossings in the field.
+
+---
+
+## Sun Exposure Profile (rock-temp confidence)
+
+Every active location should have a row in `woulder.location_sun_exposure`. Without one, the rock-temperature **confidence score** is reduced by **40 points** (25 for aspect + 15 for dip) via [`confidence.go:51-59`](backend/internal/weather/rock_temp/confidence.go:51), capping it at ~60/100 regardless of how good the weather data is.
+
+### What's in the table
+
+There is **one row per location** in [`woulder.location_sun_exposure`](backend/internal/database/migrations/000006_add_sun_exposure_profiles.up.sql:5). The schema is **percentage-based** — there are no `aspect_degrees` or `face_dip_degrees` columns. The rock-temp calculator derives a single representative aspect/dip on the fly from these fields:
+
+| Column | Range | Meaning |
+|---|---|---|
+| `south_facing_percent` | 0–100 | % of climbing surface facing south (180°) |
+| `west_facing_percent` | 0–100 | % facing west (270°) |
+| `east_facing_percent` | 0–100 | % facing east (90°) |
+| `north_facing_percent` | 0–100 | % facing north (0°) |
+| `slab_percent` | 0–100 | % low-angle (face dip ≈ 45°) |
+| `overhang_percent` | 0–100 | % overhanging (face dip ≈ 110°) |
+| `tree_coverage_percent` | 0–100 | canopy shading the rock |
+| `description` | text | free-form notes |
+
+The four facing-percent fields should sum to roughly 100. `slab_percent + overhang_percent` should be ≤ 100; the remainder is treated as vertical wall (dip = 90°).
+
+### How aspect and dip are derived
+
+From [`ResolveDominantFacet()`](backend/internal/weather/rock_temp/inputs.go:99):
+
+**Aspect resolution**
+
+- If any one facing-percent is **> 60**, that face dominates: S=180°, W=270°, E=90°, N=0°.
+- Otherwise the four percentages are vector-summed via [`WeightedAspect()`](backend/internal/weather/rock_temp/inputs.go:38) into a single representative azimuth. If the resultant vector is degenerate (e.g., 50% E + 50% W cancel out), the calculator defaults to south-facing (180°).
+
+**Dip resolution**
+
+- `slab_percent > 60` → dip = 45°
+- `overhang_percent > 60` → dip = 110°
+- Otherwise the calculator uses [`WeightedDip()`](backend/internal/weather/rock_temp/inputs.go:63), a blend with weights 45° (slab) / 90° (vertical) / 110° (overhang).
+
+**Practical implication for operators:** to get a *clean* (non-mixed) aspect and dip, push one face above 60% and pick either slab or overhang above 60%. If your area is genuinely mixed, leave it mixed — the calculator handles that case correctly, it just emits a "mixed facets" reason string at lower confidence weight.
+
+### Visual references
+
+**Aspect (compass bearing the rock face points toward)**
+
+```text
+        N (0°)
+          │
+W (270°)──┼──E (90°)
+          │
+        S (180°)
+```
+
+**Dip (face angle from horizontal)**
+
+```text
+0°   ─────  flat top / horizontal slab
+45°  ╱      typical low-angle slab
+75°  │      steep wall
+90°  │      vertical
+110° ╲      overhanging (past vertical)
+```
+
+### Editing the data
+
+Two paths:
+
+1. **For a brand-new location being added via `seed.sql`** (Step 2 above): include a parallel `INSERT INTO location_sun_exposure …` block in the same edit, modeled after the existing entries near the bottom of [`backend/internal/database/seed.sql`](backend/internal/database/seed.sql:137).
+
+2. **For one-off updates to an existing live location:** use the seed template, which is set up for idempotent UPSERTs by name.
+
+   ```cmd
+   cd backend/internal/database/migrations
+   copy seed_location_sun_exposure_TEMPLATE.sql seed_location_sun_exposure.sql
+   :: edit seed_location_sun_exposure.sql in your editor
+   set PGPASSWORD=<from backend/.env>
+   psql "host=<DB_HOST> port=5432 user=woulder dbname=woulder sslmode=require" -f seed_location_sun_exposure.sql
+   ```
+
+   The template (`_TEMPLATE` suffix means it is **not** a numbered migration; do not move it into a `000NNN_*.sql` slot) contains one `INSERT … SELECT … ON CONFLICT (location_id) DO UPDATE` block per active location, alphabetized by region → area → name and pre-populated from the live DB so you only have to change the values you want to refine.
+
+### Re-auditing
+
+To check current coverage and find any location that's missing a row or has all-zero facets/dip:
+
+```cmd
+set PGPASSWORD=<from backend/.env>
+psql "host=<DB_HOST> port=5432 user=woulder dbname=woulder sslmode=require" -f backend/internal/database/migrations/audit_location_sun_exposure.sql
+```
+
+The script ([`audit_location_sun_exposure.sql`](backend/internal/database/migrations/audit_location_sun_exposure.sql)) is read-only and prints both a summary block (totals + counts of `rows_missing` / `rows_all_zero_facets` / `rows_all_zero_dip`) and a per-location detail listing with `aspect_status` and `dip_status` flags.
+
+### Known issue: misleading confidence reason strings
+
+The reason strings emitted by [`confidence.go:54`](backend/internal/weather/rock_temp/confidence.go:54) and [`confidence.go:58`](backend/internal/weather/rock_temp/confidence.go:58) tell operators to populate `aspect_degrees` and `face_dip_degrees` in `location_sun_exposure`. **Those columns do not exist** — the schema is percentage-based as documented above. Until those strings are corrected (Code-mode follow-up), interpret any "aspect defaulted" / "dip defaulted" reason as: *"this location does not have a `location_sun_exposure` row at all — insert one with the seven percentage fields."* The deduction is gated on `in.SunExposure != nil` ([`calculator.go:206-207`](backend/internal/weather/rock_temp/calculator.go:206)), not on individual NULL columns, so a row with all-zero values still suppresses the deduction (though it will produce a degenerate aspect and the calculator will fall back to south-facing).

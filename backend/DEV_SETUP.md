@@ -94,3 +94,58 @@ npm run dev
 ```
 
 Now both frontend and backend hot-reload automatically! 🚀
+
+## Offline weather mode for development
+
+The API server fetches weather from Open-Meteo on cache miss / stale data. In
+active development this can quickly trip Open-Meteo's free-tier rate limit,
+because every page refresh exercises the weather endpoints. To avoid this, the
+server supports an **offline weather mode** that serves all weather data from
+the local DB cache and skips Open-Meteo entirely on the per-request hot path.
+
+### Enable it
+
+Add to your `backend/.env`:
+
+```bash
+WEATHER_OFFLINE_MODE=true
+```
+
+Restart the server. You'll see this on startup:
+
+```
+WeatherService: offline mode ENABLED — Open-Meteo API calls disabled, serving from DB only
+```
+
+While enabled:
+
+- `GET /api/weather/...` reads cached rows from `woulder.weather_data` only
+- The hourly background refresh job is a no-op
+- Stale cached data is served as-is (the `< 1h` freshness check is bypassed)
+- If a location has no cached data, you get an empty/synthetic response
+  (downstream calculators handle this gracefully)
+
+### Refresh the DB on demand
+
+Use the standalone `sync_weather` command to repopulate the cache whenever
+you want fresh data:
+
+```bash
+# Refresh every location
+cd backend && go run ./cmd/sync_weather --all
+
+# Refresh just one location
+cd backend && go run ./cmd/sync_weather --location-id 12
+
+# Dry run to see what would be fetched
+cd backend && go run ./cmd/sync_weather --all --dry-run
+```
+
+See [`cmd/sync_weather/README.md`](cmd/sync_weather/README.md:1) for the full
+flag reference and behavior details.
+
+### Production
+
+Leave `WEATHER_OFFLINE_MODE` unset (or `false`) in production — the server's
+built-in hourly background refresh will keep the cache warm. The flag only
+exists to make local UI iteration painless.

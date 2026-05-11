@@ -2,10 +2,19 @@ import { WeatherForecast } from '../types/weather';
 import { RiverData } from '../types/river';
 import { API_BASE_URL } from '../services/api';
 import { WindAnalyzer } from '../utils/weather/analyzers';
-import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl } from './weather/weatherDisplay';
+import {
+  getConditionColor,
+  getConditionBadgeStyles,
+  getConditionLabel,
+  getWeatherIconUrl,
+  pickAdaptiveDisplay,
+  ROCK_CONDITION_LABELS,
+  formatNextTransition,
+} from './weather/weatherDisplay';
 import { formatInTimeZone } from 'date-fns-tz';
-import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, ChevronRight, Sunrise, Sunset, Footprints } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
+import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, ChevronRight, Sunrise, Sunset, Footprints, Flame } from 'lucide-react';
+import { RockTempIcon } from './icons/RockTempIcon';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { ConditionsModal } from './ConditionsModal';
 import { RecentActivityModal } from './RecentActivityModal';
 import { trackLocationView, trackModalOpen } from '../services/analytics';
@@ -27,7 +36,7 @@ function formatSunTime(isoTime: string | undefined): string {
 }
 
 export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCardProps) {
-  const { location, current, hourly, historical, sunrise, sunset, rock_drying_status, snow_depth_inches, today_condition, rain_last_48h, rain_next_48h, pest_conditions, climb_history } = forecast;
+  const { location, current, hourly, historical, sunrise, sunset, rock_drying_status, rock_temperature_status, snow_depth_inches, today_condition, rain_last_48h, rain_next_48h, pest_conditions, climb_history } = forecast;
 
   // Use backend-calculated condition (backend always provides this)
   const todayCondition = useMemo(() => {
@@ -324,14 +333,86 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
             </div>
           </div>
 
-          {/* Snow on Ground */}
-          <div className="flex flex-col items-center text-center">
-            <Snowflake className={`w-5 h-5 mb-1 ${snow_depth_inches && snow_depth_inches > 0.5 ? 'text-red-500 fill-current' : 'text-blue-400'}`} />
-            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">On Ground</div>
-            <div className={`text-sm font-semibold ${snow_depth_inches && snow_depth_inches > 0.5 ? 'text-red-900 dark:text-red-300' : 'text-gray-900 dark:text-white'}`}>
-              {snow_depth_inches && snow_depth_inches > 0.1 ? `${snow_depth_inches.toFixed(1)}"` : '0"'}
-            </div>
-          </div>
+          {/* Adaptive 3rd column: snow / wet rock / hot rock / rock temp / fallback snow */}
+          {(() => {
+            const adaptive = pickAdaptiveDisplay(snow_depth_inches ?? null, rock_temperature_status ?? null);
+            const fmtTime = (iso: string) =>
+              new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+            let title = 'On Ground';
+            let value = '0"';
+            let sub: string | null = null;
+            let icon: ReactNode = <Snowflake className="w-5 h-5 mb-1 text-blue-400" />;
+            let valueClass = 'text-gray-900 dark:text-white';
+
+            switch (adaptive.kind) {
+              case 'snow': {
+                const heavy = adaptive.depthInches > 0.5;
+                title = 'On Ground';
+                value = adaptive.depthInches > 0.1 ? `${adaptive.depthInches.toFixed(1)}"` : '0"';
+                icon = (
+                  <Snowflake
+                    className={`w-5 h-5 mb-1 ${heavy ? 'text-red-500 fill-current' : 'text-blue-400'}`}
+                  />
+                );
+                valueClass = heavy ? 'text-red-900 dark:text-red-300' : 'text-gray-900 dark:text-white';
+                break;
+              }
+              case 'wet': {
+                title = adaptive.severity === 'heavy' ? 'Wet Rock' : 'Damp Rock';
+                value = adaptive.clearsAt
+                  ? `Until ${fmtTime(adaptive.clearsAt)}`
+                  : adaptive.severity === 'heavy'
+                    ? 'Condensing'
+                    : 'Surface damp';
+                icon = (
+                  <Droplets
+                    className={`w-5 h-5 mb-1 ${adaptive.severity === 'heavy' ? 'text-blue-500' : 'text-blue-400'}`}
+                  />
+                );
+                valueClass = 'text-blue-900 dark:text-blue-300';
+                break;
+              }
+              case 'hot': {
+                title = 'Rock Temp';
+                value = `${Math.round(adaptive.surfaceF)}°F`;
+                if (adaptive.nextTransition) {
+                  sub = `Cools to ${ROCK_CONDITION_LABELS[adaptive.nextTransition.to_condition]} at ${fmtTime(adaptive.nextTransition.time)}`;
+                }
+                icon = <Flame className="w-5 h-5 mb-1 text-orange-500" />;
+                valueClass = 'text-orange-700 dark:text-orange-300';
+                break;
+              }
+              case 'rock': {
+                title = 'Rock Temp';
+                value = `${Math.round(adaptive.surfaceF)}°F`;
+                sub = formatNextTransition(adaptive.nextTransition, adaptive.condition);
+                icon = <RockTempIcon size={20} condition={adaptive.condition} className="mb-1" />;
+                valueClass = 'text-gray-900 dark:text-white';
+                break;
+              }
+              case 'unknown': {
+                title = 'On Ground';
+                value = '0"';
+                icon = <Snowflake className="w-5 h-5 mb-1 text-gray-400" />;
+                valueClass = 'text-gray-500 dark:text-gray-400';
+                break;
+              }
+            }
+
+            return (
+              <div className="flex flex-col items-center text-center">
+                {icon}
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{title}</div>
+                <div className={`text-sm font-semibold ${valueClass}`}>{value}</div>
+                {sub && (
+                  <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">
+                    {sub}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Wind */}
           <div className="flex flex-col items-center text-center">
@@ -389,6 +470,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
         <ConditionsModal
           locationName={location.name}
           rockStatus={rock_drying_status}
+          rockTempStatus={rock_temperature_status}
           pestConditions={pest_conditions}
           riverData={riverData.length > 0 ? riverData : undefined}
           todayCondition={todayCondition}

@@ -13,9 +13,10 @@ const (
 		INSERT INTO woulder.weather_data (
 			location_id, timestamp, temperature, feels_like, precipitation,
 			humidity, wind_speed, wind_direction, cloud_cover, pressure,
-			description, icon
+			description, icon,
+			shortwave_radiation, direct_radiation, diffuse_radiation, dewpoint_f
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		ON CONFLICT(location_id, timestamp) DO UPDATE SET
 			temperature = EXCLUDED.temperature,
 			feels_like = EXCLUDED.feels_like,
@@ -27,6 +28,10 @@ const (
 			pressure = EXCLUDED.pressure,
 			description = EXCLUDED.description,
 			icon = EXCLUDED.icon,
+			shortwave_radiation = EXCLUDED.shortwave_radiation,
+			direct_radiation = EXCLUDED.direct_radiation,
+			diffuse_radiation = EXCLUDED.diffuse_radiation,
+			dewpoint_f = EXCLUDED.dewpoint_f,
 			created_at = CURRENT_TIMESTAMP
 	`
 
@@ -36,7 +41,9 @@ const (
 	queryGetHistorical = `
 		SELECT id, location_id, timestamp, temperature, feels_like,
 		       precipitation, humidity, wind_speed, wind_direction,
-		       cloud_cover, pressure, description, icon, created_at
+		       cloud_cover, pressure, description, icon,
+		       shortwave_radiation, direct_radiation, diffuse_radiation, dewpoint_f,
+		       created_at
 		FROM woulder.weather_data
 		WHERE location_id = $1
 		  AND timestamp >= NOW() - INTERVAL '1 day' * $2
@@ -50,7 +57,9 @@ const (
 	queryGetForecast = `
 		SELECT id, location_id, timestamp, temperature, feels_like,
 		       precipitation, humidity, wind_speed, wind_direction,
-		       cloud_cover, pressure, description, icon, created_at
+		       cloud_cover, pressure, description, icon,
+		       shortwave_radiation, direct_radiation, diffuse_radiation, dewpoint_f,
+		       created_at
 		FROM woulder.weather_data
 		WHERE location_id = $1
 		  AND timestamp > NOW()
@@ -65,7 +74,9 @@ const (
 	queryGetCurrent = `
 		SELECT id, location_id, timestamp, temperature, feels_like,
 		       precipitation, humidity, wind_speed, wind_direction,
-		       cloud_cover, pressure, description, icon, created_at
+		       cloud_cover, pressure, description, icon,
+		       shortwave_radiation, direct_radiation, diffuse_radiation, dewpoint_f,
+		       created_at
 		FROM woulder.weather_data
 		WHERE location_id = $1
 		ORDER BY ABS(EXTRACT(EPOCH FROM (timestamp - NOW())))

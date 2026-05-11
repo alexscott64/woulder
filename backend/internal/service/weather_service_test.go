@@ -671,3 +671,147 @@ func TestWeatherService_GetLocationWeather_FreshCacheDoesNotPersist(t *testing.T
 func intPtr(i int) *int {
 	return &i
 }
+
+// TestWeatherService_OfflineMode_DoesNotCallAPI verifies that with
+// SetOfflineMode(true) the service serves weather purely from the DB and
+// never invokes the underlying weatherClient. We assert this indirectly:
+// the test weatherClient has no API key / no network access, so any real
+// API call would fail. By providing fresh cached data and ensuring no
+// fetch/save side-effects occur, we confirm the offline path is taken.
+//
+// It also runs a second case where the cache is EMPTY (GetCurrent returns
+// nil) — offline mode must still succeed (no API call, no error) and emit
+// a warning rather than blowing up.
+func TestWeatherService_OfflineMode_DoesNotCallAPI(t *testing.T) {
+	t.Run("with cached data — no API call, no DB writes", func(t *testing.T) {
+		var (
+			deleteFutureCalled bool
+			saveCount          int
+			getForecastCalled  bool
+		)
+
+		// Stale cache (older than 1h) — in normal mode this would trigger an
+		// API fetch. In offline mode it must be served as-is.
+		staleTime := time.Now().Add(-3 * time.Hour)
+
+		mockWeatherRepo := &MockWeatherRepository{
+			GetCurrentFn: func(ctx context.Context, locationID int) (*models.WeatherData, error) {
+				return &models.WeatherData{
+					LocationID:  locationID,
+					Timestamp:   time.Now(),
+					CreatedAt:   staleTime,
+					Temperature: 55.0,
+					Humidity:    60,
+				}, nil
+			},
+			GetForecastFn: func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error) {
+				getForecastCalled = true
+				return []models.WeatherData{}, nil
+			},
+			GetHistoricalFn: func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error) {
+				return []models.WeatherData{}, nil
+			},
+			DeleteFutureForLocationFn: func(ctx context.Context, locationID int) error {
+				deleteFutureCalled = true
+				return nil
+			},
+			SaveFn: func(ctx context.Context, data *models.WeatherData) error {
+				saveCount++
+				return nil
+			},
+		}
+
+		mockLocationsRepo := &MockLocationsRepository{
+			GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
+				return &models.Location{
+					ID: id, Name: "Test", Latitude: 47.0, Longitude: -121.0,
+				}, nil
+			},
+		}
+
+		mockRocksRepo := &MockRocksRepository{
+			GetRockTypesByLocationFn: func(ctx context.Context, locationID int) ([]models.RockType, error) {
+				return []models.RockType{
+					{ID: 1, Name: "Granite", BaseDryingHours: 4.0, PorosityPercent: 1.0},
+				}, nil
+			},
+			GetSunExposureByLocationFn: func(ctx context.Context, locationID int) (*models.LocationSunExposure, error) {
+				return &models.LocationSunExposure{LocationID: locationID, SouthFacingPercent: 50}, nil
+			},
+		}
+
+		// Use a real WeatherService client — if offline mode is broken and
+		// we hit the API path, the call will either succeed (still wrong)
+		// or fail. We rely on the DB-write side effects (DeleteFuture/Save)
+		// being our canary: they're ONLY invoked on the API-fetch branch.
+		weatherClient := weather.NewWeatherService("test_api_key")
+		service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, weatherClient, nil)
+		service.SetOfflineMode(true)
+
+		forecast, err := service.GetLocationWeather(context.Background(), 7)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, forecast)
+		assert.Equal(t, 7, forecast.LocationID)
+
+		// Critical assertions: no API-fetch side effects.
+		assert.False(t, deleteFutureCalled, "DeleteFutureForLocation must NOT be called in offline mode")
+		assert.Equal(t, 0, saveCount, "Save must NOT be called in offline mode (no API fetch)")
+		assert.True(t, getForecastCalled, "Should still load cached forecast from DB")
+	})
+
+	t.Run("empty cache — offline mode warns and returns synthetic data without erroring", func(t *testing.T) {
+		var saveCount int
+
+		mockWeatherRepo := &MockWeatherRepository{
+			GetCurrentFn: func(ctx context.Context, locationID int) (*models.WeatherData, error) {
+				return nil, nil // No cached data at all
+			},
+			SaveFn: func(ctx context.Context, data *models.WeatherData) error {
+				saveCount++
+				return nil
+			},
+		}
+
+		mockLocationsRepo := &MockLocationsRepository{
+			GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
+				return &models.Location{ID: id, Name: "Test", Latitude: 47.0, Longitude: -121.0}, nil
+			},
+		}
+
+		mockRocksRepo := &MockRocksRepository{
+			GetRockTypesByLocationFn: func(ctx context.Context, locationID int) ([]models.RockType, error) {
+				return []models.RockType{}, nil
+			},
+		}
+
+		weatherClient := weather.NewWeatherService("test_api_key")
+		service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, weatherClient, nil)
+		service.SetOfflineMode(true)
+
+		forecast, err := service.GetLocationWeather(context.Background(), 99)
+
+		assert.NoError(t, err, "offline mode must not error on empty cache")
+		assert.NotNil(t, forecast)
+		assert.Equal(t, 0, saveCount, "no DB writes in offline mode even on empty cache")
+	})
+
+	t.Run("RefreshAllWeather is a no-op in offline mode", func(t *testing.T) {
+		getAllCalled := false
+
+		mockLocationsRepo := &MockLocationsRepository{
+			GetAllFn: func(ctx context.Context) ([]models.Location, error) {
+				getAllCalled = true
+				return []models.Location{{ID: 1}}, nil
+			},
+		}
+
+		weatherClient := weather.NewWeatherService("test_api_key")
+		service := NewWeatherService(&MockWeatherRepository{}, mockLocationsRepo, &MockRocksRepository{}, weatherClient, nil)
+		service.SetOfflineMode(true)
+
+		err := service.RefreshAllWeatherWithOptions(context.Background(), true)
+		assert.NoError(t, err)
+		assert.False(t, getAllCalled, "RefreshAllWeather should short-circuit in offline mode before touching repos")
+	})
+}

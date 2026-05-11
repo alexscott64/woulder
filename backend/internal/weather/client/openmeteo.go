@@ -39,6 +39,10 @@ type openMeteoResponse struct {
 		WeatherCode         int     `json:"weather_code"`
 		ApparentTemperature float64 `json:"apparent_temperature"`
 		Pressure            float64 `json:"surface_pressure"`
+		ShortwaveRadiation  float64 `json:"shortwave_radiation"`
+		DirectRadiation     float64 `json:"direct_radiation"`
+		DiffuseRadiation    float64 `json:"diffuse_radiation"`
+		Dewpoint2m          float64 `json:"dew_point_2m"`
 	} `json:"current"`
 	Hourly struct {
 		Time                []string  `json:"time"`
@@ -53,6 +57,10 @@ type openMeteoResponse struct {
 		WeatherCode         []int     `json:"weather_code"`
 		ApparentTemperature []float64 `json:"apparent_temperature"`
 		Pressure            []float64 `json:"surface_pressure"`
+		ShortwaveRadiation  []float64 `json:"shortwave_radiation"`
+		DirectRadiation     []float64 `json:"direct_radiation"`
+		DiffuseRadiation    []float64 `json:"diffuse_radiation"`
+		Dewpoint2m          []float64 `json:"dew_point_2m"`
 	} `json:"hourly"`
 	Daily *struct {
 		Time    []string `json:"time"`
@@ -187,7 +195,7 @@ func formatSunTimestampUTC(timeStr string) string {
 // GetCurrentWeather fetches current weather with both current conditions and hourly forecast
 // Uses default Open-Meteo model for accurate, consistent data.
 func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherData, error) {
-	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=precipitation,rain,snowfall&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=1",
+	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure,shortwave_radiation,direct_radiation,diffuse_radiation,dew_point_2m&hourly=precipitation,rain,snowfall&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=1",
 		openMeteoForecastURL, lat, lon)
 
 	resp, err := c.retryableGet(url)
@@ -226,17 +234,21 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 	}
 
 	weather := &models.WeatherData{
-		Timestamp:     timestamp,
-		Temperature:   data.Current.Temperature2m,
-		FeelsLike:     data.Current.ApparentTemperature,
-		Precipitation: precipitation[0],
-		Humidity:      data.Current.RelativeHumidity2m,
-		WindSpeed:     data.Current.WindSpeed10m,
-		WindDirection: data.Current.WindDirection10m,
-		CloudCover:    data.Current.CloudCover,
-		Pressure:      int(data.Current.Pressure),
-		Description:   getWeatherDescription(data.Current.WeatherCode),
-		Icon:          getWeatherIcon(data.Current.WeatherCode),
+		Timestamp:          timestamp,
+		Temperature:        data.Current.Temperature2m,
+		FeelsLike:          data.Current.ApparentTemperature,
+		Precipitation:      precipitation[0],
+		Humidity:           data.Current.RelativeHumidity2m,
+		WindSpeed:          data.Current.WindSpeed10m,
+		WindDirection:      data.Current.WindDirection10m,
+		CloudCover:         data.Current.CloudCover,
+		Pressure:           int(data.Current.Pressure),
+		Description:        getWeatherDescription(data.Current.WeatherCode),
+		Icon:               getWeatherIcon(data.Current.WeatherCode),
+		ShortwaveRadiation: data.Current.ShortwaveRadiation,
+		DirectRadiation:    data.Current.DirectRadiation,
+		DiffuseRadiation:   data.Current.DiffuseRadiation,
+		DewpointF:          data.Current.Dewpoint2m,
 	}
 
 	return weather, nil
@@ -249,7 +261,7 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 	// All data (hourly, current, daily) uses timezone=UTC for consistent timestamp handling.
 	// Sunrise/sunset timestamps are converted to RFC3339 with Z suffix so the frontend
 	// can correctly interpret them as UTC and display in the user's local timezone.
-	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&daily=sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=16",
+	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&current=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure,shortwave_radiation,direct_radiation,diffuse_radiation,dew_point_2m&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure,shortwave_radiation,direct_radiation,diffuse_radiation,dew_point_2m&daily=sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=16&past_hours=12",
 		openMeteoForecastURL, lat, lon)
 
 	resp, err := c.retryableGet(url)
@@ -311,17 +323,21 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 
 	// Create current weather data
 	current := &models.WeatherData{
-		Timestamp:     timestamp,
-		Temperature:   data.Current.Temperature2m,
-		FeelsLike:     data.Current.ApparentTemperature,
-		Precipitation: precipitation[0],
-		Humidity:      data.Current.RelativeHumidity2m,
-		WindSpeed:     data.Current.WindSpeed10m,
-		WindDirection: data.Current.WindDirection10m,
-		CloudCover:    data.Current.CloudCover,
-		Pressure:      int(data.Current.Pressure),
-		Description:   getWeatherDescription(data.Current.WeatherCode),
-		Icon:          getWeatherIconWithTime(data.Current.WeatherCode, isNight),
+		Timestamp:          timestamp,
+		Temperature:        data.Current.Temperature2m,
+		FeelsLike:          data.Current.ApparentTemperature,
+		Precipitation:      precipitation[0],
+		Humidity:           data.Current.RelativeHumidity2m,
+		WindSpeed:          data.Current.WindSpeed10m,
+		WindDirection:      data.Current.WindDirection10m,
+		CloudCover:         data.Current.CloudCover,
+		Pressure:           int(data.Current.Pressure),
+		Description:        getWeatherDescription(data.Current.WeatherCode),
+		Icon:               getWeatherIconWithTime(data.Current.WeatherCode, isNight),
+		ShortwaveRadiation: data.Current.ShortwaveRadiation,
+		DirectRadiation:    data.Current.DirectRadiation,
+		DiffuseRadiation:   data.Current.DiffuseRadiation,
+		DewpointF:          data.Current.Dewpoint2m,
 	}
 
 	// Parse forecast data (all hourly data)
@@ -331,7 +347,9 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 			i >= len(precipitation) || i >= len(data.Hourly.RelativeHumidity2m) ||
 			i >= len(data.Hourly.WindSpeed10m) || i >= len(data.Hourly.WindDirection10m) ||
 			i >= len(data.Hourly.CloudCover) || i >= len(data.Hourly.Pressure) ||
-			i >= len(data.Hourly.WeatherCode) {
+			i >= len(data.Hourly.WeatherCode) ||
+			i >= len(data.Hourly.ShortwaveRadiation) || i >= len(data.Hourly.DirectRadiation) ||
+			i >= len(data.Hourly.DiffuseRadiation) || i >= len(data.Hourly.Dewpoint2m) {
 			log.Printf("Skipping hour %d due to incomplete data arrays", i)
 			continue
 		}
@@ -349,17 +367,21 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 		}
 
 		weather := models.WeatherData{
-			Timestamp:     ts,
-			Temperature:   data.Hourly.Temperature2m[i],
-			FeelsLike:     data.Hourly.ApparentTemperature[i],
-			Precipitation: precipitation[i],
-			Humidity:      data.Hourly.RelativeHumidity2m[i],
-			WindSpeed:     data.Hourly.WindSpeed10m[i],
-			WindDirection: data.Hourly.WindDirection10m[i],
-			CloudCover:    data.Hourly.CloudCover[i],
-			Pressure:      int(data.Hourly.Pressure[i]),
-			Description:   getWeatherDescription(data.Hourly.WeatherCode[i]),
-			Icon:          getWeatherIconWithTime(data.Hourly.WeatherCode[i], hourIsNight),
+			Timestamp:          ts,
+			Temperature:        data.Hourly.Temperature2m[i],
+			FeelsLike:          data.Hourly.ApparentTemperature[i],
+			Precipitation:      precipitation[i],
+			Humidity:           data.Hourly.RelativeHumidity2m[i],
+			WindSpeed:          data.Hourly.WindSpeed10m[i],
+			WindDirection:      data.Hourly.WindDirection10m[i],
+			CloudCover:         data.Hourly.CloudCover[i],
+			Pressure:           int(data.Hourly.Pressure[i]),
+			Description:        getWeatherDescription(data.Hourly.WeatherCode[i]),
+			Icon:               getWeatherIconWithTime(data.Hourly.WeatherCode[i], hourIsNight),
+			ShortwaveRadiation: data.Hourly.ShortwaveRadiation[i],
+			DirectRadiation:    data.Hourly.DirectRadiation[i],
+			DiffuseRadiation:   data.Hourly.DiffuseRadiation[i],
+			DewpointF:          data.Hourly.Dewpoint2m[i],
 		}
 
 		forecast = append(forecast, weather)
@@ -371,7 +393,7 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 // GetForecast fetches hourly forecast data.
 // Uses default Open-Meteo model with timezone=UTC for consistent timestamp storage.
 func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, error) {
-	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=16",
+	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure,shortwave_radiation,direct_radiation,diffuse_radiation,dew_point_2m&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC&forecast_days=16",
 		openMeteoForecastURL, lat, lon)
 
 	resp, err := c.retryableGet(url)
@@ -401,7 +423,9 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 			i >= len(precipitation) || i >= len(data.Hourly.RelativeHumidity2m) ||
 			i >= len(data.Hourly.WindSpeed10m) || i >= len(data.Hourly.WindDirection10m) ||
 			i >= len(data.Hourly.CloudCover) || i >= len(data.Hourly.Pressure) ||
-			i >= len(data.Hourly.WeatherCode) {
+			i >= len(data.Hourly.WeatherCode) ||
+			i >= len(data.Hourly.ShortwaveRadiation) || i >= len(data.Hourly.DirectRadiation) ||
+			i >= len(data.Hourly.DiffuseRadiation) || i >= len(data.Hourly.Dewpoint2m) {
 			log.Printf("Skipping hour %d due to incomplete data arrays", i)
 			continue
 		}
@@ -413,17 +437,21 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 		}
 
 		weather := models.WeatherData{
-			Timestamp:     timestamp,
-			Temperature:   data.Hourly.Temperature2m[i],
-			FeelsLike:     data.Hourly.ApparentTemperature[i],
-			Precipitation: precipitation[i],
-			Humidity:      data.Hourly.RelativeHumidity2m[i],
-			WindSpeed:     data.Hourly.WindSpeed10m[i],
-			WindDirection: data.Hourly.WindDirection10m[i],
-			CloudCover:    data.Hourly.CloudCover[i],
-			Pressure:      int(data.Hourly.Pressure[i]),
-			Description:   getWeatherDescription(data.Hourly.WeatherCode[i]),
-			Icon:          getWeatherIcon(data.Hourly.WeatherCode[i]),
+			Timestamp:          timestamp,
+			Temperature:        data.Hourly.Temperature2m[i],
+			FeelsLike:          data.Hourly.ApparentTemperature[i],
+			Precipitation:      precipitation[i],
+			Humidity:           data.Hourly.RelativeHumidity2m[i],
+			WindSpeed:          data.Hourly.WindSpeed10m[i],
+			WindDirection:      data.Hourly.WindDirection10m[i],
+			CloudCover:         data.Hourly.CloudCover[i],
+			Pressure:           int(data.Hourly.Pressure[i]),
+			Description:        getWeatherDescription(data.Hourly.WeatherCode[i]),
+			Icon:               getWeatherIcon(data.Hourly.WeatherCode[i]),
+			ShortwaveRadiation: data.Hourly.ShortwaveRadiation[i],
+			DirectRadiation:    data.Hourly.DirectRadiation[i],
+			DiffuseRadiation:   data.Hourly.DiffuseRadiation[i],
+			DewpointF:          data.Hourly.Dewpoint2m[i],
 		}
 
 		forecast = append(forecast, weather)
@@ -435,7 +463,7 @@ func (c *OpenMeteoClient) GetForecast(lat, lon float64) ([]models.WeatherData, e
 // GetHistoricalWeather fetches recent historical weather data using forecast API with past_days.
 // Uses default model which provides reanalysis/observed data for accurate historical precipitation.
 func (c *OpenMeteoClient) GetHistoricalWeather(lat, lon float64, days int) ([]models.WeatherData, error) {
-	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&past_days=%d&forecast_days=1&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC",
+	url := fmt.Sprintf("%s?latitude=%.8f&longitude=%.8f&past_days=%d&forecast_days=1&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,apparent_temperature,surface_pressure,shortwave_radiation,direct_radiation,diffuse_radiation,dew_point_2m&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=UTC",
 		openMeteoForecastURL, lat, lon, days)
 
 	resp, err := c.retryableGet(url)
@@ -475,23 +503,29 @@ func (c *OpenMeteoClient) GetHistoricalWeather(lat, lon float64, days int) ([]mo
 			i >= len(precipitation) || i >= len(data.Hourly.RelativeHumidity2m) ||
 			i >= len(data.Hourly.WindSpeed10m) || i >= len(data.Hourly.WindDirection10m) ||
 			i >= len(data.Hourly.CloudCover) || i >= len(data.Hourly.Pressure) ||
-			i >= len(data.Hourly.WeatherCode) {
+			i >= len(data.Hourly.WeatherCode) ||
+			i >= len(data.Hourly.ShortwaveRadiation) || i >= len(data.Hourly.DirectRadiation) ||
+			i >= len(data.Hourly.DiffuseRadiation) || i >= len(data.Hourly.Dewpoint2m) {
 			log.Printf("Skipping historical hour %d due to incomplete data arrays", i)
 			continue
 		}
 
 		weather := models.WeatherData{
-			Timestamp:     timestamp,
-			Temperature:   data.Hourly.Temperature2m[i],
-			FeelsLike:     data.Hourly.ApparentTemperature[i],
-			Precipitation: precipitation[i],
-			Humidity:      data.Hourly.RelativeHumidity2m[i],
-			WindSpeed:     data.Hourly.WindSpeed10m[i],
-			WindDirection: data.Hourly.WindDirection10m[i],
-			CloudCover:    data.Hourly.CloudCover[i],
-			Pressure:      int(data.Hourly.Pressure[i]),
-			Description:   getWeatherDescription(data.Hourly.WeatherCode[i]),
-			Icon:          getWeatherIcon(data.Hourly.WeatherCode[i]),
+			Timestamp:          timestamp,
+			Temperature:        data.Hourly.Temperature2m[i],
+			FeelsLike:          data.Hourly.ApparentTemperature[i],
+			Precipitation:      precipitation[i],
+			Humidity:           data.Hourly.RelativeHumidity2m[i],
+			WindSpeed:          data.Hourly.WindSpeed10m[i],
+			WindDirection:      data.Hourly.WindDirection10m[i],
+			CloudCover:         data.Hourly.CloudCover[i],
+			Pressure:           int(data.Hourly.Pressure[i]),
+			Description:        getWeatherDescription(data.Hourly.WeatherCode[i]),
+			Icon:               getWeatherIcon(data.Hourly.WeatherCode[i]),
+			ShortwaveRadiation: data.Hourly.ShortwaveRadiation[i],
+			DirectRadiation:    data.Hourly.DirectRadiation[i],
+			DiffuseRadiation:   data.Hourly.DiffuseRadiation[i],
+			DewpointF:          data.Hourly.Dewpoint2m[i],
 		}
 
 		historical = append(historical, weather)

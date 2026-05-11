@@ -17,6 +17,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/weather/calculator"
 	"github.com/alexscott64/woulder/backend/internal/weather/client"
 	"github.com/alexscott64/woulder/backend/internal/weather/rock_drying"
+	"github.com/alexscott64/woulder/backend/internal/weather/rock_temp"
 )
 
 // WeatherClientInterface defines the interface for weather operations
@@ -35,6 +36,7 @@ type BoulderDryingService struct {
 	rocksRepo           rocks.Repository
 	mountainProjectRepo mountainproject.Repository
 	calculator          *boulder_drying.Calculator
+	rockTempCalculator  *rock_temp.Calculator
 	weatherClient       WeatherClientInterface
 }
 
@@ -54,8 +56,80 @@ func NewBoulderDryingService(
 		rocksRepo:           rocksRepo,
 		mountainProjectRepo: mountainProjectRepo,
 		calculator:          boulder_drying.NewCalculator(""), // API key no longer used (offline sun calculations)
+		rockTempCalculator:  &rock_temp.Calculator{},
 		weatherClient:       weatherClient,
 	}
+}
+
+// locationWeatherContext holds the cached weather data computed once per location
+// in getLocationRockDryingStatus, then reused by per-boulder rock_temp calculations.
+type locationWeatherContext struct {
+	location          *models.Location
+	current           *models.WeatherData
+	historicalWeather []models.WeatherData // ~7 days of past hours
+	hourlyForecast    []models.WeatherData // future hours
+	rockTypes         []models.RockType
+	sunExposure       *models.LocationSunExposure
+}
+
+// calculateBoulderRockTempStatus computes the rock surface temperature / friction
+// status for a specific boulder, applying the boulder profile's rock_type_override
+// and tree_coverage_percent overrides on top of the location-level defaults.
+//
+// Returns nil if the location has no rock-type data (matches weather_service behavior).
+func (s *BoulderDryingService) calculateBoulderRockTempStatus(
+	wctx *locationWeatherContext,
+	profile *models.BoulderDryingProfile,
+) *models.RockTemperatureStatus {
+	if wctx == nil || len(wctx.rockTypes) == 0 {
+		return nil
+	}
+
+	// Apply tree_coverage_percent override from the boulder profile.
+	sunExposure := wctx.sunExposure
+	if sunExposure != nil && profile != nil && profile.TreeCoveragePercent != nil {
+		// Shallow copy so we don't mutate the cached/shared pointer.
+		seCopy := *sunExposure
+		seCopy.TreeCoveragePercent = *profile.TreeCoveragePercent
+		sunExposure = &seCopy
+	}
+
+	// Apply rock_type_override from the boulder profile.
+	var override string
+	if profile != nil && profile.RockTypeOverride != nil && *profile.RockTypeOverride != "" {
+		override = *profile.RockTypeOverride
+	}
+	rockTypeGroup, _ := rock_temp.ResolveRockTypeGroup(wctx.rockTypes, override)
+
+	// Build PastHourly (~last 12h of historical) for thermal-lag spin-up.
+	nowUTC := time.Now().UTC()
+	pastHourly := make([]models.WeatherData, 0, 12)
+	for _, h := range wctx.historicalWeather {
+		// Use the most recent ~12 hours of historical data.
+		if h.Timestamp.Before(nowUTC) && nowUTC.Sub(h.Timestamp) <= 12*time.Hour {
+			pastHourly = append(pastHourly, h)
+		}
+	}
+
+	// Forecast slice (future-only). hourlyForecast from weatherRepo.GetForecast
+	// is already future-only, but filter defensively in case past hours leak in.
+	futureForecast := make([]models.WeatherData, 0, len(wctx.hourlyForecast))
+	for _, h := range wctx.hourlyForecast {
+		if !h.Timestamp.Before(nowUTC) {
+			futureForecast = append(futureForecast, h)
+		}
+	}
+
+	status := s.rockTempCalculator.Calculate(rock_temp.Inputs{
+		RockTypeGroup: rockTypeGroup,
+		SunExposure:   sunExposure,
+		Location:      wctx.location,
+		PastHourly:    pastHourly,
+		Forecast:      futureForecast,
+		Now:           wctx.current,
+		TimezoneName:  locationTimezone(wctx.location),
+	})
+	return &status
 }
 
 // GetBatchBoulderDryingStatus calculates the drying status for multiple boulders efficiently
@@ -115,7 +189,7 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 
 		// Get location-level rock drying status (shared for all routes in this location)
 		dryingStart := time.Now()
-		locationDrying, freshForecast, err := s.getLocationRockDryingStatus(ctx, locationID)
+		locationDrying, freshForecast, locWeatherCtx, err := s.getLocationRockDryingStatus(ctx, locationID)
 		if err != nil {
 			log.Printf("Warning: Failed to get location drying status for %d: %v", locationID, err)
 			continue
@@ -168,6 +242,10 @@ func (s *BoulderDryingService) GetBatchBoulderDryingStatus(
 			// Profiles should be pre-populated by background job (cmd/sync_boulder_profiles)
 			// Saving profiles during user requests adds significant latency
 
+			// Followup 6B: compute boulder rock_temp using the boulder profile's
+			// rock_type_override and tree_coverage_percent overrides.
+			status.RockTemperatureStatus = s.calculateBoulderRockTempStatus(locWeatherCtx, profile)
+
 			results[route.MPRouteID] = status
 			log.Printf("[PERF] Route %d: calc=%v total=%v", route.MPRouteID, calcTime, time.Since(routeStart))
 		}
@@ -217,7 +295,7 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 	}
 
 	// Get location-level rock drying status (includes fresh forecast data)
-	locationDrying, hourlyForecast, err := s.getLocationRockDryingStatus(ctx, *route.LocationID)
+	locationDrying, hourlyForecast, locWeatherCtx, err := s.getLocationRockDryingStatus(ctx, *route.LocationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get location drying status: %w", err)
 	}
@@ -250,23 +328,29 @@ func (s *BoulderDryingService) GetBoulderDryingStatus(
 		return nil, fmt.Errorf("failed to calculate boulder drying status: %w", err)
 	}
 
+	// Followup 6B: compute boulder rock_temp using the boulder profile's
+	// rock_type_override and tree_coverage_percent overrides.
+	status.RockTemperatureStatus = s.calculateBoulderRockTempStatus(locWeatherCtx, profile)
+
 	// NOTE: Sun exposure is NOT cached because it's time-dependent (next 6 days from NOW)
 	// Tree coverage should be pre-populated by background job (cmd/sync_tree_cover)
 
 	return status, nil
 }
 
-// getLocationRockDryingStatus calculates location-level rock drying status
-// Returns both the drying status and the fresh forecast data used for calculation
+// getLocationRockDryingStatus calculates location-level rock drying status.
+// Returns the drying status, the fresh forecast data, and a locationWeatherContext
+// containing the inputs (location, current weather, historical weather, rock types,
+// sun exposure) used for both rock_drying and downstream rock_temp calculations.
 func (s *BoulderDryingService) getLocationRockDryingStatus(
 	ctx context.Context,
 	locationID int,
-) (*models.RockDryingStatus, []models.WeatherData, error) {
+) (*models.RockDryingStatus, []models.WeatherData, *locationWeatherContext, error) {
 	// Get location for elevation data (needed for snow calculation)
 	locStart := time.Now()
 	location, err := s.locationsRepo.GetByID(ctx, locationID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get location: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get location: %w", err)
 	}
 	log.Printf("[PERF]   GetLocation took %v", time.Since(locStart))
 
@@ -275,13 +359,13 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	weatherStart := time.Now()
 	currentWeather, err := s.weatherRepo.GetCurrent(ctx, locationID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get current weather from database: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get current weather from database: %w", err)
 	}
 
 	// Get hourly forecast from database (next 7 days)
 	hourlyForecast, err := s.weatherRepo.GetForecast(ctx, locationID, 168) // 7 days = 168 hours
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get forecast weather from database: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get forecast weather from database: %w", err)
 	}
 	log.Printf("[PERF]   Got weather from database cache took %v", time.Since(weatherStart))
 
@@ -289,7 +373,7 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	histStart := time.Now()
 	historicalWeather, err := s.weatherRepo.GetHistorical(ctx, locationID, 7) // 7 days
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get historical weather: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get historical weather: %w", err)
 	}
 	log.Printf("[PERF]   GetHistoricalWeather took %v (got %d hours)", time.Since(histStart), len(historicalWeather))
 
@@ -297,7 +381,7 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	rockStart := time.Now()
 	rockTypes, err := s.rocksRepo.GetRockTypesByLocation(ctx, locationID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get rock types: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get rock types: %w", err)
 	}
 	log.Printf("[PERF]   GetRockTypesByLocation took %v", time.Since(rockStart))
 
@@ -341,9 +425,17 @@ func (s *BoulderDryingService) getLocationRockDryingStatus(
 	)
 	log.Printf("[PERF]   CalculateDryingStatus took %v", time.Since(calcStart))
 
-	// Return both the drying status and the fresh forecast data
-	// The forecast is reused by callers to avoid duplicate API calls
-	return &dryingStatus, hourlyForecast, nil
+	// Return the drying status, the fresh forecast data, and a weather context
+	// for downstream rock_temp calculations (avoids re-querying the database).
+	wctx := &locationWeatherContext{
+		location:          location,
+		current:           currentWeather,
+		historicalWeather: historicalWeather,
+		hourlyForecast:    hourlyForecast,
+		rockTypes:         rockTypes,
+		sunExposure:       sunExposure,
+	}
+	return &dryingStatus, hourlyForecast, wctx, nil
 }
 
 // GetAreaDryingStats calculates aggregated drying statistics for an area
@@ -478,10 +570,11 @@ func (s *BoulderDryingService) GetBatchAreaDryingStats(
 	// This eliminates redundant weather queries (was: N * 80ms, now: 1 * 80ms)
 	// Also returns fresh forecast data from API for accurate boulder 6-day forecasts
 	locationStart := time.Now()
-	locationDrying, hourlyForecast, err := s.getLocationRockDryingStatus(ctx, locationID)
+	locationDrying, hourlyForecast, locWeatherCtx, err := s.getLocationRockDryingStatus(ctx, locationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get location drying status: %w", err)
 	}
+	_ = locWeatherCtx // rock_temp not surfaced via area stats; keep wiring for future use
 	log.Printf("[PERF] Calculated location %d rock drying ONCE (took %v, will be reused for all %d areas)",
 		locationID, time.Since(locationStart), len(areaIDs))
 

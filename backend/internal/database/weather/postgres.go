@@ -35,6 +35,10 @@ func (r *PostgresRepository) Save(ctx context.Context, data *models.WeatherData)
 		data.Pressure,
 		data.Description,
 		data.Icon,
+		data.ShortwaveRadiation,
+		data.DirectRadiation,
+		data.DiffuseRadiation,
+		data.DewpointF,
 	)
 	return err
 }
@@ -55,7 +59,9 @@ func (r *PostgresRepository) GetHistorical(ctx context.Context, locationID int, 
 			&d.Temperature, &d.FeelsLike, &d.Precipitation,
 			&d.Humidity, &d.WindSpeed, &d.WindDirection,
 			&d.CloudCover, &d.Pressure, &d.Description,
-			&d.Icon, &d.CreatedAt,
+			&d.Icon,
+			&d.ShortwaveRadiation, &d.DirectRadiation, &d.DiffuseRadiation, &d.DewpointF,
+			&d.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -85,7 +91,9 @@ func (r *PostgresRepository) GetForecast(ctx context.Context, locationID int, ho
 			&d.Temperature, &d.FeelsLike, &d.Precipitation,
 			&d.Humidity, &d.WindSpeed, &d.WindDirection,
 			&d.CloudCover, &d.Pressure, &d.Description,
-			&d.Icon, &d.CreatedAt,
+			&d.Icon,
+			&d.ShortwaveRadiation, &d.DirectRadiation, &d.DiffuseRadiation, &d.DewpointF,
+			&d.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -107,7 +115,9 @@ func (r *PostgresRepository) GetCurrent(ctx context.Context, locationID int) (*m
 		&d.Temperature, &d.FeelsLike, &d.Precipitation,
 		&d.Humidity, &d.WindSpeed, &d.WindDirection,
 		&d.CloudCover, &d.Pressure, &d.Description,
-		&d.Icon, &d.CreatedAt,
+		&d.Icon,
+		&d.ShortwaveRadiation, &d.DirectRadiation, &d.DiffuseRadiation, &d.DewpointF,
+		&d.CreatedAt,
 	)
 
 	if err != nil {

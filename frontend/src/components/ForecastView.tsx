@@ -1,9 +1,18 @@
-import { WeatherData, DailySunTimes, WeatherCondition, RockDryingStatus } from '../types/weather';
+import { WeatherData, DailySunTimes, WeatherCondition, RockDryingStatus, RockTemperatureStatus } from '../types/weather';
 import { TemperatureAnalyzer, ConditionCalculator } from '../utils/weather/analyzers';
-import { getConditionColor, getConditionBadgeStyles, getConditionLabel, getWeatherIconUrl, getSnowDepthColor } from './weather/weatherDisplay';
+import {
+  getConditionColor,
+  getConditionBadgeStyles,
+  getConditionLabel,
+  getWeatherIconUrl,
+  getSnowDepthColor,
+  ROCK_CONDITION_LABELS,
+  formatCompactTimeRange,
+} from './weather/weatherDisplay';
 import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { Droplets, Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Cloud } from 'lucide-react';
+import { RockTempIcon } from './icons/RockTempIcon';
 import { useState, useEffect, useRef } from 'react';
 import { ConditionDetailsModal } from './ConditionDetailsModal';
 
@@ -45,6 +54,10 @@ interface ForecastViewProps {
   dailySnowDepth?: Record<string, number>; // Backend-calculated daily snow depth forecast
   todayCondition?: WeatherCondition; // Backend-calculated today's condition
   rockDryingStatus?: RockDryingStatus; // Rock drying status for critical override
+  // Rock surface temperature/friction status. The backend produces an hourly
+  // forecast covering the full horizon plus a per-day rollup (daily_forecast)
+  // that drives the per-day rock-temp indicator on each forecast card.
+  rockTempStatus?: RockTemperatureStatus;
 }
 
 interface DayForecast {
@@ -152,7 +165,7 @@ function calculateEffectiveSunHours(
   }
 }
 
-export function ForecastView({ locationId: _locationId, hourlyData, currentWeather, historicalData, elevationFt: _elevationFt = 0, dailySunTimes, dailySnowDepth, todayCondition, rockDryingStatus }: ForecastViewProps) {
+export function ForecastView({ locationId: _locationId, hourlyData, currentWeather, historicalData, elevationFt: _elevationFt = 0, dailySunTimes, dailySnowDepth, todayCondition, rockDryingStatus, rockTempStatus }: ForecastViewProps) {
   // State for condition details modal
   const [showConditionModal, setShowConditionModal] = useState(false);
   const [selectedDayCondition, setSelectedDayCondition] = useState<{
@@ -573,6 +586,11 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
           const conditionBadge = getConditionBadgeStyles(day.condition);
           const conditionLabel = getConditionLabel(day.condition);
 
+          // Per-day rock-temp indicator driven by backend daily_forecast rollup.
+          // Match cards to daily entries by local date (YYYY-MM-DD in PT).
+          const dayKey = formatInTimeZone(day.date, 'America/Los_Angeles', 'yyyy-MM-dd');
+          const dailyRock = rockTempStatus?.daily_forecast?.find(d => d.local_date === dayKey);
+
           return (
             <div
               key={index}
@@ -696,6 +714,54 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
               <div className="text-xs text-gray-600 dark:text-gray-400 mt-2 capitalize truncate">
                 {day.description}
               </div>
+
+              {/*
+                Per-day rock-temp indicator. Single-line format prefixed
+                with the Thermometer icon (matches WeatherCard's adaptive
+                3rd-column rock-temp display) so users learn this pill
+                represents friction/rock-temp at a glance.
+                Format: 🌡 Good · 58°F · 12a–1p
+              */}
+              {dailyRock && (
+                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                  {dailyRock.best_send_window ? (
+                    <div
+                      className="flex items-center justify-center gap-1 text-xs text-gray-700 dark:text-gray-300"
+                      title={`Rock surface temp — ${ROCK_CONDITION_LABELS[dailyRock.overall_condition]} • Peak ${dailyRock.peak_surface_temp_f.toFixed(0)}°F${dailyRock.best_send_window.dry_throughout ? '' : ' • may be damp early'}`}
+                    >
+                      <RockTempIcon
+                        size={14}
+                        condition={dailyRock.overall_condition}
+                        className="flex-shrink-0"
+                      />
+                      <span className="font-medium">{ROCK_CONDITION_LABELS[dailyRock.overall_condition]}</span>
+                      <span className="text-gray-400 dark:text-gray-500">·</span>
+                      <span>{Math.round(dailyRock.peak_surface_temp_f)}°F</span>
+                      <span className="text-gray-400 dark:text-gray-500">·</span>
+                      <span className="text-gray-600 dark:text-gray-400">
+                        {formatCompactTimeRange(
+                          dailyRock.best_send_window.start_time,
+                          dailyRock.best_send_window.end_time,
+                        )}
+                      </span>
+                      {!dailyRock.best_send_window.dry_throughout && (
+                        <span className="text-gray-400" title="May be damp early">💧</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      className="flex items-center justify-center gap-1 text-xs text-gray-500 dark:text-gray-400"
+                      title={`Rock surface temp — ${ROCK_CONDITION_LABELS[dailyRock.overall_condition]} • Peak ${dailyRock.peak_surface_temp_f.toFixed(0)}°F`}
+                    >
+                      <RockTempIcon
+                        size={14}
+                        className="flex-shrink-0 text-gray-400 dark:text-gray-500"
+                      />
+                      <span>No prime windows</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

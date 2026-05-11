@@ -12,6 +12,25 @@ const ANALYTICS_URL = `${API_BASE}/analytics`;
 const BATCH_INTERVAL = 5000; // 5 seconds
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 
+// --- Dev-mode gating ---
+//
+// Analytics network sends (session create, batched events, heartbeats, and the
+// sendBeacon flush on unload) are disabled when running under `vite dev` so
+// local development doesn't pollute production analytics.
+//
+// To force analytics ON in dev (e.g. when debugging the analytics pipeline
+// itself), set `VITE_ANALYTICS_FORCE=true` in `frontend/.env.local` and
+// restart the dev server. Production builds (`npm run build`) are unaffected
+// regardless of this flag.
+const isDev = import.meta.env.DEV;
+const forceEnabled = import.meta.env.VITE_ANALYTICS_FORCE === 'true';
+const analyticsEnabled = !isDev || forceEnabled;
+
+if (isDev && !forceEnabled) {
+  // One-time startup notice so developers know tracking is intentionally off.
+  console.info('[analytics] disabled in dev mode');
+}
+
 // --- Types ---
 
 interface TrackEvent {
@@ -93,6 +112,19 @@ function getOS(): string {
 
 /** Safe fetch that silently fails (analytics should never break the app) */
 async function safeFetch(url: string, options: RequestInit): Promise<void> {
+  if (!analyticsEnabled) {
+    // Dev mode: skip the actual network call. Log once per call for visibility.
+    let preview: unknown = undefined;
+    if (typeof options.body === 'string') {
+      try {
+        preview = JSON.parse(options.body);
+      } catch {
+        preview = options.body;
+      }
+    }
+    console.debug('[analytics] dev mode — skipping:', url, preview);
+    return;
+  }
   try {
     await fetch(url, options);
   } catch {
@@ -265,6 +297,10 @@ function flushEventsSync(): void {
   });
 
   // sendBeacon is more reliable than fetch during page unload
+  if (!analyticsEnabled) {
+    console.debug('[analytics] dev mode — skipping beacon:', `${ANALYTICS_URL}/events`, events);
+    return;
+  }
   if (navigator.sendBeacon) {
     navigator.sendBeacon(
       `${ANALYTICS_URL}/events`,
