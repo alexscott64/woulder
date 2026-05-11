@@ -40,23 +40,6 @@ woulder pulls weather, river, and climbing-activity data for boulder fields acro
 
 ---
 
-## Rock Temperature
-
-woulder predicts the **surface temperature of the rock** itself — not the air — using a heat-balance model that combines solar irradiance, sky radiation, wind convection, and thermal lag for the rock's mass and color. It then layers in:
-
-- **Friction quality** scoring (cold-and-dry vs. greasy-warm) with rock-type-aware thresholds
-- **Send-window detection** — the hours when temperature, friction, and condensation align
-- **Daily rollups** for at-a-glance forecast cards
-- A custom [`RockTempIcon`](frontend/src/components/icons/RockTempIcon.tsx:1) used throughout the UI
-
-Inputs are tuned per location via the `location_sun_exposure` profile (canopy, horizon, aspect bias) — see [`ADDING_LOCATIONS.md`](ADDING_LOCATIONS.md:1) for how to set one up.
-
-📖 **For the full physics, formulas, constants, and worked examples, read [`docs/rock-temperature-calculations.md`](docs/rock-temperature-calculations.md:1).**
-
-Implementation lives in [`backend/internal/weather/rock_temp/`](backend/internal/weather/rock_temp/calculator.go:1) (`calculator`, `surface_temp`, `irradiance`, `thermal_lag`, `friction`, `send_window`, `condensation`, `confidence`, `daily`).
-
----
-
 ## Tech stack
 
 **Backend:** Go 1.21+ · Gin · PostgreSQL 18 (SQLite/MySQL also supported) · [Open-Meteo](https://open-meteo.com/) (weather) · [USGS Water Services](https://waterservices.usgs.gov/) (rivers) · Mountain Project + Kaya scrapers for climbing activity.
