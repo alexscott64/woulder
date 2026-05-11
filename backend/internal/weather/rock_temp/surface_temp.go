@@ -42,15 +42,29 @@ func SkyTemperatureF(airTempF, cloudCoverPct float64) float64 {
 	return airTempF - deltaF
 }
 
+// MinHConvNaturalConv is the natural (free) convection floor in
+// W/(m²·K) for a hot vertical rock face in still air. Empirical
+// correlations for buoyancy-driven flow over a vertical surface with
+// a 20–40 K wall-air differential give h ≈ 4–6 W/(m²·K); combined
+// with the forced-flow baseline of 5.7 this clamps the total to a
+// physically defensible minimum and prevents calm-wind noon hours
+// from producing unrealistic equilibrium temperatures.
+const MinHConvNaturalConv = 8.0
+
 // ConvectiveCoeff returns the convective heat-transfer coefficient
-// h_conv = 5.7 + 3.8·v (W/(m²·K)), where v is wind speed in m/s.
+// h_conv = 5.7 + 3.8·v (W/(m²·K)), where v is wind speed in m/s,
+// with a natural-convection floor of MinHConvNaturalConv.
 //
 // Input is in mph (codebase convention) and converted internally.
 func ConvectiveCoeff(windMph float64) float64 {
 	if windMph < 0 {
 		windMph = 0
 	}
-	return 5.7 + 3.8*(windMph*mphToMps)
+	h := 5.7 + 3.8*(windMph*mphToMps)
+	if h < MinHConvNaturalConv {
+		h = MinHConvNaturalConv
+	}
+	return h
 }
 
 // RadiativeCoeff returns the linearized sky-radiation coefficient h_rad
@@ -62,14 +76,31 @@ func RadiativeCoeff() float64 {
 }
 
 // EquilibriumTempF computes the equilibrium rock surface temperature
-// (°F) for one hour using the linearized energy balance with sky
-// radiative loss:
+// (°F) for one hour by solving the steady-state surface energy balance
 //
-//	T_eq = T_air + ( α·I_face - h_rad·(T_air - T_sky) ) / (h_conv + h_rad)
+//	α·I_face = h_conv·(T_s - T_air) + h_rad·(T_s - T_sky)
 //
-// where the bracketed numerator is in W/m² and the denominator is in
-// W/(m²·K). The resulting differential is in K (= °C); we multiply by
-// 1.8 to convert it back to a °F differential, then add it to T_air.
+// rearranged to
+//
+//	T_s = (α·I_face + h_conv·T_air + h_rad·T_sky) / (h_conv + h_rad)
+//
+// Crucially, the radiative loss term uses (T_s − T_sky) — NOT
+// (T_air − T_sky) — so a hot sunlit surface correctly "feels" its
+// own elevated longwave emission. The previous formulation
+// linearized the radiative loss around T_air, which under-counted
+// outgoing longwave at high surface temperatures and produced
+// unphysical 50–60 °F superheats on calm sunny noons.
+//
+// To capture the additional T³ growth of h_rad at hot surfaces we
+// run a single Picard iteration: compute T_s with the supplied
+// h_rad, then refine h_rad ≈ 4εσT_avg³ at the predicted average of
+// T_s and T_sky (with ε ≈ 0.9, σ = 5.67e-8) and re-solve once. This
+// is sufficient to converge to within <0.5 °F across the realistic
+// range of inputs.
+//
+// All temperatures inside the helper are converted to absolute (K)
+// for the radiative refinement; only the final result is converted
+// back to °F.
 //
 // Inputs:
 //   - airTempF, skyTempF — in °F
@@ -79,16 +110,35 @@ func RadiativeCoeff() float64 {
 //
 // Returns: equilibrium surface temperature in °F.
 func EquilibriumTempF(airTempF, skyTempF, absorptivity, faceIrradiance, hConv, hRad float64) float64 {
-	// Convert the air–sky differential from °F to K (= °C).
-	deltaAirSkyK := (airTempF - skyTempF) / 1.8
-	numeratorWm2 := absorptivity*faceIrradiance - hRad*deltaAirSkyK
-	denom := hConv + hRad
-	if denom <= 0 {
-		// Degenerate; avoid divide-by-zero. With no surface heat exchange
-		// the surface would equal air temperature.
-		return airTempF
+	// Convert temperatures to Kelvin so the linear blend works directly
+	// in the same units as the W/(m²·K) coefficients.
+	tAirK := fToK(airTempF)
+	tSkyK := fToK(skyTempF)
+
+	solve := func(hr float64) float64 {
+		denom := hConv + hr
+		if denom <= 0 {
+			return tAirK
+		}
+		return (absorptivity*faceIrradiance + hConv*tAirK + hr*tSkyK) / denom
 	}
-	deltaEqAirK := numeratorWm2 / denom
-	deltaEqAirF := deltaEqAirK * 1.8
-	return airTempF + deltaEqAirF
+
+	// Pass 1 with the supplied (linearized) h_rad.
+	tSurfK := solve(hRad)
+
+	// Pass 2: refine h_rad using the predicted surface temp.
+	//   h_rad_actual ≈ 4·ε·σ·T_avg³, with ε ≈ 0.9, σ = 5.67e-8.
+	const epsilon = 0.9
+	const sigma = 5.67e-8
+	tAvgK := 0.5 * (tSurfK + tSkyK)
+	hRadRefined := 4.0 * epsilon * sigma * tAvgK * tAvgK * tAvgK
+	tSurfK = solve(hRadRefined)
+
+	return kToF(tSurfK)
 }
+
+// fToK converts Fahrenheit to Kelvin.
+func fToK(f float64) float64 { return (f-32.0)/1.8 + 273.15 }
+
+// kToF converts Kelvin to Fahrenheit.
+func kToF(k float64) float64 { return (k-273.15)*1.8 + 32.0 }

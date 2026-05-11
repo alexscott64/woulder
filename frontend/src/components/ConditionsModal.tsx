@@ -1,4 +1,5 @@
 import { X, Info, Stone, Waves, Bug, Droplet, AlertTriangle, AlertCircle, TrendingUp, Clock, CalendarCheck } from 'lucide-react';
+import { RockTempIcon } from './icons/RockTempIcon';
 import { format } from 'date-fns';
 import { RockDryingStatus, WeatherCondition, PestConditions, PestLevel, RockTemperatureStatus } from '../types/weather';
 import { RiverData } from '../types/river';
@@ -420,7 +421,8 @@ export function ConditionsModal({
               {rockTempStatus && (
                 <>
                   {rockStatus && <hr className="my-4 border-gray-200 dark:border-gray-700" />}
-                  <h3 className="text-sm sm:text-base font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                  <h3 className="text-sm sm:text-base font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-1.5">
+                    <RockTempIcon size={18} className="text-gray-500 dark:text-gray-400" />
                     Surface temperature &amp; friction
                   </h3>
                   <RockTempTabContent status={rockTempStatus} />
@@ -954,7 +956,7 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
             <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1.5 sm:mb-2">
               Details
             </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4 gap-3">
               {dailyForecast.map((day) => {
                 const dayWindows = (s.send_windows ?? []).filter((w) => {
                   const p = computeWindowGanttPlacement(w, day.local_date);
@@ -1061,13 +1063,13 @@ interface DayCardProps {
 function DayCard({ day, windows, isToday }: DayCardProps) {
   return (
     <div
-      className={`rounded-md border border-gray-200 dark:border-gray-700 p-2 text-xs ${
-        isToday ? 'ring-1 ring-blue-400/40 bg-blue-50/40 dark:bg-blue-900/10' : 'bg-white dark:bg-gray-900/40'
+      className={`rounded-md border border-gray-200 dark:border-gray-700 p-3 text-xs min-h-[80px] ${
+        isToday ? 'ring-2 ring-blue-400/50 bg-blue-50/40 dark:bg-blue-900/10' : 'bg-white dark:bg-gray-900/40'
       }`}
     >
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center justify-between mb-1.5">
         <span
-          className={`font-semibold truncate ${
+          className={`text-sm font-semibold truncate ${
             isToday
               ? 'text-blue-700 dark:text-blue-300'
               : 'text-gray-700 dark:text-gray-300'
@@ -1076,29 +1078,29 @@ function DayCard({ day, windows, isToday }: DayCardProps) {
           {isToday ? 'Today' : formatWeekdayLong(day.local_date).slice(0, 3)}
         </span>
         <span
-          className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+          className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
           style={{ backgroundColor: ROCK_CONDITION_COLORS[day.overall_condition] }}
           title={ROCK_CONDITION_LABELS[day.overall_condition]}
         />
       </div>
       {windows.length === 0 ? (
-        <p className="text-[10px] text-gray-400 dark:text-gray-500 italic">no windows</p>
+        <p className="text-[11px] text-gray-400 dark:text-gray-500 italic">no windows</p>
       ) : (
-        <ul className="space-y-1">
+        <ul className="space-y-1.5">
           {windows.map((w, i) => (
             <li key={i} className="leading-tight">
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
                 <span
-                  className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
                   style={{ backgroundColor: ROCK_CONDITION_COLORS[w.condition] }}
                 />
-                <span className="text-[11px] text-gray-700 dark:text-gray-300 truncate">
+                <span className="text-[13px] text-gray-700 dark:text-gray-300 truncate">
                   {formatCompactTimeRange(w.start_time, w.end_time)}
                   <span className="text-gray-400 dark:text-gray-500"> · </span>
                   {formatCompactDuration(w.duration_h)}
                 </span>
               </div>
-              <div className="text-[10px] text-gray-500 dark:text-gray-500 ml-2.5">
+              <div className="text-[11px] text-gray-500 dark:text-gray-500 ml-3.5">
                 peak {Math.round(w.peak_temp_f)}°F
                 {!w.dry_throughout && <span className="ml-1">· damp early</span>}
               </div>

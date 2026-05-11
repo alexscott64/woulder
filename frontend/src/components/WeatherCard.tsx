@@ -8,12 +8,12 @@ import {
   getConditionLabel,
   getWeatherIconUrl,
   pickAdaptiveDisplay,
-  ROCK_CONDITION_COLORS,
   ROCK_CONDITION_LABELS,
   formatNextTransition,
 } from './weather/weatherDisplay';
 import { formatInTimeZone } from 'date-fns-tz';
-import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, ChevronRight, Sunrise, Sunset, Footprints, Flame, Thermometer } from 'lucide-react';
+import { Cloud, Droplet, Droplets, Wind, Snowflake, ChevronDown, ChevronUp, ChevronRight, Sunrise, Sunset, Footprints, Flame } from 'lucide-react';
+import { RockTempIcon } from './icons/RockTempIcon';
 import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { ConditionsModal } from './ConditionsModal';
 import { RecentActivityModal } from './RecentActivityModal';
@@ -387,8 +387,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
                 title = 'Rock Temp';
                 value = `${Math.round(adaptive.surfaceF)}°F`;
                 sub = formatNextTransition(adaptive.nextTransition, adaptive.condition);
-                const color = ROCK_CONDITION_COLORS[adaptive.condition];
-                icon = <Thermometer className="w-5 h-5 mb-1" style={{ color }} />;
+                icon = <RockTempIcon size={20} condition={adaptive.condition} className="mb-1" />;
                 valueClass = 'text-gray-900 dark:text-white';
                 break;
               }

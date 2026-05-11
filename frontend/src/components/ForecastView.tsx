@@ -6,13 +6,13 @@ import {
   getConditionLabel,
   getWeatherIconUrl,
   getSnowDepthColor,
-  ROCK_CONDITION_COLORS,
   ROCK_CONDITION_LABELS,
   formatCompactTimeRange,
 } from './weather/weatherDisplay';
 import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
-import { Droplets, Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Cloud, Thermometer } from 'lucide-react';
+import { Droplets, Droplet, Wind, Snowflake, Sunrise, Sunset, Sun, Cloud } from 'lucide-react';
+import { RockTempIcon } from './icons/RockTempIcon';
 import { useState, useEffect, useRef } from 'react';
 import { ConditionDetailsModal } from './ConditionDetailsModal';
 
@@ -729,9 +729,10 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
                       className="flex items-center justify-center gap-1 text-xs text-gray-700 dark:text-gray-300"
                       title={`Rock surface temp — ${ROCK_CONDITION_LABELS[dailyRock.overall_condition]} • Peak ${dailyRock.peak_surface_temp_f.toFixed(0)}°F${dailyRock.best_send_window.dry_throughout ? '' : ' • may be damp early'}`}
                     >
-                      <Thermometer
-                        className="w-3 h-3 flex-shrink-0"
-                        style={{ color: ROCK_CONDITION_COLORS[dailyRock.overall_condition] }}
+                      <RockTempIcon
+                        size={14}
+                        condition={dailyRock.overall_condition}
+                        className="flex-shrink-0"
                       />
                       <span className="font-medium">{ROCK_CONDITION_LABELS[dailyRock.overall_condition]}</span>
                       <span className="text-gray-400 dark:text-gray-500">·</span>
@@ -752,9 +753,9 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
                       className="flex items-center justify-center gap-1 text-xs text-gray-500 dark:text-gray-400"
                       title={`Rock surface temp — ${ROCK_CONDITION_LABELS[dailyRock.overall_condition]} • Peak ${dailyRock.peak_surface_temp_f.toFixed(0)}°F`}
                     >
-                      <Thermometer
-                        className="w-3 h-3 flex-shrink-0"
-                        style={{ color: ROCK_CONDITION_COLORS[dailyRock.overall_condition] }}
+                      <RockTempIcon
+                        size={14}
+                        className="flex-shrink-0 text-gray-400 dark:text-gray-500"
                       />
                       <span>No prime windows</span>
                     </div>
