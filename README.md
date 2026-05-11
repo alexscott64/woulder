@@ -8,7 +8,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-[woulder.com](https://woulder.com) · Built for climbers who want to know whether the send is on *before* driving to the boulders.
+[woulder.com](https://woulder.com) · Built for climbers
 
 ---
 
