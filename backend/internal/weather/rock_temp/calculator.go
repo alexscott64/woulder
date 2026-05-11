@@ -59,7 +59,7 @@ func (c *Calculator) Calculate(in Inputs) models.RockTemperatureStatus {
 	if len(all) == 0 {
 		return models.RockTemperatureStatus{
 			Message:           "insufficient weather data for rock temp calculation",
-			ConfidenceScore:   20,
+			ConfidenceScore:   MinConfidence,
 			ConfidenceFactors: []string{"no weather data available"},
 			RockType:          params.GroupName,
 		}
@@ -198,25 +198,40 @@ func (c *Calculator) Calculate(in Inputs) models.RockTemperatureStatus {
 	// Aggregate hourly forecast into per-day summaries for the ForecastView.
 	dailyForecast := AggregateDaily(hourlyForecast, sendWindows, tzName)
 
-	// 12. Confidence.
-	aspectKnown := in.SunExposure != nil && !facet.Mixed
-	dipKnown := in.SunExposure != nil && !facet.Mixed
+	// 12. Confidence (status mode: no long-horizon penalty for "now").
+	//
+	// Per the rock_temp schema audit, location_sun_exposure stores only
+	// *_facing_percent / slab_percent / overhang_percent; there is no
+	// aspect_degrees or face_dip_degrees column. So "AspectKnown" here
+	// means "a single facet (N/E/S/W) reaches the 60% dominance
+	// threshold used by ResolveDominantFacet", and "DipKnown" means
+	// "slab_percent OR overhang_percent exceeds 60%". A missing row
+	// entirely is reported separately via NoSunExposureRow, which
+	// supersedes the per-field reasons.
+	noSunRow := in.SunExposure == nil
+	aspectKnown := false
+	dipKnown := false
+	if !noSunRow {
+		se := in.SunExposure
+		aspectKnown = se.SouthFacingPercent > 60 ||
+			se.WestFacingPercent > 60 ||
+			se.EastFacingPercent > 60 ||
+			se.NorthFacingPercent > 60
+		dipKnown = se.SlabPercent > 60 || se.OverhangPercent > 60
+	}
 	confIn := ConfidenceInputs{
 		AspectKnown:       aspectKnown,
 		DipKnown:          dipKnown,
 		RockTypeKnown:     paramsKnown,
 		MixedFacets:       facet.Mixed,
-		ForecastHorizonH:  len(in.Forecast),
+		ForecastHorizonH:  0, // not relevant to the status (current-hour) score
 		CloudVariableHigh: cloudVariability(all) > 25.0,
 		WindVariableHigh:  windVariability(all) > 5.0,
 		SpinUpComplete:    len(in.PastHourly) >= 6,
+		NoSunExposureRow:  noSunRow,
+		Mode:              ConfidenceModeStatus,
 	}
 	conf := ComputeConfidence(confIn)
-	// Append facet reason if not already implied.
-	if facet.Reason != "" && facet.Mixed {
-		// MixedFacets factor is already "mixed facets; result averaged across multiple aspects" — append a finer reason.
-		conf.Factors = append(conf.Factors, facet.Reason)
-	}
 
 	// 13. Message.
 	message := buildMessage(tempCondition, condensationSeverity, currentSurfF, currentAirF)

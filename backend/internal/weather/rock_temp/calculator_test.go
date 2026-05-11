@@ -2,6 +2,7 @@ package rock_temp
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -367,8 +368,8 @@ func TestCalculate_SendWindowMorningPrime(t *testing.T) {
 func TestCalculate_EmptyInputsDegradesGracefully(t *testing.T) {
 	c := &Calculator{}
 	st := c.Calculate(Inputs{RockTypeGroup: "Granite"})
-	if st.ConfidenceScore != 20 {
-		t.Errorf("empty inputs: confidence got %d, want 20", st.ConfidenceScore)
+	if st.ConfidenceScore != MinConfidence {
+		t.Errorf("empty inputs: confidence got %d, want %d", st.ConfidenceScore, MinConfidence)
 	}
 	if st.Message == "" {
 		t.Errorf("empty inputs: expected non-empty message")
@@ -403,7 +404,7 @@ func TestCalculate_UnknownRockTypeDefaultsToGranite(t *testing.T) {
 	}
 	foundFactor := false
 	for _, f := range st.ConfidenceFactors {
-		if f == "rock type defaulted to granite" {
+		if strings.Contains(f, "default rock properties") && strings.Contains(f, "granite") {
 			foundFactor = true
 		}
 	}
