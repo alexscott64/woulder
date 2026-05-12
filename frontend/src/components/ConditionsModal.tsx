@@ -3,7 +3,7 @@ import { RockTempIcon } from './icons/RockTempIcon';
 import { format } from 'date-fns';
 import { RockDryingStatus, WeatherCondition, PestConditions, PestLevel, RockTemperatureStatus } from '../types/weather';
 import { RiverData } from '../types/river';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { formatDryTime } from '../utils/weather/formatters';
 import {
   getConditionBadgeStyles,
@@ -22,6 +22,15 @@ import {
 } from './weather/weatherDisplay';
 import type { DailyRockTemp, RockCondition, RockTempHour, SendWindow } from '../types/weather';
 
+/**
+ * Stable section anchors inside the modal that callers can deep-link to.
+ * When passed via `initialFocus`, the modal will open on the matching tab
+ * and scroll the corresponding section into view after mount.
+ */
+export type ConditionsModalFocus =
+  | 'rock-surface-temperature'
+  | 'rock-drying';
+
 interface ConditionsModalProps {
   locationName: string;
   rockStatus?: RockDryingStatus;
@@ -30,9 +39,21 @@ interface ConditionsModalProps {
   riverData?: RiverData[];
   todayCondition: WeatherCondition;
   onClose: () => void;
+  /**
+   * Optional section to focus when the modal opens. The modal will switch
+   * to the appropriate tab and scroll the section into view (with a brief
+   * highlight pulse) once it has rendered.
+   */
+  initialFocus?: ConditionsModalFocus | null;
 }
 
 type TabType = 'today' | 'rock' | 'rivers' | 'pests';
+
+// Maps each deep-link focus target to the tab that contains it.
+const FOCUS_TO_TAB: Record<ConditionsModalFocus, TabType> = {
+  'rock-surface-temperature': 'rock',
+  'rock-drying': 'rock',
+};
 
 export function ConditionsModal({
   locationName,
@@ -41,7 +62,8 @@ export function ConditionsModal({
   pestConditions,
   riverData,
   todayCondition,
-  onClose
+  onClose,
+  initialFocus = null,
 }: ConditionsModalProps) {
   // Determine which tabs are available and set initial tab
   const availableTabs: TabType[] = ['today']; // Always show today
@@ -49,7 +71,54 @@ export function ConditionsModal({
   if (riverData && riverData.length > 0) availableTabs.push('rivers');
   if (pestConditions) availableTabs.push('pests');
 
-  const [activeTab, setActiveTab] = useState<TabType>('today');
+  // If a deep-link focus is provided and points to an available tab, open on
+  // that tab; otherwise fall back to the default "today" tab.
+  const initialTab: TabType = (() => {
+    if (initialFocus) {
+      const target = FOCUS_TO_TAB[initialFocus];
+      if (availableTabs.includes(target)) return target;
+    }
+    return 'today';
+  })();
+
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+
+  // Refs to deep-linkable sections so we can scrollIntoView after they mount.
+  const rockSurfaceTempRef = useRef<HTMLDivElement | null>(null);
+  const rockDryingRef = useRef<HTMLDivElement | null>(null);
+  // Brief highlight-pulse state keyed by section id.
+  const [highlightedSection, setHighlightedSection] = useState<ConditionsModalFocus | null>(null);
+
+  // After the target tab renders, scroll the section into view and pulse it.
+  // Uses requestAnimationFrame to wait one paint so the section element
+  // exists in the DOM, then a short timeout to clear the highlight.
+  useEffect(() => {
+    if (!initialFocus) return;
+    if (activeTab !== FOCUS_TO_TAB[initialFocus]) return;
+
+    const targetRef =
+      initialFocus === 'rock-surface-temperature'
+        ? rockSurfaceTempRef
+        : rockDryingRef;
+
+    const raf = requestAnimationFrame(() => {
+      targetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setHighlightedSection(initialFocus);
+    });
+
+    const clearTimer = setTimeout(() => setHighlightedSection(null), 1600);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(clearTimer);
+    };
+  }, [initialFocus, activeTab]);
+
+  // Helper: tailwind classes for the transient highlight pulse.
+  const highlightClass = (section: ConditionsModalFocus) =>
+    highlightedSection === section
+      ? 'ring-2 ring-blue-400 dark:ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-800 transition-shadow duration-700'
+      : 'transition-shadow duration-700';
 
   const getTabIcon = (tab: TabType) => {
     switch (tab) {
@@ -342,7 +411,11 @@ export function ConditionsModal({
           {activeTab === 'rock' && (rockStatus || rockTempStatus) && (
             <div className="space-y-2 sm:space-y-3">
               {rockStatus && (
-                <>
+                <div
+                  id="rock-drying"
+                  ref={rockDryingRef}
+                  className={`space-y-2 sm:space-y-3 rounded-lg scroll-mt-2 ${highlightClass('rock-drying')}`}
+                >
                   {/* Status Card */}
                   <div className={`rounded-lg p-3 sm:p-4 ${getRockStatusBgColor(rockStatus.status)}`}>
                     <div className="flex items-center justify-between mb-1.5 sm:mb-2">
@@ -414,19 +487,23 @@ export function ConditionsModal({
                       </div>
                     </div>
                   </div>
-                </>
+                </div>
               )}
 
               {/* Rock surface temperature & friction (appended to the same Rock tab) */}
               {rockTempStatus && (
-                <>
+                <div
+                  id="rock-surface-temperature"
+                  ref={rockSurfaceTempRef}
+                  className={`rounded-lg scroll-mt-2 ${highlightClass('rock-surface-temperature')}`}
+                >
                   {rockStatus && <hr className="my-4 border-gray-200 dark:border-gray-700" />}
                   <h3 className="text-sm sm:text-base font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-1.5">
                     <RockTempIcon size={18} className="text-gray-500 dark:text-gray-400" />
                     Surface temperature &amp; friction
                   </h3>
                   <RockTempTabContent status={rockTempStatus} />
-                </>
+                </div>
               )}
             </div>
           )}

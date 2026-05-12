@@ -71,6 +71,12 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
   // Comprehensive conditions modal state
   const [showConditionsModal, setShowConditionsModal] = useState(false);
+  // Optional section to focus inside the conditions modal (deep-link target).
+  // Set when the user opens the modal by clicking a specific tile (e.g. the
+  // rock-temp pill should focus the Surface Temperature & Friction section).
+  const [conditionsModalFocus, setConditionsModalFocus] = useState<
+    'rock-surface-temperature' | null
+  >(null);
 
   // Recent activity modal state
   const [showRecentActivityModal, setShowRecentActivityModal] = useState(false);
@@ -95,7 +101,9 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
     fetchRiverData();
   }, [location.id]);
 
-  const handleConditionsClick = async () => {
+  const handleConditionsClick = async (
+    focus: 'rock-surface-temperature' | null = null,
+  ) => {
     // Fetch river data if we have rivers but haven't loaded the data yet
     if (hasRivers && riverData.length === 0) {
       try {
@@ -108,8 +116,13 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
         console.error('Error fetching river data:', error);
       }
     }
+    setConditionsModalFocus(focus);
     setShowConditionsModal(true);
-    trackModalOpen('conditions', { location_id: location.id, location_name: location.name });
+    trackModalOpen('conditions', {
+      location_id: location.id,
+      location_name: location.name,
+      ...(focus ? { focus } : {}),
+    });
   };
 
   // Track location expand/collapse
@@ -227,7 +240,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
 
               {/* Today's Condition - Compact button */}
               <button
-                onClick={handleConditionsClick}
+                onClick={() => handleConditionsClick()}
                 className="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-750 hover:border-gray-300 dark:hover:border-gray-600 transition-all"
                 title="View detailed conditions"
               >
@@ -400,8 +413,14 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
               }
             }
 
-            return (
-              <div className="flex flex-col items-center text-center">
+            // The 'hot' and 'rock' variants represent rock surface temperature /
+            // friction. Make those tiles a button that deep-links into the
+            // ConditionsModal's "Surface temperature & friction" section so
+            // users can drill in for hourly detail + send windows.
+            const isRockTempTile = adaptive.kind === 'hot' || adaptive.kind === 'rock';
+
+            const tileContent = (
+              <>
                 {icon}
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{title}</div>
                 <div className={`text-sm font-semibold ${valueClass}`}>{value}</div>
@@ -410,6 +429,26 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
                     {sub}
                   </div>
                 )}
+              </>
+            );
+
+            if (isRockTempTile) {
+              return (
+                <button
+                  type="button"
+                  onClick={() => handleConditionsClick('rock-surface-temperature')}
+                  aria-label="Open rock temperature and friction details"
+                  title="View rock temperature & friction details"
+                  className="flex flex-col items-center text-center rounded-md p-1 -m-1 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 dark:focus-visible:ring-blue-500 transition-colors"
+                >
+                  {tileContent}
+                </button>
+              );
+            }
+
+            return (
+              <div className="flex flex-col items-center text-center">
+                {tileContent}
               </div>
             );
           })()}
@@ -474,7 +513,11 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           pestConditions={pest_conditions}
           riverData={riverData.length > 0 ? riverData : undefined}
           todayCondition={todayCondition}
-          onClose={() => setShowConditionsModal(false)}
+          initialFocus={conditionsModalFocus}
+          onClose={() => {
+            setShowConditionsModal(false);
+            setConditionsModalFocus(null);
+          }}
         />
       )}
 
