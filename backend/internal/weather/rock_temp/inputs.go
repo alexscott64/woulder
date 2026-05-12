@@ -11,12 +11,17 @@ import (
 // consumes. Subtask 2 only defines the type and the helpers below; the
 // actual orchestration lives in calculator.go (subtask 3).
 type Inputs struct {
-	RockTypeGroup string                      // canonical group name from rock_type_groups
-	SunExposure   *models.LocationSunExposure // may be nil
-	Location      *models.Location            // for elevation, lat, lon
-	PastHourly    []models.WeatherData        // ~12h pre-now for spin-up
-	Forecast      []models.WeatherData        // future hours
-	Now           *models.WeatherData         // current observation
+	RockTypeGroup string // canonical group name from rock_type_groups
+	// PrimaryRockType is the specific rock-type name (e.g. "Graywacke",
+	// "Granite") used by ParamsForRockType to apply per-rock-type
+	// overrides on top of the group default. Empty string disables the
+	// override lookup and the calculator falls back to the group profile.
+	PrimaryRockType string
+	SunExposure     *models.LocationSunExposure // may be nil
+	Location        *models.Location            // for elevation, lat, lon
+	PastHourly      []models.WeatherData        // ~12h pre-now for spin-up
+	Forecast        []models.WeatherData        // future hours
+	Now             *models.WeatherData         // current observation
 	// TimezoneName is the IANA timezone name (e.g. "America/Los_Angeles")
 	// used by send-window midnight-splitting and per-day aggregation.
 	// Empty string is acceptable and downstream callers (DetectSendWindows,

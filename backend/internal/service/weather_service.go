@@ -504,14 +504,23 @@ func (s *WeatherService) calculateRockTempStatus(
 	// services pass overrides directly to the calculator).
 	rockTypeGroup, _ := rock_temp.ResolveRockTypeGroup(rockTypes, "")
 
+	// Primary rock type name feeds per-rock-type thermal overrides
+	// (e.g. Graywacke / Arkose). Repository orders by is_primary DESC,
+	// so rockTypes[0] is the primary when one is flagged.
+	var primaryRockType string
+	if len(rockTypes) > 0 {
+		primaryRockType = rockTypes[0].Name
+	}
+
 	status := s.rockTempCalculator.Calculate(rock_temp.Inputs{
-		RockTypeGroup: rockTypeGroup,
-		SunExposure:   sunExposure,
-		Location:      location,
-		PastHourly:    pastHourly,
-		Forecast:      forecast,
-		Now:           current,
-		TimezoneName:  locationTimezone(location),
+		RockTypeGroup:   rockTypeGroup,
+		PrimaryRockType: primaryRockType,
+		SunExposure:     sunExposure,
+		Location:        location,
+		PastHourly:      pastHourly,
+		Forecast:        forecast,
+		Now:             current,
+		TimezoneName:    locationTimezone(location),
 	})
 	return &status, nil
 }

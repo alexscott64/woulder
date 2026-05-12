@@ -7,6 +7,17 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
+// rainEventThresholdInches is the minimum hourly precipitation (in inches) that
+// counts as a real rain event for drying-status purposes. Open-Meteo and most
+// weather providers report sub-mm "trace" values (0.001–0.02") that are
+// effectively sensor noise, dew, or condensation — not actual rain that wets
+// rock. 0.03" ≈ 0.75 mm is the documented drizzle/measurement floor.
+//
+// NOTE: boulder_drying/calculator.go has a parallel local constant
+// (rainThreshold) intentionally kept in sync with this value to avoid a
+// cross-package dependency. Update both together if you change this.
+const rainEventThresholdInches = 0.03
+
 // Calculator calculates rock drying status based on weather and rock type
 type Calculator struct{}
 
@@ -71,7 +82,7 @@ func (c *Calculator) CalculateDryingStatus(
 	}
 
 	// If currently raining
-	if currentWeather.Precipitation > 0.01 {
+	if currentWeather.Precipitation >= rainEventThresholdInches {
 		return c.handleCurrentRain(
 			currentWeather,
 			historicalWeather,
@@ -219,7 +230,7 @@ func (c *Calculator) handleFreezingConditions(
 	cutoffTime := time.Now().Add(-48 * time.Hour)
 
 	for _, h := range historicalWeather {
-		if h.Timestamp.After(cutoffTime) && h.Precipitation > 0.01 {
+		if h.Timestamp.After(cutoffTime) && h.Precipitation >= rainEventThresholdInches {
 			recentPrecip += h.Precipitation
 		}
 	}
@@ -311,7 +322,7 @@ func findLastRainEvent(historical []models.WeatherData, current *models.WeatherD
 	var startTime, endTime time.Time
 
 	// Check current weather first (if it's raining NOW)
-	if current != nil && current.Precipitation > 0.01 {
+	if current != nil && current.Precipitation >= rainEventThresholdInches {
 		event = &models.RainEvent{
 			StartTime: current.Timestamp,
 			EndTime:   current.Timestamp,
@@ -326,7 +337,7 @@ func findLastRainEvent(historical []models.WeatherData, current *models.WeatherD
 	// Check historical data (reversed to go from most recent to oldest)
 	for i := len(historical) - 1; i >= 0; i-- {
 		h := historical[i]
-		if h.Precipitation > 0.01 {
+		if h.Precipitation >= rainEventThresholdInches {
 			// Part of rain event
 			if event == nil {
 				// Start of new rain event

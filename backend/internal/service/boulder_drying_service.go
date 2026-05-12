@@ -101,6 +101,17 @@ func (s *BoulderDryingService) calculateBoulderRockTempStatus(
 	}
 	rockTypeGroup, _ := rock_temp.ResolveRockTypeGroup(wctx.rockTypes, override)
 
+	// Primary rock type name feeds per-rock-type thermal overrides in
+	// the rock_temp calculator (e.g. Graywacke / Arkose → granite-like).
+	// When the boulder profile supplies a rock_type_override, treat that
+	// as the primary so per-type overrides apply to the override too.
+	var primaryRockType string
+	if override != "" {
+		primaryRockType = override
+	} else if len(wctx.rockTypes) > 0 {
+		primaryRockType = wctx.rockTypes[0].Name
+	}
+
 	// Build PastHourly (~last 12h of historical) for thermal-lag spin-up.
 	nowUTC := time.Now().UTC()
 	pastHourly := make([]models.WeatherData, 0, 12)
@@ -121,13 +132,14 @@ func (s *BoulderDryingService) calculateBoulderRockTempStatus(
 	}
 
 	status := s.rockTempCalculator.Calculate(rock_temp.Inputs{
-		RockTypeGroup: rockTypeGroup,
-		SunExposure:   sunExposure,
-		Location:      wctx.location,
-		PastHourly:    pastHourly,
-		Forecast:      futureForecast,
-		Now:           wctx.current,
-		TimezoneName:  locationTimezone(wctx.location),
+		RockTypeGroup:   rockTypeGroup,
+		PrimaryRockType: primaryRockType,
+		SunExposure:     sunExposure,
+		Location:        wctx.location,
+		PastHourly:      pastHourly,
+		Forecast:        futureForecast,
+		Now:             wctx.current,
+		TimezoneName:    locationTimezone(wctx.location),
 	})
 	return &status
 }

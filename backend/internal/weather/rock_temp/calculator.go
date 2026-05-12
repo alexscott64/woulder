@@ -38,9 +38,12 @@ type Calculator struct{}
 //  13. Build a short user-facing message.
 //  14. Return the assembled status.
 func (c *Calculator) Calculate(in Inputs) models.RockTemperatureStatus {
-	// 1. Thermal params.
-	params, paramsKnown := ParamsForGroup(in.RockTypeGroup)
-	if in.RockTypeGroup == "" {
+	// 1. Thermal params. Use ParamsForRockType so per-rock-type overrides
+	// (e.g. Graywacke / Arkose, which thermally behave more like granite
+	// than like soft desert sandstone) take precedence over the coarser
+	// rock_type_groups family default.
+	params, paramsKnown := ParamsForRockType(in.PrimaryRockType, in.RockTypeGroup)
+	if in.RockTypeGroup == "" && in.PrimaryRockType == "" {
 		paramsKnown = false
 	}
 
@@ -94,9 +97,15 @@ func (c *Calculator) Calculate(in Inputs) models.RockTemperatureStatus {
 		skyView := SkyViewFactor(dipDeg)
 		faceIrr := FaceIrradiance(dni, diffuseH, geom, skyView, tree)
 
-		// Sky temperature with extra clear-night cooling at altitude.
+		// Sky temperature is now keyed off the diffuse fraction of incoming
+		// shortwave (Fix A) instead of cloud_cover %, because Open-Meteo
+		// cloud_cover is a low/mid/high union that can read 99% on a clear
+		// day with thin cirrus while still delivering 600+ W/m² direct beam.
+		// We pass the *uncorrected* (pre-elevation-multiplier) horizontal
+		// values because what we care about here is the sky's optical
+		// thickness, not the absolute irradiance budget.
 		cloudFrac := float64(w.CloudCover) / 100.0
-		baseSkyF := SkyTemperatureF(w.Temperature, float64(w.CloudCover))
+		baseSkyF := SkyTemperatureF(w.Temperature, w.DirectRadiation, w.DiffuseRadiation)
 		extraSkyCoolingF := 3.0 * elevKm * (1 - cloudFrac)
 		skyF := baseSkyF - extraSkyCoolingF
 

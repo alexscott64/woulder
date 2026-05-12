@@ -349,8 +349,11 @@ func (c *Calculator) Calculate6DayForecast(
 		})
 	}
 
-	// Minimum rain threshold (inches) to consider it "wet"
-	const rainThreshold = 0.01
+	// Minimum rain threshold (inches) to consider it "wet".
+	// Kept in sync with rock_drying.rainEventThresholdInches (0.03" ≈ 0.75 mm)
+	// — sub-mm precip from Open-Meteo is sensor noise / dew, not real rain.
+	// Parallel constant (not imported) to avoid cross-package coupling.
+	const rainThreshold = 0.03
 
 	// Process hourly forecast
 	for _, hour := range hourlyForecast {

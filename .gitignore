@@ -66,3 +66,7 @@ backend/tmp/
 plans*
 screenshots*
 docs*
+
+# Debug scratch files (curl|jq output, ad-hoc queries) — keep these out of the repo root
+/*.json
+/NOW()

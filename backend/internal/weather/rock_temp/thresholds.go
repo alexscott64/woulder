@@ -92,6 +92,35 @@ func DefaultThermalParams() ThermalParams {
 	return Granite
 }
 
+// rockTypeOverrides allows per-rock-type thermal-property overrides for cases where
+// the lithology family (rock_type_groups) is too coarse. Currently empty: Graywacke
+// and Arkose were previously overridden here but are now classified under the Granite
+// rock_type_group at the DB level (migration 000033), so the group-level lookup
+// already returns the right thermal params. Add entries here only when DB-level
+// reclassification is undesirable.
+var rockTypeOverrides = map[string]ThermalParams{}
+
+// ParamsForRockType returns the thermal profile for a specific rock type
+// name, falling back to the rock-type-group profile when no per-type
+// override exists. The returned bool mirrors ParamsForGroup's "confident"
+// flag: true when either an override or a known group matched.
+//
+// rockTypeName is the specific lithology (e.g. "Graywacke"); group is
+// the canonical rock_type_groups.group_name (e.g. "Sandstone"). Either
+// may be empty — empty rockTypeName disables override lookup, empty
+// group falls through to ParamsForGroup's Granite default.
+func ParamsForRockType(rockTypeName, group string) (ThermalParams, bool) {
+	base, known := ParamsForGroup(group)
+	if rockTypeName == "" {
+		return base, known
+	}
+	key := strings.ToLower(strings.TrimSpace(rockTypeName))
+	if ov, ok := rockTypeOverrides[key]; ok {
+		return ov, true
+	}
+	return base, known
+}
+
 // ParamsForGroup returns the thermal profile for the given canonical
 // rock_type_groups.group_name. Matching is case-insensitive and accepts
 // common variations such as "basalt", "gabbro", and "basalt/gabbro" all

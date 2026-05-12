@@ -14,42 +14,50 @@ package rock_temp
 // mphToMps converts wind speed from miles per hour to meters per second.
 const mphToMps = 0.44704
 
-// SkyTemperatureF computes the effective sky temperature in °F based on
-// cloud cover. The plan's piecewise model:
+// SkyTemperatureF returns the effective sky temperature (°F) for longwave-radiation
+// modeling, using the diffuse fraction of incoming shortwave as a thermodynamically
+// honest proxy for "how optically thick is the sky overhead". This is more accurate
+// than cloud_cover %, because Open-Meteo reports cloud_cover as the union of low/mid/high
+// cloud fractions — a clear day with high cirrus reports 99% cloud while still
+// delivering 600+ W/m² of direct beam radiation. Keying off direct/diffuse split
+// fixes a bug where solver overshot equilibrium temperatures by 15–25 °F across
+// PNW locations on partly-cloudy hot days (the longwave deficit was being zeroed
+// out, removing the dominant nighttime/calm-day cooling channel).
 //
-//	Clear (cloud < 20%):    T_sky ≈ T_air - 20°F
-//	Overcast (cloud > 80%): T_sky ≈ T_air
-//	In between:             linear interpolation between those endpoints.
-//
-// Cloud cover values outside [0, 100] are clamped before interpolation.
-func SkyTemperatureF(airTempF, cloudCoverPct float64) float64 {
-	c := cloudCoverPct
-	if c < 0 {
-		c = 0
-	} else if c > 100 {
-		c = 100
+// diffuseFrac = diffuseW / max(directW + diffuseW, 1)
+//   - clear sky:   diffuseFrac ≈ 0.10–0.20 → ~16–18 °F deficit (cold sky)
+//   - thin cirrus: diffuseFrac ≈ 0.25–0.40 → ~12–15 °F deficit
+//   - overcast:    diffuseFrac ≈ 0.90–1.00 → ~0–2 °F deficit (sky ≈ air)
+//   - night/dawn:  direct=0, diffuse small → diffuseFrac=1.0 → 0 deficit (safe default)
+func SkyTemperatureF(airTempF, directW, diffuseW float64) float64 {
+	total := directW + diffuseW
+	var diffuseFrac float64
+	if total < 1.0 {
+		// Night / no sun → assume air-temperature sky (no overshoot risk).
+		// Real clear-night cooling is captured separately by the elevation
+		// term in calculator.go; here we want a safe default that does NOT
+		// add a spurious daytime offset for an unrelated condition.
+		diffuseFrac = 1.0
+	} else {
+		diffuseFrac = diffuseW / total
+		if diffuseFrac > 1.0 {
+			diffuseFrac = 1.0
+		}
+		if diffuseFrac < 0.0 {
+			diffuseFrac = 0.0
+		}
 	}
-	var deltaF float64
-	switch {
-	case c < 20:
-		deltaF = 20.0
-	case c > 80:
-		deltaF = 0.0
-	default:
-		// (20, 20) → (80, 0). Slope = -20/60 per percentage point.
-		deltaF = 20.0 - (c-20.0)/(80.0-20.0)*20.0
-	}
-	return airTempF - deltaF
+	deficitF := 20.0 * (1.0 - diffuseFrac)
+	return airTempF - deficitF
 }
 
-// MinHConvNaturalConv is the natural (free) convection floor in
-// W/(m²·K) for a hot vertical rock face in still air. Empirical
-// correlations for buoyancy-driven flow over a vertical surface with
-// a 20–40 K wall-air differential give h ≈ 4–6 W/(m²·K); combined
-// with the forced-flow baseline of 5.7 this clamps the total to a
-// physically defensible minimum and prevents calm-wind noon hours
-// from producing unrealistic equilibrium temperatures.
-const MinHConvNaturalConv = 8.0
+// MinHConvNaturalConv is the floor convective heat-transfer coefficient (W/(m²·K))
+// applied at low wind. Buoyancy-driven natural convection on a hot vertical rock
+// face produces h ≈ 12–18 W/(m²·K) per Churchill-Chu correlation at ΔT ≈ 30 K,
+// L ≈ 2 m, Ra ≈ 10⁹–10¹⁰. The previous value of 8.0 under-counted this regime
+// and contributed to ~5–10 °F overshoot on calm sunny hours (Fix B of the
+// May 2026 rock-temp overshoot patch).
+const MinHConvNaturalConv = 12.0
 
 // ConvectiveCoeff returns the convective heat-transfer coefficient
 // h_conv = 5.7 + 3.8·v (W/(m²·K)), where v is wind speed in m/s,
