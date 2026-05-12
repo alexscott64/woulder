@@ -88,7 +88,7 @@ SELECT id, '12134500', 'East Fork Miller River', 700, 1000, 22.0, 535.0, 1,
 FROM locations WHERE name = 'Skykomish - Paradise';
 
 -- Rock Type Groups
-INSERT OR IGNORE INTO rock_type_groups (name, description) VALUES
+INSERT OR IGNORE INTO rock_type_groups (group_name, description) VALUES
 ('Wet-Sensitive Rocks', 'Soft rocks that are permanently damaged when climbed wet. DO NOT CLIMB WHEN WET.'),
 ('Fast-Drying Rocks', 'Hard, non-porous rocks that dry quickly after rain.'),
 ('Medium-Drying Rocks', 'Rocks with moderate porosity that take longer to dry.'),
@@ -98,39 +98,39 @@ INSERT OR IGNORE INTO rock_type_groups (name, description) VALUES
 INSERT OR IGNORE INTO rock_types (name, base_drying_hours, porosity_percent, is_wet_sensitive, description, rock_type_group_id) VALUES
 -- Wet-sensitive rocks (group_id will be looked up)
 ('Sandstone', 36.0, 20.0, 1, 'Soft sedimentary rock that absorbs water and becomes friable when wet. DO NOT CLIMB WHEN WET.',
- (SELECT id FROM rock_type_groups WHERE name = 'Wet-Sensitive Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Wet-Sensitive Rocks')),
 ('Arkose', 36.0, 18.0, 1, 'Feldspar-rich sandstone. Soft and water-absorbent. DO NOT CLIMB WHEN WET.',
- (SELECT id FROM rock_type_groups WHERE name = 'Wet-Sensitive Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Wet-Sensitive Rocks')),
 ('Graywacke', 30.0, 15.0, 1, 'Hard sandstone with clay matrix. Absorbs water. DO NOT CLIMB WHEN WET.',
- (SELECT id FROM rock_type_groups WHERE name = 'Wet-Sensitive Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Wet-Sensitive Rocks')),
 
 -- Fast-drying rocks
 ('Granite', 6.0, 1.0, 0, 'Hard crystalline igneous rock. Non-porous, dries quickly.',
- (SELECT id FROM rock_type_groups WHERE name = 'Fast-Drying Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Fast-Drying Rocks')),
 ('Granodiorite', 6.0, 1.2, 0, 'Coarse-grained igneous rock similar to granite. Dries quickly.',
- (SELECT id FROM rock_type_groups WHERE name = 'Fast-Drying Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Fast-Drying Rocks')),
 ('Tonalite', 6.5, 1.5, 0, 'Plagioclase-rich igneous rock. Similar to granite, dries quickly.',
- (SELECT id FROM rock_type_groups WHERE name = 'Fast-Drying Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Fast-Drying Rocks')),
 ('Rhyolite', 8.0, 7.0, 0, 'Fine-grained volcanic rock. Glassy texture sheds water well.',
- (SELECT id FROM rock_type_groups WHERE name = 'Fast-Drying Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Fast-Drying Rocks')),
 
 -- Medium-drying rocks
 ('Basalt', 10.0, 5.0, 0, 'Dense volcanic rock. May have vesicles that trap water.',
- (SELECT id FROM rock_type_groups WHERE name = 'Medium-Drying Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Medium-Drying Rocks')),
 ('Andesite', 10.0, 6.0, 0, 'Intermediate volcanic rock. Moderate drying time.',
- (SELECT id FROM rock_type_groups WHERE name = 'Medium-Drying Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Medium-Drying Rocks')),
 
 -- Slow-drying rocks
 ('Schist', 12.0, 3.5, 0, 'Foliated metamorphic rock. Water can seep between layers.',
- (SELECT id FROM rock_type_groups WHERE name = 'Slow-Drying Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Slow-Drying Rocks')),
 ('Phyllite', 20.0, 10.0, 0, 'Fine-grained metamorphic rock. Holds moisture in foliation.',
- (SELECT id FROM rock_type_groups WHERE name = 'Slow-Drying Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Slow-Drying Rocks')),
 ('Argillite', 24.0, 12.0, 0, 'Clay-rich sedimentary rock. Absorbs and retains water.',
- (SELECT id FROM rock_type_groups WHERE name = 'Slow-Drying Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Slow-Drying Rocks')),
 ('Chert', 14.0, 3.0, 0, 'Dense sedimentary rock. Micro-pores can hold water.',
- (SELECT id FROM rock_type_groups WHERE name = 'Slow-Drying Rocks')),
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Slow-Drying Rocks')),
 ('Metavolcanic', 14.0, 4.0, 0, 'Metamorphosed volcanic rock. Moderate absorption.',
- (SELECT id FROM rock_type_groups WHERE name = 'Slow-Drying Rocks'));
+ (SELECT id FROM rock_type_groups WHERE group_name = 'Slow-Drying Rocks'));
 
 -- Sun Exposure Profiles
 -- Pacific Northwest locations - moderate tree coverage, mixed aspects
