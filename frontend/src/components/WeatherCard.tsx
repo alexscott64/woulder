@@ -17,6 +17,7 @@ import { RockTempIcon } from './icons/RockTempIcon';
 import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { ConditionsModal } from './ConditionsModal';
 import { RecentActivityModal } from './RecentActivityModal';
+import { AdaptiveMetricTile } from './AdaptiveMetricTile';
 import { trackLocationView, trackModalOpen } from '../services/analytics';
 
 interface WeatherCardProps {
@@ -352,7 +353,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
             const fmtTime = (iso: string) =>
               new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
-            let title = 'On Ground';
+            let label = 'On Ground';
             let value = '0"';
             let sub: string | null = null;
             let icon: ReactNode = <Snowflake className="w-5 h-5 mb-1 text-blue-400" />;
@@ -361,7 +362,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
             switch (adaptive.kind) {
               case 'snow': {
                 const heavy = adaptive.depthInches > 0.5;
-                title = 'On Ground';
+                label = 'On Ground';
                 value = adaptive.depthInches > 0.1 ? `${adaptive.depthInches.toFixed(1)}"` : '0"';
                 icon = (
                   <Snowflake
@@ -372,7 +373,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
                 break;
               }
               case 'wet': {
-                title = adaptive.severity === 'heavy' ? 'Wet Rock' : 'Damp Rock';
+                label = adaptive.severity === 'heavy' ? 'Wet Rock' : 'Damp Rock';
                 value = adaptive.clearsAt
                   ? `Until ${fmtTime(adaptive.clearsAt)}`
                   : adaptive.severity === 'heavy'
@@ -387,7 +388,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
                 break;
               }
               case 'hot': {
-                title = 'Rock Temp';
+                label = 'Rock Temp';
                 value = `${Math.round(adaptive.surfaceF)}°F`;
                 if (adaptive.nextTransition) {
                   sub = `Cools to ${ROCK_CONDITION_LABELS[adaptive.nextTransition.to_condition]} at ${fmtTime(adaptive.nextTransition.time)}`;
@@ -397,7 +398,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
                 break;
               }
               case 'rock': {
-                title = 'Rock Temp';
+                label = 'Rock Temp';
                 value = `${Math.round(adaptive.surfaceF)}°F`;
                 sub = formatNextTransition(adaptive.nextTransition, adaptive.condition);
                 icon = <RockTempIcon size={20} condition={adaptive.condition} className="mb-1" />;
@@ -405,7 +406,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
                 break;
               }
               case 'unknown': {
-                title = 'On Ground';
+                label = 'On Ground';
                 value = '0"';
                 icon = <Snowflake className="w-5 h-5 mb-1 text-gray-400" />;
                 valueClass = 'text-gray-500 dark:text-gray-400';
@@ -413,43 +414,18 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
               }
             }
 
-            // The 'hot' and 'rock' variants represent rock surface temperature /
-            // friction. Make those tiles a button that deep-links into the
-            // ConditionsModal's "Surface temperature & friction" section so
-            // users can drill in for hourly detail + send windows.
-            const isRockTempTile = adaptive.kind === 'hot' || adaptive.kind === 'rock';
-
-            const tileContent = (
-              <>
-                {icon}
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{title}</div>
-                <div className={`text-sm font-semibold ${valueClass}`}>{value}</div>
-                {sub && (
-                  <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">
-                    {sub}
-                  </div>
-                )}
-              </>
-            );
-
-            if (isRockTempTile) {
-              return (
-                <button
-                  type="button"
-                  onClick={() => handleConditionsClick('rock-surface-temperature')}
-                  aria-label="Open rock temperature and friction details"
-                  title="View rock temperature & friction details"
-                  className="flex flex-col items-center text-center rounded-md p-1 -m-1 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 dark:focus-visible:ring-blue-500 transition-colors"
-                >
-                  {tileContent}
-                </button>
-              );
-            }
-
             return (
-              <div className="flex flex-col items-center text-center">
-                {tileContent}
-              </div>
+              <AdaptiveMetricTile
+                kind={adaptive.kind}
+                icon={icon}
+                label={label}
+                value={value}
+                sub={sub}
+                valueClassName={valueClass}
+                onClick={() => handleConditionsClick('rock-surface-temperature')}
+                ariaLabel="Open rock temperature and friction details"
+                title="View rock temperature & friction details"
+              />
             );
           })()}
 
