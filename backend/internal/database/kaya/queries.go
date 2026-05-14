@@ -285,7 +285,12 @@ const (
 			FROM kaya_mp_route_matches m
 			JOIN woulder.mp_routes r ON m.mp_route_id = r.mp_route_id
 			WHERE r.mp_area_id = $1
-				AND m.match_confidence >= 0.60
+				AND m.match_confidence >= 0.75
+				AND r.route_type ILIKE '%boulder%'
+				AND r.route_type NOT ILIKE '%ice%'
+				AND r.route_type NOT ILIKE '%mixed%'
+				AND r.route_type NOT ILIKE '%snow%'
+				AND r.route_type NOT ILIKE '%alpine%'
 		),
 		climb_latest_ascent AS (
 			SELECT
@@ -339,11 +344,17 @@ const (
 			COALESCE(kc.kaya_area_name, kc.kaya_destination_name, 'Unknown') as area_name,
 			COALESCE(ku.username, 'Unknown') as username
 		FROM kaya_mp_route_matches m
+		JOIN woulder.mp_routes r ON r.mp_route_id = m.mp_route_id
 		JOIN woulder.kaya_climbs kc ON m.kaya_climb_id = kc.slug
 		JOIN woulder.kaya_ascents ka ON kc.slug = ka.kaya_climb_slug
 		LEFT JOIN woulder.kaya_users ku ON ka.kaya_user_id = ku.kaya_user_id
 		WHERE m.mp_route_id = $1
-			AND m.match_confidence >= 0.60
+			AND m.match_confidence >= 0.75
+			AND r.route_type ILIKE '%boulder%'
+			AND r.route_type NOT ILIKE '%ice%'
+			AND r.route_type NOT ILIKE '%mixed%'
+			AND r.route_type NOT ILIKE '%snow%'
+			AND r.route_type NOT ILIKE '%alpine%'
 			AND ka.date >= NOW() - INTERVAL '2 years'
 			AND ka.date <= NOW() + INTERVAL '30 days'
 		ORDER BY ka.date DESC

@@ -55,7 +55,12 @@ const (
 						a.latitude BETWEEN $3 AND $4
 						AND a.longitude BETWEEN $5 AND $6
 					))
-					AND mr.match_confidence >= 0.60
+					AND mr.match_confidence >= 0.75
+					AND r.route_type ILIKE '%boulder%'
+					AND r.route_type NOT ILIKE '%ice%'
+					AND r.route_type NOT ILIKE '%mixed%'
+					AND r.route_type NOT ILIKE '%snow%'
+					AND r.route_type NOT ILIKE '%alpine%'
 					AND ($7::text[] IS NULL OR r.route_type = ANY($7))
 					AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
 		)
@@ -128,7 +133,12 @@ const (
 						a.latitude BETWEEN $3 AND $4
 						AND a.longitude BETWEEN $5 AND $6
 					))
-					AND mr.match_confidence >= 0.60
+					AND mr.match_confidence >= 0.75
+					AND r.route_type ILIKE '%boulder%'
+					AND r.route_type NOT ILIKE '%ice%'
+					AND r.route_type NOT ILIKE '%mixed%'
+					AND r.route_type NOT ILIKE '%snow%'
+					AND r.route_type NOT ILIKE '%alpine%'
 					AND ($7::text[] IS NULL OR r.route_type = ANY($7))
 					AND ($10::int[] IS NULL OR r.grade_order = ANY($10))
 		)
@@ -168,6 +178,7 @@ const (
 
 	// queryAreaActivityStats retrieves aggregated activity statistics for an area.
 	// Includes both MP ticks and Kaya ascents.
+	// $4 is route types filter ($4::text[] IS NULL or empty = no filter).
 	queryAreaActivityStats = `
 		WITH combined_activity AS (
 			-- MP ticks
@@ -181,6 +192,7 @@ const (
 			WHERE r.mp_area_id = $1
 				AND t.climbed_at >= $2
 				AND t.climbed_at <= $3
+				AND ($4::text[] IS NULL OR $4::text[] = '{}' OR r.route_type = ANY($4))
 			
 			UNION ALL
 			
@@ -199,6 +211,7 @@ const (
 				AND ka.date >= $2
 				AND ka.date <= $3
 				AND mr.match_confidence >= 0.60
+				AND ($4::text[] IS NULL OR $4::text[] = '{}' OR r.route_type = ANY($4))
 		)
 		SELECT
 			COUNT(activity_id) as total_ticks,
@@ -210,6 +223,7 @@ const (
 
 	// queryRecentTicks retrieves the most recent ticks for an area.
 	// Includes both MP ticks and Kaya ascents.
+	// $4 is route types filter.
 	queryRecentTicks = `
 		WITH combined_ticks AS (
 			-- MP ticks
@@ -226,6 +240,7 @@ const (
 			WHERE r.mp_area_id = $1
 				AND t.climbed_at >= $2
 				AND t.climbed_at <= $3
+				AND ($4::text[] IS NULL OR $4::text[] = '{}' OR r.route_type = ANY($4))
 			
 			UNION ALL
 			
@@ -247,6 +262,7 @@ const (
 				AND ka.date >= $2
 				AND ka.date <= $3
 				AND mr.match_confidence >= 0.60
+				AND ($4::text[] IS NULL OR $4::text[] = '{}' OR r.route_type = ANY($4))
 		)
 		SELECT * FROM combined_ticks
 		ORDER BY climbed_at DESC
@@ -255,6 +271,7 @@ const (
 
 	// queryRecentComments retrieves recent comments for routes in an area.
 	// Strips HTML tags from comment text using regex for clean display.
+	// $4 is route types filter.
 	queryRecentComments = `
 		SELECT
 			c.id,
@@ -271,12 +288,14 @@ const (
 		WHERE r.mp_area_id = $1
 			AND c.commented_at >= $2
 			AND c.commented_at <= $3
+			AND ($4::text[] IS NULL OR $4::text[] = '{}' OR r.route_type = ANY($4))
 		ORDER BY c.commented_at DESC
 		LIMIT 100
 	`
 
 	// queryActivityTimeline retrieves daily activity aggregation for an area.
 	// Includes both MP ticks and Kaya ascents.
+	// $4 is route types filter.
 	queryActivityTimeline = `
 		WITH combined_activity AS (
 			-- MP ticks
@@ -289,6 +308,7 @@ const (
 			WHERE r.mp_area_id = $1
 				AND t.climbed_at >= $2
 				AND t.climbed_at <= $3
+				AND ($4::text[] IS NULL OR $4::text[] = '{}' OR r.route_type = ANY($4))
 			
 			UNION ALL
 			
@@ -305,6 +325,7 @@ const (
 				AND ka.date >= $2
 				AND ka.date <= $3
 				AND mr.match_confidence >= 0.60
+				AND ($4::text[] IS NULL OR $4::text[] = '{}' OR r.route_type = ANY($4))
 		)
 		SELECT
 			date,
@@ -317,6 +338,7 @@ const (
 
 	// queryTopRoutes retrieves the most active routes in an area.
 	// Includes both MP ticks and Kaya ascents.
+	// $4 is route types filter.
 	queryTopRoutes = `
 		WITH combined_activity AS (
 			-- MP ticks
@@ -331,6 +353,7 @@ const (
 			WHERE r.mp_area_id = $1
 				AND t.climbed_at >= $2
 				AND t.climbed_at <= $3
+				AND ($4::text[] IS NULL OR $4::text[] = '{}' OR r.route_type = ANY($4))
 			
 			UNION ALL
 			
@@ -349,6 +372,7 @@ const (
 				AND ka.date >= $2
 				AND ka.date <= $3
 				AND mr.match_confidence >= 0.60
+				AND ($4::text[] IS NULL OR $4::text[] = '{}' OR r.route_type = ANY($4))
 		)
 		SELECT
 			mp_route_id,
@@ -432,6 +456,7 @@ const (
 
 	// queryRouteTicksInDateRange retrieves all ticks for a specific route.
 	// Includes both MP ticks and Kaya ascents.
+	// $5 is route types filter.
 	queryRouteTicksInDateRange = `
 		WITH combined_ticks AS (
 			-- MP ticks
@@ -448,6 +473,7 @@ const (
 			WHERE t.mp_route_id = $1
 				AND t.climbed_at >= $2
 				AND t.climbed_at <= $3
+				AND ($5::text[] IS NULL OR $5::text[] = '{}' OR r.route_type = ANY($5))
 			
 			UNION ALL
 			
@@ -464,10 +490,12 @@ const (
 			JOIN woulder.kaya_climbs kc ON ka.kaya_climb_slug = kc.slug
 			JOIN woulder.kaya_mp_route_matches mr ON kc.slug = mr.kaya_climb_id
 			JOIN woulder.kaya_users ku ON ku.kaya_user_id = ka.kaya_user_id
+			JOIN woulder.mp_routes r ON mr.mp_route_id = r.mp_route_id
 			WHERE mr.mp_route_id = $1
 				AND ka.date >= $2
 				AND ka.date <= $3
 				AND mr.match_confidence >= 0.60
+				AND ($5::text[] IS NULL OR $5::text[] = '{}' OR r.route_type = ANY($5))
 		)
 		SELECT * FROM combined_ticks
 		ORDER BY climbed_at DESC

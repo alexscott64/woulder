@@ -85,11 +85,14 @@ func (s *HeatMapService) calculateActivityScore(tickCount int, lastActivity, end
 	return score
 }
 
-// GetAreaActivityDetail retrieves detailed activity information for a specific area
+// GetAreaActivityDetail retrieves detailed activity information for a specific area.
+// routeTypes optionally restricts ticks/routes/comments/timeline to the given Mountain
+// Project route types (e.g., ["Ice"]). Pass nil/empty for no filter.
 func (s *HeatMapService) GetAreaActivityDetail(
 	ctx context.Context,
 	areaID int64,
 	startDate, endDate time.Time,
+	routeTypes []string,
 ) (*models.AreaActivityDetail, error) {
 	if areaID <= 0 {
 		return nil, fmt.Errorf("invalid area ID: %d", areaID)
@@ -99,7 +102,7 @@ func (s *HeatMapService) GetAreaActivityDetail(
 		return nil, fmt.Errorf("start_date must be before end_date")
 	}
 
-	detail, err := s.heatMapRepo.GetAreaActivityDetail(ctx, areaID, startDate, endDate)
+	detail, err := s.heatMapRepo.GetAreaActivityDetail(ctx, areaID, startDate, endDate, routeTypes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch area detail: %w", err)
 	}
@@ -134,12 +137,15 @@ func (s *HeatMapService) GetRoutesByBounds(
 	return routes, nil
 }
 
-// GetRouteTicksInDateRange retrieves all ticks for a specific route within a date range
+// GetRouteTicksInDateRange retrieves all ticks for a specific route within a date range.
+// routeTypes optionally filters returned ticks to those on routes whose route_type matches.
+// Pass nil/empty for no filter.
 func (s *HeatMapService) GetRouteTicksInDateRange(
 	ctx context.Context,
 	routeID int64,
 	startDate, endDate time.Time,
 	limit int,
+	routeTypes []string,
 ) ([]models.TickDetail, error) {
 	if routeID <= 0 {
 		return nil, fmt.Errorf("invalid route ID: %d", routeID)
@@ -153,7 +159,7 @@ func (s *HeatMapService) GetRouteTicksInDateRange(
 		limit = 100 // Default to 100 for route ticks
 	}
 
-	ticks, err := s.heatMapRepo.GetRouteTicksInDateRange(ctx, routeID, startDate, endDate, limit)
+	ticks, err := s.heatMapRepo.GetRouteTicksInDateRange(ctx, routeID, startDate, endDate, limit, routeTypes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch route ticks: %w", err)
 	}

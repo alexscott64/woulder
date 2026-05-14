@@ -2,6 +2,7 @@ package heatmap
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -113,10 +114,13 @@ func (r *PostgresRepository) GetHeatMapData(
 }
 
 // GetAreaActivityDetail returns comprehensive activity data for a specific area.
+// routeTypes optionally filters all sub-queries (ticks, routes, comments, etc.) to
+// only the specified Mountain Project route types (e.g., ["Ice"]). Pass nil/empty for no filter.
 func (r *PostgresRepository) GetAreaActivityDetail(
 	ctx context.Context,
 	areaID int64,
 	startDate, endDate time.Time,
+	routeTypes []string,
 ) (*models.AreaActivityDetail, error) {
 	var detail models.AreaActivityDetail
 
@@ -132,37 +136,49 @@ func (r *PostgresRepository) GetAreaActivityDetail(
 		return nil, fmt.Errorf("area not found: %w", dberrors.WrapNotFound(err))
 	}
 
-	// Step 2: Get activity statistics
-	err = r.db.QueryRowContext(ctx, queryAreaActivityStats, areaID, startDate, endDate).Scan(
+	// Convert route types to PostgreSQL array format (nil for empty to avoid SQL syntax issues).
+	var routeTypesParam interface{}
+	if len(routeTypes) > 0 {
+		routeTypesParam = pq.Array(routeTypes)
+	}
+
+	// Step 2: Get activity statistics.
+	// MAX(climbed_at) returns NULL when the route_types filter eliminates all rows
+	// for this area, so scan into sql.NullTime to safely handle that case.
+	var lastActivity sql.NullTime
+	err = r.db.QueryRowContext(ctx, queryAreaActivityStats, areaID, startDate, endDate, routeTypesParam).Scan(
 		&detail.TotalTicks,
 		&detail.ActiveRoutes,
 		&detail.UniqueClimbers,
-		&detail.LastActivity,
+		&lastActivity,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch activity stats: %w", err)
 	}
+	if lastActivity.Valid {
+		detail.LastActivity = lastActivity.Time
+	}
 
 	// Step 3: Get recent ticks
-	detail.RecentTicks, err = r.fetchRecentTicks(ctx, areaID, startDate, endDate)
+	detail.RecentTicks, err = r.fetchRecentTicks(ctx, areaID, startDate, endDate, routeTypesParam)
 	if err != nil {
 		return nil, err
 	}
 
 	// Step 4: Get recent comments
-	detail.RecentComments, err = r.fetchRecentComments(ctx, areaID, startDate, endDate)
+	detail.RecentComments, err = r.fetchRecentComments(ctx, areaID, startDate, endDate, routeTypesParam)
 	if err != nil {
 		return nil, err
 	}
 
 	// Step 5: Get activity timeline
-	detail.ActivityTimeline, err = r.fetchActivityTimeline(ctx, areaID, startDate, endDate)
+	detail.ActivityTimeline, err = r.fetchActivityTimeline(ctx, areaID, startDate, endDate, routeTypesParam)
 	if err != nil {
 		return nil, err
 	}
 
 	// Step 6: Get top routes
-	detail.TopRoutes, err = r.fetchTopRoutes(ctx, areaID, startDate, endDate)
+	detail.TopRoutes, err = r.fetchTopRoutes(ctx, areaID, startDate, endDate, routeTypesParam)
 	if err != nil {
 		return nil, err
 	}
@@ -171,8 +187,8 @@ func (r *PostgresRepository) GetAreaActivityDetail(
 }
 
 // fetchRecentTicks retrieves recent ticks for an area (helper method).
-func (r *PostgresRepository) fetchRecentTicks(ctx context.Context, areaID int64, startDate, endDate time.Time) ([]models.TickDetail, error) {
-	rows, err := r.db.QueryContext(ctx, queryRecentTicks, areaID, startDate, endDate)
+func (r *PostgresRepository) fetchRecentTicks(ctx context.Context, areaID int64, startDate, endDate time.Time, routeTypesParam interface{}) ([]models.TickDetail, error) {
+	rows, err := r.db.QueryContext(ctx, queryRecentTicks, areaID, startDate, endDate, routeTypesParam)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch recent ticks: %w", err)
 	}
@@ -199,8 +215,8 @@ func (r *PostgresRepository) fetchRecentTicks(ctx context.Context, areaID int64,
 }
 
 // fetchRecentComments retrieves recent comments for an area (helper method).
-func (r *PostgresRepository) fetchRecentComments(ctx context.Context, areaID int64, startDate, endDate time.Time) ([]models.CommentSummary, error) {
-	rows, err := r.db.QueryContext(ctx, queryRecentComments, areaID, startDate, endDate)
+func (r *PostgresRepository) fetchRecentComments(ctx context.Context, areaID int64, startDate, endDate time.Time, routeTypesParam interface{}) ([]models.CommentSummary, error) {
+	rows, err := r.db.QueryContext(ctx, queryRecentComments, areaID, startDate, endDate, routeTypesParam)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch comments: %w", err)
 	}
@@ -226,8 +242,8 @@ func (r *PostgresRepository) fetchRecentComments(ctx context.Context, areaID int
 }
 
 // fetchActivityTimeline retrieves daily activity aggregation for an area (helper method).
-func (r *PostgresRepository) fetchActivityTimeline(ctx context.Context, areaID int64, startDate, endDate time.Time) ([]models.DailyActivity, error) {
-	rows, err := r.db.QueryContext(ctx, queryActivityTimeline, areaID, startDate, endDate)
+func (r *PostgresRepository) fetchActivityTimeline(ctx context.Context, areaID int64, startDate, endDate time.Time, routeTypesParam interface{}) ([]models.DailyActivity, error) {
+	rows, err := r.db.QueryContext(ctx, queryActivityTimeline, areaID, startDate, endDate, routeTypesParam)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch timeline: %w", err)
 	}
@@ -250,8 +266,8 @@ func (r *PostgresRepository) fetchActivityTimeline(ctx context.Context, areaID i
 }
 
 // fetchTopRoutes retrieves the most active routes in an area (helper method).
-func (r *PostgresRepository) fetchTopRoutes(ctx context.Context, areaID int64, startDate, endDate time.Time) ([]models.TopRouteSummary, error) {
-	rows, err := r.db.QueryContext(ctx, queryTopRoutes, areaID, startDate, endDate)
+func (r *PostgresRepository) fetchTopRoutes(ctx context.Context, areaID int64, startDate, endDate time.Time, routeTypesParam interface{}) ([]models.TopRouteSummary, error) {
+	rows, err := r.db.QueryContext(ctx, queryTopRoutes, areaID, startDate, endDate, routeTypesParam)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch top routes: %w", err)
 	}
@@ -319,13 +335,20 @@ func (r *PostgresRepository) GetRoutesByBounds(
 }
 
 // GetRouteTicksInDateRange returns all ticks for a specific route within a date range.
+// routeTypes optionally restricts results to ticks on routes whose route_type matches one of the
+// provided values. Pass nil/empty for no filter.
 func (r *PostgresRepository) GetRouteTicksInDateRange(
 	ctx context.Context,
 	routeID int64,
 	startDate, endDate time.Time,
 	limit int,
+	routeTypes []string,
 ) ([]models.TickDetail, error) {
-	rows, err := r.db.QueryContext(ctx, queryRouteTicksInDateRange, routeID, startDate, endDate, limit)
+	var routeTypesParam interface{}
+	if len(routeTypes) > 0 {
+		routeTypesParam = pq.Array(routeTypes)
+	}
+	rows, err := r.db.QueryContext(ctx, queryRouteTicksInDateRange, routeID, startDate, endDate, limit, routeTypesParam)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query route ticks: %w", err)
 	}

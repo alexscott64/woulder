@@ -36,13 +36,13 @@ func TestGetAreaActivityDetail_UniqueClimbersWithNullUsernames(t *testing.T) {
 	}
 
 	mockRepo := &MockRepository{
-		GetAreaActivityDetailFn: func(ctx context.Context, areaID int64, startDate, endDate time.Time) (*models.AreaActivityDetail, error) {
+		GetAreaActivityDetailFn: func(ctx context.Context, areaID int64, startDate, endDate time.Time, routeTypes []string) (*models.AreaActivityDetail, error) {
 			return mockDetail, nil
 		},
 	}
 
 	// Get area activity detail
-	detail, err := mockRepo.GetAreaActivityDetail(ctx, areaID, startDate, endDate)
+	detail, err := mockRepo.GetAreaActivityDetail(ctx, areaID, startDate, endDate, nil)
 	require.NoError(t, err)
 	require.NotNil(t, detail)
 
@@ -87,13 +87,13 @@ func TestGetAreaActivityDetail_NullFieldHandling(t *testing.T) {
 	}
 
 	mockRepo := &MockRepository{
-		GetAreaActivityDetailFn: func(ctx context.Context, areaID int64, startDate, endDate time.Time) (*models.AreaActivityDetail, error) {
+		GetAreaActivityDetailFn: func(ctx context.Context, areaID int64, startDate, endDate time.Time, routeTypes []string) (*models.AreaActivityDetail, error) {
 			return mockDetail, nil
 		},
 	}
 
 	// Get area activity detail
-	detail, err := mockRepo.GetAreaActivityDetail(ctx, areaID, startDate, endDate)
+	detail, err := mockRepo.GetAreaActivityDetail(ctx, areaID, startDate, endDate, nil)
 	require.NoError(t, err)
 	require.NotNil(t, detail)
 

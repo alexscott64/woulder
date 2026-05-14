@@ -571,8 +571,8 @@ func (db *Database) GetHeatMapData(ctx context.Context, startDate, endDate time.
 }
 
 // GetAreaActivityDetail delegates to HeatMap().GetAreaActivityDetail()
-func (db *Database) GetAreaActivityDetail(ctx context.Context, areaID int64, startDate, endDate time.Time) (*models.AreaActivityDetail, error) {
-	return db.HeatMap().GetAreaActivityDetail(ctx, areaID, startDate, endDate)
+func (db *Database) GetAreaActivityDetail(ctx context.Context, areaID int64, startDate, endDate time.Time, routeTypes []string) (*models.AreaActivityDetail, error) {
+	return db.HeatMap().GetAreaActivityDetail(ctx, areaID, startDate, endDate, routeTypes)
 }
 
 // GetRoutesByBounds delegates to HeatMap().GetRoutesByBounds()
@@ -587,8 +587,8 @@ func (db *Database) GetRoutesByBounds(ctx context.Context, bounds GeoBounds, sta
 }
 
 // GetRouteTicksInDateRange delegates to HeatMap().GetRouteTicksInDateRange()
-func (db *Database) GetRouteTicksInDateRange(ctx context.Context, routeID int64, startDate, endDate time.Time, limit int) ([]models.TickDetail, error) {
-	return db.HeatMap().GetRouteTicksInDateRange(ctx, routeID, startDate, endDate, limit)
+func (db *Database) GetRouteTicksInDateRange(ctx context.Context, routeID int64, startDate, endDate time.Time, limit int, routeTypes []string) ([]models.TickDetail, error) {
+	return db.HeatMap().GetRouteTicksInDateRange(ctx, routeID, startDate, endDate, limit, routeTypes)
 }
 
 // SearchRoutesInAreas delegates to HeatMap().SearchRoutesInAreas()

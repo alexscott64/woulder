@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -483,17 +484,18 @@ func isCompatibleMatch(kayaClimbType, kayaGrade, mpRouteType, mpRating string) b
 	kayaDiscipline := classifyKayaDiscipline(kayaClimbType, kayaGrade)
 	mpDiscipline := classifyMPDiscipline(mpRouteType, mpRating)
 
-	if kayaDiscipline != "" && mpDiscipline != "" && kayaDiscipline != mpDiscipline {
+	if mpDiscipline != "" && kayaDiscipline != "" && kayaDiscipline != mpDiscipline {
 		return false
 	}
 
-	if kayaDiscipline == "boulder" {
-		if !containsToken(mpRouteType, "boulder") {
-			return false
-		}
-		if containsAnyToken(mpRouteType, []string{"ice", "mixed", "snow", "alpine"}) {
-			return false
-		}
+	// Kaya is bouldering-only by product definition. Treat unknown Kaya
+	// disciplines as boulder and unconditionally require the MP route to
+	// be a boulder (and not ice/mixed/snow/alpine).
+	if !containsToken(mpRouteType, "boulder") {
+		return false
+	}
+	if containsAnyToken(mpRouteType, []string{"ice", "mixed", "snow", "alpine"}) {
+		return false
 	}
 
 	kayaFamily := gradeFamily(kayaGrade)
@@ -550,6 +552,10 @@ func classifyMPDiscipline(routeType, rating string) string {
 	}
 }
 
+// fontGradePattern matches Font (Fontainebleau) boulder grades like
+// "7A", "6C+", "8B+". These are bouldering grades and map to the "v" family.
+var fontGradePattern = regexp.MustCompile(`^[3-9][A-C]\+?$`)
+
 func gradeFamily(grade string) string {
 	g := strings.ToUpper(strings.TrimSpace(grade))
 	if g == "" {
@@ -567,6 +573,8 @@ func gradeFamily(grade string) string {
 		return "aid"
 	case strings.HasPrefix(g, "5.") || strings.HasPrefix(g, "5"):
 		return "yds"
+	case fontGradePattern.MatchString(g):
+		return "v"
 	default:
 		return ""
 	}

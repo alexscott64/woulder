@@ -10,31 +10,38 @@ interface AreaDetailDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onBack?: () => void; // Optional back callback for cluster navigation
+  /**
+   * Currently active route-type filter from the parent heat-map page (e.g. ["Ice"]).
+   * Threaded through to both API calls so the drawer respects the same filter that
+   * was applied to the heat-map aggregation. Pass empty array for "no filter".
+   */
+  selectedRouteTypes: string[];
 }
 
 type View = 'area' | 'route';
 type Tab = 'routes' | 'ticks' | 'comments';
 
-export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack }: AreaDetailDrawerProps) {
+export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack, selectedRouteTypes }: AreaDetailDrawerProps) {
   const [view, setView] = useState<View>('area');
   const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null);
   const [selectedTab, setSelectedTab] = useState<Tab>('routes');
 
   const { data: detail, isLoading } = useQuery({
-    queryKey: ['areaDetail', areaId, dateRange],
-    queryFn: () => heatMapApi.getAreaDetail(areaId!, dateRange),
+    queryKey: ['areaDetail', areaId, dateRange, selectedRouteTypes],
+    queryFn: () => heatMapApi.getAreaDetail(areaId!, dateRange, selectedRouteTypes),
     enabled: !!areaId && isOpen,
     staleTime: 10 * 60 * 1000,
   });
 
   // Fetch route-specific ticks when a route is selected
   const { data: routeTicksData, isLoading: isLoadingRouteTicks } = useQuery({
-    queryKey: ['routeTicks', selectedRouteId, dateRange],
+    queryKey: ['routeTicks', selectedRouteId, dateRange, selectedRouteTypes],
     queryFn: () => heatMapApi.getRouteTicksInDateRange({
       routeId: selectedRouteId!,
       startDate: dateRange.start,
       endDate: dateRange.end,
       limit: 500, // Fetch up to 500 ticks for the route
+      routeTypes: selectedRouteTypes,
     }),
     enabled: !!selectedRouteId && view === 'route',
     staleTime: 10 * 60 * 1000,

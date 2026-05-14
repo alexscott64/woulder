@@ -1,0 +1,9 @@
+-- No-op down migration.
+--
+-- The up migration deletes legacy rows from kaya_mp_route_matches that
+-- pointed to non-boulder MP routes. These deletions are irreversible
+-- because the original (incorrect) matches are not preserved anywhere.
+--
+-- If matches need to be regenerated for any reason, re-run the matcher CLI:
+--   cd backend/cmd/match_kaya_mp && go run main.go
+-- The tightened isCompatibleMatch guard will produce only boulder matches.

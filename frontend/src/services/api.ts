@@ -195,16 +195,23 @@ export const heatMapApi = {
     return response.data;
   },
 
-  // Get detailed activity information for a specific area
+  // Get detailed activity information for a specific area.
+  // Optional routeTypes filter mirrors the heat-map RouteTypeFilter so the drill-down
+  // drawer only shows ticks/routes/comments for the selected types (e.g., ["Ice"]).
   getAreaDetail: async (
     areaId: number,
-    dateRange: { start: Date; end: Date }
+    dateRange: { start: Date; end: Date },
+    routeTypes?: string[]
   ): Promise<AreaActivityDetail> => {
+    const params: Record<string, string> = {
+      start_date: dateRange.start.toISOString().split('T')[0],
+      end_date: dateRange.end.toISOString().split('T')[0],
+    };
+    if (routeTypes && routeTypes.length > 0) {
+      params.route_types = routeTypes.join(',');
+    }
     const response = await api.get(`/heat-map/area/${areaId}/detail`, {
-      params: {
-        start_date: dateRange.start.toISOString().split('T')[0],
-        end_date: dateRange.end.toISOString().split('T')[0],
-      },
+      params,
       timeout: 20000, // 20s timeout
     });
     return response.data;
@@ -252,19 +259,26 @@ export const heatMapApi = {
     return response.data;
   },
 
-  // Get all ticks for a specific route within a date range
+  // Get all ticks for a specific route within a date range.
+  // Optional routeTypes filter keeps route-level tick lists consistent with the
+  // currently active heat-map RouteTypeFilter selection.
   getRouteTicksInDateRange: async (params: {
     routeId: number;
     startDate: Date;
     endDate: Date;
     limit?: number;
+    routeTypes?: string[];
   }): Promise<RouteTicksResponse> => {
+    const queryParams: Record<string, string | number> = {
+      start_date: params.startDate.toISOString().split('T')[0],
+      end_date: params.endDate.toISOString().split('T')[0],
+      limit: params.limit || 100,
+    };
+    if (params.routeTypes && params.routeTypes.length > 0) {
+      queryParams.route_types = params.routeTypes.join(',');
+    }
     const response = await api.get(`/heat-map/route/${params.routeId}/ticks`, {
-      params: {
-        start_date: params.startDate.toISOString().split('T')[0],
-        end_date: params.endDate.toISOString().split('T')[0],
-        limit: params.limit || 100,
-      },
+      params: queryParams,
       timeout: 15000, // 15s timeout
     });
     return response.data;

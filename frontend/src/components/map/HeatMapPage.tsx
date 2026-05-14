@@ -387,6 +387,7 @@ export function HeatMapPage() {
             areaId={selectedAreaId}
             dateRange={dateRange}
             isOpen={!!selectedAreaId}
+            selectedRouteTypes={selectedRouteTypes}
             onClose={() => {
               setSelectedAreaId(null);
               if (!showClusterDrawer) {

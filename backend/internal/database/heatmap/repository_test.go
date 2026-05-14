@@ -233,7 +233,7 @@ func TestPostgresRepository_GetAreaActivityDetail(t *testing.T) {
 	)
 
 	mock.ExpectQuery(`WITH\s+combined_activity`).
-		WithArgs(areaID, startDate, endDate).
+		WithArgs(areaID, startDate, endDate, nil).
 		WillReturnRows(statsRows)
 
 	// Mock recent ticks query
@@ -246,7 +246,7 @@ func TestPostgresRepository_GetAreaActivityDetail(t *testing.T) {
 	)
 
 	mock.ExpectQuery(`WITH\s+combined_ticks`).
-		WithArgs(areaID, startDate, endDate).
+		WithArgs(areaID, startDate, endDate, nil).
 		WillReturnRows(ticksRows)
 
 	// Mock recent comments query
@@ -259,7 +259,7 @@ func TestPostgresRepository_GetAreaActivityDetail(t *testing.T) {
 	)
 
 	mock.ExpectQuery(`SELECT\s+c\.id(.+)REGEXP_REPLACE`).
-		WithArgs(areaID, startDate, endDate).
+		WithArgs(areaID, startDate, endDate, nil).
 		WillReturnRows(commentsRows)
 
 	// Mock activity timeline query
@@ -270,7 +270,7 @@ func TestPostgresRepository_GetAreaActivityDetail(t *testing.T) {
 	)
 
 	mock.ExpectQuery(`WITH\s+combined_activity`).
-		WithArgs(areaID, startDate, endDate).
+		WithArgs(areaID, startDate, endDate, nil).
 		WillReturnRows(timelineRows)
 
 	// Mock top routes query
@@ -282,11 +282,11 @@ func TestPostgresRepository_GetAreaActivityDetail(t *testing.T) {
 	)
 
 	mock.ExpectQuery(`WITH\s+combined_activity`).
-		WithArgs(areaID, startDate, endDate).
+		WithArgs(areaID, startDate, endDate, nil).
 		WillReturnRows(topRoutesRows)
 
 	repo := heatmap.NewPostgresRepository(db)
-	result, err := repo.GetAreaActivityDetail(context.Background(), areaID, startDate, endDate)
+	result, err := repo.GetAreaActivityDetail(context.Background(), areaID, startDate, endDate, nil)
 
 	if err != nil {
 		t.Fatalf("GetAreaActivityDetail() error = %v", err)
@@ -350,7 +350,7 @@ func TestPostgresRepository_GetAreaActivityDetail_NotFound(t *testing.T) {
 		WillReturnRows(areaRows)
 
 	repo := heatmap.NewPostgresRepository(db)
-	_, err = repo.GetAreaActivityDetail(context.Background(), areaID, startDate, endDate)
+	_, err = repo.GetAreaActivityDetail(context.Background(), areaID, startDate, endDate, nil)
 
 	if err == nil {
 		t.Error("GetAreaActivityDetail() expected error for non-existent area, got nil")
@@ -439,11 +439,11 @@ func TestPostgresRepository_GetRouteTicksInDateRange(t *testing.T) {
 	)
 
 	mock.ExpectQuery(`SELECT\s+t\.mp_route_id(.+)WHERE t\.mp_route_id`).
-		WithArgs(routeID, startDate, endDate, 20).
+		WithArgs(routeID, startDate, endDate, 20, nil).
 		WillReturnRows(rows)
 
 	repo := heatmap.NewPostgresRepository(db)
-	result, err := repo.GetRouteTicksInDateRange(context.Background(), routeID, startDate, endDate, 20)
+	result, err := repo.GetRouteTicksInDateRange(context.Background(), routeID, startDate, endDate, 20, nil)
 
 	if err != nil {
 		t.Errorf("GetRouteTicksInDateRange() error = %v", err)

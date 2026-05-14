@@ -180,8 +180,18 @@ func (h *Handler) GetHeatMapAreaDetail(c *gin.Context) {
 		return
 	}
 
+	// Parse route types filter (comma-separated). Mirrors GetHeatMapActivity parsing
+	// so the area-detail drill-down respects the same RouteTypeFilter as the heat map.
+	var routeTypes []string
+	if val := c.Query("route_types"); val != "" {
+		routeTypes = strings.Split(val, ",")
+		for i := range routeTypes {
+			routeTypes[i] = strings.TrimSpace(routeTypes[i])
+		}
+	}
+
 	// Fetch detailed activity
-	detail, err := h.heatMapService.GetAreaActivityDetail(ctx, areaID, startDate, endDate)
+	detail, err := h.heatMapService.GetAreaActivityDetail(ctx, areaID, startDate, endDate, routeTypes)
 	if err != nil {
 		if strings.Contains(err.Error(), "area not found") {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -393,8 +403,18 @@ func (h *Handler) GetRouteTicksInDateRange(c *gin.Context) {
 		}
 	}
 
+	// Parse route types filter (comma-separated) — keeps route-level ticks consistent
+	// with the active heat-map RouteTypeFilter selection.
+	var routeTypes []string
+	if val := c.Query("route_types"); val != "" {
+		routeTypes = strings.Split(val, ",")
+		for i := range routeTypes {
+			routeTypes[i] = strings.TrimSpace(routeTypes[i])
+		}
+	}
+
 	// Fetch ticks
-	ticks, err := h.heatMapService.GetRouteTicksInDateRange(ctx, routeID, startDate, endDate, limit)
+	ticks, err := h.heatMapService.GetRouteTicksInDateRange(ctx, routeID, startDate, endDate, limit, routeTypes)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to fetch route ticks",

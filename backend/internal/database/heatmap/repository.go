@@ -43,6 +43,7 @@ type Repository interface {
 		ctx context.Context,
 		areaID int64,
 		startDate, endDate time.Time,
+		routeTypes []string,
 	) (*models.AreaActivityDetail, error)
 
 	// GetRoutesByBounds returns routes within geographic bounds with activity.
@@ -63,6 +64,7 @@ type Repository interface {
 		routeID int64,
 		startDate, endDate time.Time,
 		limit int,
+		routeTypes []string,
 	) ([]models.TickDetail, error)
 
 	// SearchRoutesInAreas searches for routes within specified areas by name.
