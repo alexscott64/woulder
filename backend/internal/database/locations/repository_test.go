@@ -8,6 +8,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/alexscott64/woulder/backend/internal/database"
 	"github.com/alexscott64/woulder/backend/internal/database/locations"
+	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
 func TestPostgresRepository_GetAll(t *testing.T) {
@@ -20,13 +21,13 @@ func TestPostgresRepository_GetAll(t *testing.T) {
 	now := time.Now()
 	rows := sqlmock.NewRows([]string{
 		"id", "name", "latitude", "longitude", "elevation_ft",
-		"area_id", "has_seepage_risk", "created_at", "updated_at",
+		"area_id", "has_seepage_risk", "timezone", "created_at", "updated_at",
 	}).AddRow(
 		1, "Smith Rock", 44.3672, -121.1423, 3200,
-		1, false, now, now,
+		1, false, "America/Los_Angeles", now, now,
 	).AddRow(
 		2, "Index Town Wall", 47.8203, -121.5565, 1500,
-		1, true, now, now,
+		1, true, "America/Los_Angeles", now, now,
 	)
 
 	mock.ExpectQuery("SELECT (.+) FROM woulder.locations").
@@ -55,6 +56,10 @@ func TestPostgresRepository_GetAll(t *testing.T) {
 		t.Error("GetAll() second location should have seepage risk")
 	}
 
+	if result[0].Timezone != "America/Los_Angeles" {
+		t.Errorf("GetAll() first location timezone = %v, want America/Los_Angeles", result[0].Timezone)
+	}
+
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
 	}
@@ -69,7 +74,7 @@ func TestPostgresRepository_GetAll_Empty(t *testing.T) {
 
 	rows := sqlmock.NewRows([]string{
 		"id", "name", "latitude", "longitude", "elevation_ft",
-		"area_id", "has_seepage_risk", "created_at", "updated_at",
+		"area_id", "has_seepage_risk", "timezone", "created_at", "updated_at",
 	})
 
 	mock.ExpectQuery("SELECT (.+) FROM woulder.locations").
@@ -101,10 +106,10 @@ func TestPostgresRepository_GetByID(t *testing.T) {
 	now := time.Now()
 	rows := sqlmock.NewRows([]string{
 		"id", "name", "latitude", "longitude", "elevation_ft",
-		"area_id", "has_seepage_risk", "created_at", "updated_at",
+		"area_id", "has_seepage_risk", "timezone", "created_at", "updated_at",
 	}).AddRow(
 		5, "Smith Rock", 44.3672, -121.1423, 3200,
-		1, false, now, now,
+		1, false, "America/Los_Angeles", now, now,
 	)
 
 	mock.ExpectQuery("SELECT (.+) FROM woulder.locations WHERE id").
@@ -132,6 +137,10 @@ func TestPostgresRepository_GetByID(t *testing.T) {
 
 	if result.Latitude != 44.3672 {
 		t.Errorf("GetByID() latitude = %v, want 44.3672", result.Latitude)
+	}
+
+	if result.Timezone != "America/Los_Angeles" {
+		t.Errorf("GetByID() timezone = %v, want America/Los_Angeles", result.Timezone)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -176,16 +185,16 @@ func TestPostgresRepository_GetByArea(t *testing.T) {
 	now := time.Now()
 	rows := sqlmock.NewRows([]string{
 		"id", "name", "latitude", "longitude", "elevation_ft",
-		"area_id", "has_seepage_risk", "created_at", "updated_at",
+		"area_id", "has_seepage_risk", "timezone", "created_at", "updated_at",
 	}).AddRow(
 		1, "Smith Rock", 44.3672, -121.1423, 3200,
-		10, false, now, now,
+		10, false, "America/Los_Angeles", now, now,
 	).AddRow(
 		2, "Lower Index", 47.8203, -121.5565, 1500,
-		10, true, now, now,
+		10, true, "America/Los_Angeles", now, now,
 	).AddRow(
 		3, "Upper Index", 47.8250, -121.5580, 1700,
-		10, true, now, now,
+		10, true, "America/Los_Angeles", now, now,
 	)
 
 	mock.ExpectQuery("SELECT (.+) FROM woulder.locations WHERE area_id").
@@ -228,7 +237,7 @@ func TestPostgresRepository_GetByArea_Empty(t *testing.T) {
 
 	rows := sqlmock.NewRows([]string{
 		"id", "name", "latitude", "longitude", "elevation_ft",
-		"area_id", "has_seepage_risk", "created_at", "updated_at",
+		"area_id", "has_seepage_risk", "timezone", "created_at", "updated_at",
 	})
 
 	mock.ExpectQuery("SELECT (.+) FROM woulder.locations WHERE area_id").
@@ -244,6 +253,49 @@ func TestPostgresRepository_GetByArea_Empty(t *testing.T) {
 
 	if len(result) != 0 {
 		t.Errorf("GetByArea() returned %d locations, want 0", len(result))
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestPostgresRepository_Create(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	loc := models.Location{
+		Name:           "Squamish",
+		Latitude:       49.7016,
+		Longitude:      -123.1558,
+		ElevationFt:    100,
+		AreaID:         5,
+		HasSeepageRisk: false,
+		Timezone:       "America/Vancouver",
+	}
+
+	mock.ExpectQuery("INSERT INTO woulder.locations").
+		WithArgs(
+			loc.Name,
+			loc.Latitude,
+			loc.Longitude,
+			loc.ElevationFt,
+			loc.AreaID,
+			loc.HasSeepageRisk,
+			loc.Timezone,
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(42))
+
+	repo := locations.NewPostgresRepository(db)
+	id, err := repo.Create(context.Background(), loc)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if id != 42 {
+		t.Errorf("Create() id = %d, want 42", id)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

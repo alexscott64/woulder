@@ -12,11 +12,11 @@ type Location struct {
 	AreaID         int     `json:"area_id" db:"area_id"`                   // Foreign key to areas table
 	HasSeepageRisk bool    `json:"has_seepage_risk" db:"has_seepage_risk"` // Location has seepage/snowmelt issues
 	// Timezone is the IANA timezone name for this location (e.g.
-	// "America/Los_Angeles"). It is not persisted in the database yet —
-	// service code populates it at runtime (currently a Pacific default
-	// matching the rest of the codebase). Empty string means "fall back
-	// to UTC" downstream.
-	Timezone  string    `json:"timezone,omitempty" db:"-"`
+	// "America/Los_Angeles"). Persisted in woulder.locations.timezone
+	// (migration 000037). Populated at insert time by LocationService.CreateLocation
+	// from (latitude, longitude) via geo.LookupTimezone, and validated against
+	// time.LoadLocation. Always serialized in JSON so frontend code can rely on it.
+	Timezone  string    `json:"timezone" db:"timezone"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }

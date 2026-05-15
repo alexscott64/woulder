@@ -108,6 +108,7 @@ type MockLocationsRepository struct {
 	GetAllFn    func(ctx context.Context) ([]models.Location, error)
 	GetByIDFn   func(ctx context.Context, id int) (*models.Location, error)
 	GetByAreaFn func(ctx context.Context, areaID int) ([]models.Location, error)
+	CreateFn    func(ctx context.Context, loc models.Location) (int, error)
 }
 
 func (m *MockLocationsRepository) GetAll(ctx context.Context) ([]models.Location, error) {
@@ -129,6 +130,13 @@ func (m *MockLocationsRepository) GetByArea(ctx context.Context, areaID int) ([]
 		return m.GetByAreaFn(ctx, areaID)
 	}
 	return []models.Location{}, nil
+}
+
+func (m *MockLocationsRepository) Create(ctx context.Context, loc models.Location) (int, error) {
+	if m.CreateFn != nil {
+		return m.CreateFn(ctx, loc)
+	}
+	return 0, nil
 }
 
 // ============================================================================

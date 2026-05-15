@@ -202,6 +202,17 @@ export default function AreaSelector({ variant = 'header' }: AreaSelectorProps) 
             </span>
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            {/*
+              TODO(per-location-timezone): This header shows a single tz abbreviation
+              (e.g. "PST") for the whole area picker, but an area can contain
+              locations in multiple timezones. Threading the right tz here would
+              require either (a) loading the locations for each area to derive a
+              per-area representative tz, or (b) making this purely a "user's
+              browser tz" display. For now we keep the existing Pacific behavior
+              because the AreaSelector data shape (id/name/region/location_count)
+              does not include locations or a timezone field. Revisit when we
+              add a non-Pacific area. See docs/per_location_timezone_plan.md §5.3.
+            */}
             {locationCount} location{locationCount !== 1 ? 's' : ''} • {new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'short' }).formatToParts(new Date()).find(part => part.type === 'timeZoneName')?.value}
           </p>
         </button>

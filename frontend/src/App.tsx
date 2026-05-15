@@ -315,6 +315,7 @@ function Dashboard() {
                   <div key={forecast.location_id} className={isExpanded ? 'shadow-lg rounded-xl' : ''}>
                     <WeatherCard
                       forecast={forecast}
+                      timezone={forecast.location.timezone}
                       isExpanded={isExpanded}
                       onToggleExpand={(expanded, todayLevel) => {
                         setExpandedLocationId(expanded ? forecast.location_id : null);
@@ -329,6 +330,7 @@ function Dashboard() {
                         <div className="bg-gray-50 dark:bg-gray-900 p-4">
                           <ForecastView
                             locationId={forecast.location_id}
+                            timezone={forecast.location.timezone}
                             hourlyData={forecast.hourly || []}
                             currentWeather={forecast.current}
                             historicalData={forecast.historical || []}
@@ -378,6 +380,7 @@ function Dashboard() {
                           <WeatherCard
                             key={forecast.location_id}
                             forecast={forecast}
+                            timezone={forecast.location.timezone}
                             isExpanded={expandedLocationId === forecast.location_id}
                             onToggleExpand={(expanded, todayLevel) => {
                               setExpandedLocationId(expanded ? forecast.location_id : null);
@@ -415,6 +418,7 @@ function Dashboard() {
                             <div className="bg-gray-50 dark:bg-gray-900 p-6">
                               <ForecastView
                                 locationId={expandedForecast.location_id}
+                                timezone={expandedForecast.location.timezone}
                                 hourlyData={expandedForecast.hourly || []}
                                 currentWeather={expandedForecast.current}
                                 historicalData={expandedForecast.historical || []}

@@ -22,21 +22,36 @@ import { trackLocationView, trackModalOpen } from '../services/analytics';
 
 interface WeatherCardProps {
   forecast: WeatherForecast;
+  // IANA timezone name for the location (e.g. "America/Los_Angeles", "America/Vancouver").
+  // Required: drives "now" timestamp and sunrise/sunset display in the location's local time.
+  // If empty/missing at runtime, falls back to "America/Los_Angeles" with a console.warn.
+  timezone: string;
   isExpanded: boolean;
   onToggleExpand: (expanded: boolean, todayConditionLevel?: 'good' | 'marginal' | 'bad' | 'do_not_climb') => void;
 }
 
-// Format sun time from ISO string (e.g., "2025-12-27T07:54:00Z") to "7:54 AM" in Pacific timezone
-function formatSunTime(isoTime: string | undefined): string {
+// Format sun time from ISO string (e.g., "2025-12-27T07:54:00Z") to "7:54 AM" in the location's local timezone.
+// `tz` should be a valid IANA name; the caller is responsible for fallback.
+function formatSunTime(isoTime: string | undefined, tz: string): string {
   if (!isoTime) return '--';
   try {
-    return formatInTimeZone(isoTime, 'America/Los_Angeles', 'h:mm a');
+    return formatInTimeZone(isoTime, tz, 'h:mm a');
   } catch {
     return '--';
   }
 }
 
-export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCardProps) {
+export function WeatherCard({ forecast, timezone, isExpanded, onToggleExpand }: WeatherCardProps) {
+  // Resolve the location's local timezone, with a defensive fallback so a
+  // missing/empty value never breaks rendering (only emits a warn so dev
+  // notices). Required prop at the type level — see WeatherCardProps.
+  let tz = timezone;
+  if (!tz) {
+    console.warn(
+      `WeatherCard: missing timezone for location ${forecast.location_id}, falling back to America/Los_Angeles`,
+    );
+    tz = 'America/Los_Angeles';
+  }
   const { location, current, hourly, historical, sunrise, sunset, rock_drying_status, rock_temperature_status, snow_depth_inches, today_condition, rain_last_48h, rain_next_48h, pest_conditions, climb_history } = forecast;
 
   // Use backend-calculated condition (backend always provides this)
@@ -224,7 +239,7 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
           {/* Date and Condition row */}
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {formatInTimeZone(current.timestamp, 'America/Los_Angeles', 'MMM d, h:mm a')}
+              {formatInTimeZone(current.timestamp, tz, 'MMM d, h:mm a')}
             </p>
 
             <div className="flex items-center gap-2">
@@ -285,11 +300,11 @@ export function WeatherCard({ forecast, isExpanded, onToggleExpand }: WeatherCar
             <div className="flex flex-col gap-1 text-xs text-gray-600 dark:text-gray-400">
               <div className="flex items-center gap-1">
                 <Sunrise className="w-4 h-4 text-orange-400" />
-                <span>{formatSunTime(sunrise)}</span>
+                <span>{formatSunTime(sunrise, tz)}</span>
               </div>
               <div className="flex items-center gap-1">
                 <Sunset className="w-4 h-4 text-orange-600 dark:text-orange-500" />
-                <span>{formatSunTime(sunset)}</span>
+                <span>{formatSunTime(sunset, tz)}</span>
               </div>
             </div>
           )}

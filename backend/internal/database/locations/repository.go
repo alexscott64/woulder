@@ -23,4 +23,11 @@ type Repository interface {
 	// Results are ordered by name.
 	// Returns an empty slice if no locations are found in the area.
 	GetByArea(ctx context.Context, areaID int) ([]models.Location, error)
+
+	// Create inserts a new location and returns its generated ID.
+	//
+	// loc.Timezone MUST be a valid IANA timezone name; the repository does not
+	// validate it. The service layer (LocationService.CreateLocation) is the
+	// authoritative validation/derivation point.
+	Create(ctx context.Context, loc models.Location) (int, error)
 }

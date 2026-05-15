@@ -56,6 +56,7 @@ export interface AreaActivityDetail {
   active_routes: number;
   unique_climbers: number;
   last_activity: string; // ISO date string
+  timezone: string; // IANA name (e.g. "America/Los_Angeles"); derived per-request from area lat/lon
   recent_ticks: TickDetail[];
   recent_comments: CommentSummary[];
   activity_timeline: DailyActivity[];

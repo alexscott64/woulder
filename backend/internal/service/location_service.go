@@ -2,12 +2,21 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
+	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/database/areas"
 	"github.com/alexscott64/woulder/backend/internal/database/locations"
+	"github.com/alexscott64/woulder/backend/internal/geo"
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
+
+// ErrInvalidTimezone is returned by CreateLocation when the supplied
+// Timezone is not a valid IANA timezone name (i.e. time.LoadLocation
+// rejects it). Handlers should map this to HTTP 400.
+var ErrInvalidTimezone = errors.New("invalid IANA timezone")
 
 // LocationService handles location-related business logic
 type LocationService struct {
@@ -75,4 +84,36 @@ func (s *LocationService) GetAreaByID(ctx context.Context, id int) (*models.Area
 		return nil, fmt.Errorf("failed to get area %d: %w", id, err)
 	}
 	return area, nil
+}
+
+// CreateLocation inserts a new location, deriving its IANA timezone from
+// (latitude, longitude) when not supplied.
+//
+// Behaviour:
+//   - If loc.Timezone is empty, it is populated via geo.LookupTimezone (which
+//     itself falls back to "America/Los_Angeles" on lookup failure).
+//   - If loc.Timezone is non-empty, it is validated via time.LoadLocation;
+//     unknown names return ErrInvalidTimezone (handlers should map to HTTP 400).
+//
+// Returns the newly inserted location's ID.
+func (s *LocationService) CreateLocation(ctx context.Context, loc models.Location) (int, error) {
+	if loc.Timezone == "" {
+		loc.Timezone = geo.LookupTimezone(loc.Latitude, loc.Longitude)
+		if loc.Timezone == "" {
+			// geo.LookupTimezone is documented to never return "" today,
+			// but defend against future behaviour changes.
+			log.Printf("WARN: tz lookup failed for (%f,%f); defaulting to America/Los_Angeles", loc.Latitude, loc.Longitude)
+			loc.Timezone = "America/Los_Angeles"
+		}
+	}
+
+	if _, err := time.LoadLocation(loc.Timezone); err != nil {
+		return 0, fmt.Errorf("%w: %q", ErrInvalidTimezone, loc.Timezone)
+	}
+
+	id, err := s.locationsRepo.Create(ctx, loc)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create location: %w", err)
+	}
+	return id, nil
 }

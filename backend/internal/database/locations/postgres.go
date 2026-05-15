@@ -36,6 +36,7 @@ func (r *PostgresRepository) GetAll(ctx context.Context) ([]models.Location, err
 			&loc.ElevationFt,
 			&loc.AreaID,
 			&loc.HasSeepageRisk,
+			&loc.Timezone,
 			&loc.CreatedAt,
 			&loc.UpdatedAt,
 		); err != nil {
@@ -62,6 +63,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id int) (*models.Locat
 		&loc.ElevationFt,
 		&loc.AreaID,
 		&loc.HasSeepageRisk,
+		&loc.Timezone,
 		&loc.CreatedAt,
 		&loc.UpdatedAt,
 	)
@@ -92,6 +94,7 @@ func (r *PostgresRepository) GetByArea(ctx context.Context, areaID int) ([]model
 			&loc.ElevationFt,
 			&loc.AreaID,
 			&loc.HasSeepageRisk,
+			&loc.Timezone,
 			&loc.CreatedAt,
 			&loc.UpdatedAt,
 		); err != nil {
@@ -105,4 +108,28 @@ func (r *PostgresRepository) GetByArea(ctx context.Context, areaID int) ([]model
 	}
 
 	return locations, nil
+}
+
+// Create inserts a new location and returns its generated ID.
+//
+// The caller (typically LocationService.CreateLocation) is responsible for
+// ensuring loc.Timezone is a valid IANA timezone name before calling this
+// method — the repository performs no validation.
+func (r *PostgresRepository) Create(ctx context.Context, loc models.Location) (int, error) {
+	var id int
+	err := r.db.QueryRowContext(
+		ctx,
+		queryInsert,
+		loc.Name,
+		loc.Latitude,
+		loc.Longitude,
+		loc.ElevationFt,
+		loc.AreaID,
+		loc.HasSeepageRisk,
+		loc.Timezone,
+	).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
 }

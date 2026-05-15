@@ -6,7 +6,7 @@ const (
 	// No filtering - returns all active locations.
 	queryGetAll = `
 		SELECT id, name, latitude, longitude, elevation_ft, area_id,
-		       has_seepage_risk, created_at, updated_at
+		       has_seepage_risk, timezone, created_at, updated_at
 		FROM woulder.locations
 		ORDER BY name
 	`
@@ -15,7 +15,7 @@ const (
 	// Primary key lookup - very fast.
 	queryGetByID = `
 		SELECT id, name, latitude, longitude, elevation_ft, area_id,
-		       has_seepage_risk, created_at, updated_at
+		       has_seepage_risk, timezone, created_at, updated_at
 		FROM woulder.locations
 		WHERE id = $1
 	`
@@ -25,9 +25,19 @@ const (
 	// Index: area_id for efficient filtering
 	queryGetByArea = `
 		SELECT id, name, latitude, longitude, elevation_ft, area_id,
-		       has_seepage_risk, created_at, updated_at
+		       has_seepage_risk, timezone, created_at, updated_at
 		FROM woulder.locations
 		WHERE area_id = $1
 		ORDER BY name
+	`
+
+	// queryInsert inserts a new location and returns the generated id.
+	// timezone is required; the service layer is responsible for
+	// derivation/validation (see LocationService.CreateLocation).
+	queryInsert = `
+		INSERT INTO woulder.locations
+			(name, latitude, longitude, elevation_ft, area_id, has_seepage_risk, timezone)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id
 	`
 )

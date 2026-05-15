@@ -5,6 +5,7 @@ export interface Location {
   longitude: number;
   elevation_ft: number; // Elevation in feet above sea level
   area_id: number; // Foreign key to areas table
+  timezone: string; // IANA name (e.g. "America/Los_Angeles"); used by frontend for "Now" detection and climbing-hour windows
   created_at: string;
   updated_at: string;
 }

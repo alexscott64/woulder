@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/database/heatmap"
+	"github.com/alexscott64/woulder/backend/internal/geo"
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
@@ -105,6 +106,17 @@ func (s *HeatMapService) GetAreaActivityDetail(
 	detail, err := s.heatMapRepo.GetAreaActivityDetail(ctx, areaID, startDate, endDate, routeTypes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch area detail: %w", err)
+	}
+
+	// Per-request timezone derivation (no mp_areas schema change). When lat/lon
+	// are present, use the offline tzf polygon dataset; otherwise fall back to
+	// the Pacific default that geo.LookupTimezone itself uses on lookup failure.
+	if detail != nil {
+		if detail.Latitude != nil && detail.Longitude != nil {
+			detail.Timezone = geo.LookupTimezone(*detail.Latitude, *detail.Longitude)
+		} else {
+			detail.Timezone = "America/Los_Angeles"
+		}
 	}
 
 	return detail, nil

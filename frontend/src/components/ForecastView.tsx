@@ -46,6 +46,10 @@ function formatPrecipInches(precip: number): string {
 
 interface ForecastViewProps {
   locationId: number;
+  // IANA timezone name for the location (e.g. "America/Los_Angeles", "America/Vancouver").
+  // Required: drives "Now" detection, climbing-hour windows, and per-day grouping.
+  // If empty/missing at runtime, falls back to "America/Los_Angeles" with a console.warn.
+  timezone: string;
   hourlyData: WeatherData[];
   currentWeather?: WeatherData;
   historicalData?: WeatherData[];
@@ -83,11 +87,12 @@ interface DayForecast {
   conditionReasons?: string[]; // Combined reasons for the day's overall condition
 }
 
-// Helper to format sun time from ISO string to "7:54 AM" format in Pacific timezone
-function formatSunTime(isoTime: string | undefined): string {
+// Helper to format sun time from ISO string to "7:54 AM" format in the location's local timezone.
+// `tz` should be a valid IANA name; the caller is responsible for fallback.
+function formatSunTime(isoTime: string | undefined, tz: string): string {
   if (!isoTime) return '--';
   try {
-    return formatInTimeZone(isoTime, 'America/Los_Angeles', 'h:mm a');
+    return formatInTimeZone(isoTime, tz, 'h:mm a');
   } catch {
     return '--';
   }
@@ -165,7 +170,17 @@ function calculateEffectiveSunHours(
   }
 }
 
-export function ForecastView({ locationId: _locationId, hourlyData, currentWeather, historicalData, elevationFt: _elevationFt = 0, dailySunTimes, dailySnowDepth, todayCondition, rockDryingStatus, rockTempStatus }: ForecastViewProps) {
+export function ForecastView({ locationId: _locationId, timezone, hourlyData, currentWeather, historicalData, elevationFt: _elevationFt = 0, dailySunTimes, dailySnowDepth, todayCondition, rockDryingStatus, rockTempStatus }: ForecastViewProps) {
+  // Resolve the location's local timezone, with a defensive fallback so a
+  // missing/empty value never breaks rendering (only emits a warn so dev
+  // notices). Required prop at the type level — see ForecastViewProps.
+  let tz = timezone;
+  if (!tz) {
+    console.warn(
+      `ForecastView: missing timezone for location ${_locationId}, falling back to America/Los_Angeles`,
+    );
+    tz = 'America/Los_Angeles';
+  }
   // State for condition details modal
   const [showConditionModal, setShowConditionModal] = useState(false);
   const [selectedDayCondition, setSelectedDayCondition] = useState<{
@@ -188,10 +203,12 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
 
     const filtered: WeatherData[] = [];
 
-    // Get current time in Pacific timezone
-    const nowPacific = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-    const currentHour = nowPacific.getHours();
-    const currentDate = formatInTimeZone(nowPacific, 'America/Los_Angeles', 'yyyy-MM-dd');
+    // Get current time. Use a real Date for instant (epoch-ms) comparisons,
+    // and formatInTimeZone for any Pacific wall-clock components.
+    const nowDate = new Date();
+    const currentHour = parseInt(formatInTimeZone(nowDate, tz, 'H'), 10);
+    const currentDate = formatInTimeZone(nowDate, tz, 'yyyy-MM-dd');
+    const nowMs = nowDate.getTime();
 
     // Find the next target hour from current time
     let nextTargetHour = targetHours[0]; // Default to first target hour (1am next day)
@@ -209,9 +226,9 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
     for (let i = 0; i < hourlyData.length && filtered.length < 48; i++) {
       const timestamp = hourlyData[i].timestamp;
 
-      // Get hour in Pacific timezone
-      const hourPacific = parseInt(formatInTimeZone(timestamp, 'America/Los_Angeles', 'H'));
-      const datePacific = formatInTimeZone(timestamp, 'America/Los_Angeles', 'yyyy-MM-dd');
+      // Get hour in the location's local timezone
+      const hourPacific = parseInt(formatInTimeZone(timestamp, tz, 'H'));
+      const datePacific = formatInTimeZone(timestamp, tz, 'yyyy-MM-dd');
 
       // Only process target hours
       if (!targetHours.includes(hourPacific)) continue;
@@ -223,10 +240,9 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
       if (!foundFirst) {
         // First entry: show next upcoming target hour (or closest if we're past all targets today)
         const timePoint = new Date(timestamp).getTime();
-        const now = nowPacific.getTime();
-        
+
         // Use this hour if it's in the future or if we're on today and it matches next target
-        if (timePoint >= now || (datePacific === currentDate && hourPacific === nextTargetHour)) {
+        if (timePoint >= nowMs || (datePacific === currentDate && hourPacific === nextTargetHour)) {
           filtered.push(hourlyData[i]);
           addedHours.add(dateHourKey);
           foundFirst = true;
@@ -261,7 +277,7 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
         if (relativeLeft >= -50 && relativeLeft <= 100) {
           const hour = filteredHourlyData[i];
           if (hour) {
-            const dayName = formatInTimeZone(hour.timestamp, 'America/Los_Angeles', 'EEEE');
+            const dayName = formatInTimeZone(hour.timestamp, tz, 'EEEE');
             setCurrentDay(dayName);
           }
           break;
@@ -312,9 +328,9 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
     });
   }
 
-  // Use Pacific timezone to get today's date (must match WeatherCard logic)
+  // Use the location's local timezone to get today's date (must match WeatherCard logic)
   const now = new Date();
-  const todayStr = formatInTimeZone(now, 'America/Los_Angeles', 'yyyy-MM-dd');
+  const todayStr = formatInTimeZone(now, tz, 'yyyy-MM-dd');
 
   // Include current weather in the data if provided
   const allData = currentWeather ? [currentWeather, ...hourlyData] : hourlyData;
@@ -342,8 +358,8 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
   // Group deduplicated data by day (in Pacific timezone)
   const days = new Map<string, WeatherData[]>();
   Array.from(deduplicatedMap.values()).forEach(data => {
-    // Group by Pacific timezone date
-    const dateKey = formatInTimeZone(data.timestamp, 'America/Los_Angeles', 'yyyy-MM-dd');
+    // Group by location-local date
+    const dateKey = formatInTimeZone(data.timestamp, tz, 'yyyy-MM-dd');
 
     // Include all data from today onwards
     if (dateKey >= todayStr) {
@@ -401,10 +417,11 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
       // Weight climbing hours (9am-8pm) more heavily for temperature issues
       // But keep rain/precipitation for all hours since it affects conditions later
       const isClimbingHour = (hour: WeatherData): boolean => {
-        // Convert to Pacific timezone to get the correct hour
-        const pacificDate = new Date(hour.timestamp).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
-        const hourOfDay = new Date(pacificDate).getHours();
-        return hourOfDay >= 9 && hourOfDay < 20; // 9am to 8pm Pacific
+        // Extract the hour-of-day in the location's local timezone directly via
+        // formatInTimeZone. Avoids the `new Date(toLocaleString(...))` anti-pattern
+        // which produces a Date with a shifted epoch-ms value.
+        const hourOfDay = parseInt(formatInTimeZone(hour.timestamp, tz, 'H'), 10);
+        return hourOfDay >= 9 && hourOfDay < 20; // 9am to 8pm local
       };
 
       const hourConditions = hours.map((h, index) => {
@@ -588,7 +605,7 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
 
           // Per-day rock-temp indicator driven by backend daily_forecast rollup.
           // Match cards to daily entries by local date (YYYY-MM-DD in PT).
-          const dayKey = formatInTimeZone(day.date, 'America/Los_Angeles', 'yyyy-MM-dd');
+          const dayKey = formatInTimeZone(day.date, tz, 'yyyy-MM-dd');
           const dailyRock = rockTempStatus?.daily_forecast?.find(d => d.local_date === dayKey);
 
           return (
@@ -620,7 +637,7 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
 
               {/* Date */}
               <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                {formatInTimeZone(day.date, 'America/Los_Angeles', 'MMM d')}
+                {formatInTimeZone(day.date, tz, 'MMM d')}
               </div>
 
               {/* Weather icon */}
@@ -694,11 +711,11 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
                   <div className="flex items-center justify-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                     <div className="flex items-center gap-0.5">
                       <Sunrise className="w-3 h-3 text-orange-400" />
-                      <span>{formatSunTime(day.sunrise)}</span>
+                      <span>{formatSunTime(day.sunrise, tz)}</span>
                     </div>
                     <div className="flex items-center gap-0.5">
                       <Sunset className="w-3 h-3 text-orange-600 dark:text-orange-500" />
-                      <span>{formatSunTime(day.sunset)}</span>
+                      <span>{formatSunTime(day.sunset, tz)}</span>
                     </div>
                   </div>
                   {day.effectiveSunHours !== undefined && day.daylightHours && (
@@ -815,7 +832,7 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
               const isCurrentHour = index === 0;
 
               // Find the sunrise/sunset for this hour's date
-              const dateKey = formatInTimeZone(hour.timestamp, 'America/Los_Angeles', 'yyyy-MM-dd');
+              const dateKey = formatInTimeZone(hour.timestamp, tz, 'yyyy-MM-dd');
               const daySunTimes = dailySunTimes?.find(d => d.date === dateKey);
 
               return (
@@ -826,7 +843,7 @@ export function ForecastView({ locationId: _locationId, hourlyData, currentWeath
                 >
                   {/* Time */}
                   <div className={`text-xs font-medium mb-1 ${isCurrentHour ? 'text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-700 dark:text-gray-300'}`}>
-                    {isCurrentHour ? 'Now' : formatInTimeZone(hour.timestamp, 'America/Los_Angeles', 'ha')}
+                    {isCurrentHour ? 'Now' : formatInTimeZone(hour.timestamp, tz, 'ha')}
                   </div>
 
                   {/* Icon */}

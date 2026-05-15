@@ -312,3 +312,80 @@ func TestLocationService_GetAreaByID(t *testing.T) {
 		})
 	}
 }
+
+func TestLocationService_CreateLocation(t *testing.T) {
+	t.Run("derives timezone from lat/lon when empty", func(t *testing.T) {
+		// Squamish, BC -> America/Vancouver per the offline tzf dataset.
+		// Real geo.LookupTimezone is pure (no I/O), so we let it run.
+		var captured models.Location
+		mockLocationsRepo := &MockLocationsRepository{
+			CreateFn: func(ctx context.Context, loc models.Location) (int, error) {
+				captured = loc
+				return 99, nil
+			},
+		}
+		svc := NewLocationService(mockLocationsRepo, &MockAreasRepository{})
+
+		id, err := svc.CreateLocation(context.Background(), models.Location{
+			Name:      "Squamish",
+			Latitude:  49.7016,
+			Longitude: -123.1558,
+			AreaID:    1,
+			// Timezone intentionally empty -> derived
+		})
+
+		assert.NoError(t, err)
+		assert.Equal(t, 99, id)
+		assert.Equal(t, "America/Vancouver", captured.Timezone,
+			"empty Timezone should be derived from coords; got %q", captured.Timezone)
+	})
+
+	t.Run("preserves valid explicit timezone", func(t *testing.T) {
+		var captured models.Location
+		mockLocationsRepo := &MockLocationsRepository{
+			CreateFn: func(ctx context.Context, loc models.Location) (int, error) {
+				captured = loc
+				return 7, nil
+			},
+		}
+		svc := NewLocationService(mockLocationsRepo, &MockAreasRepository{})
+
+		id, err := svc.CreateLocation(context.Background(), models.Location{
+			Name:      "Custom",
+			Latitude:  49.7016,
+			Longitude: -123.1558,
+			AreaID:    1,
+			Timezone:  "America/Denver", // not what tzf would derive
+		})
+
+		assert.NoError(t, err)
+		assert.Equal(t, 7, id)
+		assert.Equal(t, "America/Denver", captured.Timezone,
+			"explicit valid Timezone should be passed through unchanged")
+	})
+
+	t.Run("rejects invalid timezone with ErrInvalidTimezone", func(t *testing.T) {
+		createCalled := false
+		mockLocationsRepo := &MockLocationsRepository{
+			CreateFn: func(ctx context.Context, loc models.Location) (int, error) {
+				createCalled = true
+				return 0, nil
+			},
+		}
+		svc := NewLocationService(mockLocationsRepo, &MockAreasRepository{})
+
+		id, err := svc.CreateLocation(context.Background(), models.Location{
+			Name:      "Invalid",
+			Latitude:  49.7016,
+			Longitude: -123.1558,
+			AreaID:    1,
+			Timezone:  "Mars/Olympus",
+		})
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrInvalidTimezone),
+			"expected error to wrap ErrInvalidTimezone, got %v", err)
+		assert.Equal(t, 0, id)
+		assert.False(t, createCalled, "repo.Create should not be called when tz invalid")
+	})
+}

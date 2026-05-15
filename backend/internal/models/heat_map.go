@@ -19,11 +19,16 @@ type HeatMapPoint struct {
 // AreaActivityDetail provides comprehensive activity data for an area
 // Reuses existing ClimbHistoryEntry, CommentSummary, and RouteActivitySummary types
 type AreaActivityDetail struct {
-	MPAreaID         int64             `json:"mp_area_id"`
-	Name             string            `json:"name"`
-	ParentMPAreaID   *int64            `json:"parent_mp_area_id,omitempty"`
-	Latitude         *float64          `json:"latitude,omitempty"`
-	Longitude        *float64          `json:"longitude,omitempty"`
+	MPAreaID       int64    `json:"mp_area_id"`
+	Name           string   `json:"name"`
+	ParentMPAreaID *int64   `json:"parent_mp_area_id,omitempty"`
+	Latitude       *float64 `json:"latitude,omitempty"`
+	Longitude      *float64 `json:"longitude,omitempty"`
+	// Timezone is the IANA timezone name for this area, derived per-request
+	// from (Latitude, Longitude) via geo.LookupTimezone. Falls back to
+	// "America/Los_Angeles" when lat/lon are missing or the lookup fails.
+	// Always serialized so frontend code can rely on it.
+	Timezone         string            `json:"timezone"`
 	TotalTicks       int               `json:"total_ticks"`
 	ActiveRoutes     int               `json:"active_routes"`
 	UniqueClimbers   int               `json:"unique_climbers"`
