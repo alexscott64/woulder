@@ -28,6 +28,24 @@ import (
 // override per-location in the future.
 const defaultLocationTimezone = "America/Los_Angeles"
 
+// minForecastHoursForCacheReplacement is the minimum number of FUTURE hourly
+// forecast rows that an Open-Meteo response must contain before we destroy and
+// replace the existing cache for a location.
+//
+// Background: Open-Meteo intermittently returns HTTP 200 responses with a
+// truncated `hourly.time` array (observed: 69-359 hours instead of the
+// expected ~396 = 16d × 24h + 12h past). Prior to this guard, the refresh
+// path purged the cache BEFORE saving, so a truncated response left the
+// daily forecast badly degraded (e.g. 4 days instead of ~7) until the next
+// hourly refresh. This threshold of 14 days is intentionally below the
+// requested 16 days so a small amount of upstream slack is tolerated, but
+// well above the user-visible 7-day forecast horizon.
+//
+// IMPORTANT: this constant is duplicated in
+// `cmd/sync_weather/main.go` (kept in sync manually). If you change one,
+// change the other.
+const minForecastHoursForCacheReplacement = 14 * 24 // 336 hours = 14 days
+
 // locationTimezone returns the IANA timezone name to use for the given
 // location's local-time calculations (send-window midnight splits,
 // per-day aggregation). Falls back to defaultLocationTimezone when the
@@ -127,8 +145,10 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 			}
 			current = cachedCurrent
 
-			// Also get cached forecast data (next 7 days)
-			hourlyForecast, err = s.weatherRepo.GetForecast(ctx, locationID, 168) // 7 days
+			// Also get cached forecast data — pull the full 16-day horizon so
+			// the daily forecast UI gets the complete window the upstream
+			// provides (was 168=7d, which truncated the daily view).
+			hourlyForecast, err = s.weatherRepo.GetForecast(ctx, locationID, 384) // 16 days, matches upstream forecast horizon
 			if err != nil {
 				log.Printf("Warning: failed to get forecast from cache: %v", err)
 				hourlyForecast = []models.WeatherData{}
@@ -156,7 +176,7 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 				CreatedAt:  now,
 			}
 			// Try to pull whatever forecast rows are in the DB.
-			hourlyForecast, err = s.weatherRepo.GetForecast(ctx, locationID, 168)
+			hourlyForecast, err = s.weatherRepo.GetForecast(ctx, locationID, 384)
 			if err != nil {
 				log.Printf("Warning: offline mode — failed to load forecast from DB for location %d: %v", locationID, err)
 				hourlyForecast = []models.WeatherData{}
@@ -173,21 +193,48 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 			}
 
 			// Persist fresh data to DB so subsequent requests use the cache.
-			// Delete stale future forecasts first, then save all hourly data.
+			//
+			// FIX: Validate response length BEFORE replacing the cache.
+			// Open-Meteo intermittently returns short hourly arrays (HTTP 200,
+			// no error) which previously poisoned the cache for ~1h until the
+			// next refresh. Count future hours (the slice may include past
+			// spin-up rows from past_hours=12) and only replace the cache if
+			// the response is long enough.
 			current.LocationID = locationID
-			if err := s.weatherRepo.DeleteFutureForLocation(ctx, locationID); err != nil {
-				log.Printf("Warning: failed to purge stale forecasts for location %d: %v", locationID, err)
-			}
-			if err := s.weatherRepo.Save(ctx, current); err != nil {
-				log.Printf("Warning: failed to save current weather for location %d: %v", locationID, err)
-			}
+			nowUTCForCheck := time.Now().UTC()
+			futureHours := 0
 			for i := range hourlyForecast {
-				hourlyForecast[i].LocationID = locationID
-				if err := s.weatherRepo.Save(ctx, &hourlyForecast[i]); err != nil {
-					log.Printf("Warning: failed to save forecast hour for location %d: %v", locationID, err)
+				if hourlyForecast[i].Timestamp.After(nowUTCForCheck) {
+					futureHours++
 				}
 			}
-			log.Printf("Persisted fresh weather data for location %d (%d hours)", locationID, len(hourlyForecast))
+
+			if futureHours < minForecastHoursForCacheReplacement {
+				log.Printf(
+					"WARN: Open-Meteo returned truncated forecast for location %d (lat=%.5f lon=%.5f): future_hours=%d, threshold=%d. "+
+						"Skipping cache replacement to preserve previously-cached forecast; will retry on next refresh.",
+					locationID, location.Latitude, location.Longitude,
+					futureHours, minForecastHoursForCacheReplacement,
+				)
+				// Save just the current observation row (it's a single point;
+				// no risk of poisoning the multi-day forecast). The next
+				// refresh cycle will retry the forecast.
+				if err := s.weatherRepo.Save(ctx, current); err != nil {
+					log.Printf("Warning: failed to save current weather for location %d: %v", locationID, err)
+				}
+			} else {
+				// Atomically replace future forecast cache: delete existing future
+				// rows AND insert new ones in a single transaction. Either the
+				// cache is fully refreshed or it is left untouched — no destructive
+				// intermediate state.
+				if err := s.weatherRepo.ReplaceFutureForLocation(ctx, locationID, hourlyForecast); err != nil {
+					log.Printf("Warning: failed to atomically replace future forecasts for location %d: %v", locationID, err)
+				}
+				if err := s.weatherRepo.Save(ctx, current); err != nil {
+					log.Printf("Warning: failed to save current weather for location %d: %v", locationID, err)
+				}
+				log.Printf("Persisted fresh weather data for location %d (%d hours, %d future)", locationID, len(hourlyForecast), futureHours)
+			}
 		}
 	}
 
@@ -319,7 +366,7 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 		}
 	} else {
 		// Cache path fallback: compute sunrise/sunset locally so frontend still gets daily sun times
-		dailySunTimes = buildDailySunTimesFallback(location.Latitude, location.Longitude, 7)
+		dailySunTimes = buildDailySunTimesFallback(location.Latitude, location.Longitude, 16)
 		if sunrise == "" && len(dailySunTimes) > 0 {
 			sunrise = dailySunTimes[0].Sunrise
 			sunset = dailySunTimes[0].Sunset
@@ -636,23 +683,36 @@ func (s *WeatherService) RefreshAllWeatherWithOptions(ctx context.Context, force
 		if err != nil {
 			log.Printf("Failed to fetch forecast weather for location %d: %v", loc.ID, err)
 		} else {
-			// CRITICAL: Delete ALL future forecast data before saving fresh data.
-			// This prevents stale forecasts from persisting when timestamps don't
-			// exactly match (e.g., due to previous timezone bugs or model changes).
-			if err := s.weatherRepo.DeleteFutureForLocation(ctx, loc.ID); err != nil {
-				log.Printf("ERROR: failed to delete future weather data for location %d: %v", loc.ID, err)
-			} else {
-				log.Printf("Purged stale future forecasts for location %d", loc.ID)
-			}
-
-			// Save fresh forecast data to database
+			// FIX: Validate response length BEFORE replacing the cache.
+			// See minForecastHoursForCacheReplacement docs for context. The
+			// bulk-refresh path uses GetForecast() which has no past_hours,
+			// so every entry is "future" by construction — but we count
+			// explicitly anyway in case that ever changes.
+			nowUTCForCheck := time.Now().UTC()
+			futureHours := 0
 			for i := range forecast {
-				forecast[i].LocationID = loc.ID
-				if err := s.weatherRepo.Save(ctx, &forecast[i]); err != nil {
-					log.Printf("Failed to save forecast weather for location %d: %v", loc.ID, err)
+				if forecast[i].Timestamp.After(nowUTCForCheck) {
+					futureHours++
 				}
 			}
-			log.Printf("Updated forecast weather for location %d (%d hours)", loc.ID, len(forecast))
+
+			if futureHours < minForecastHoursForCacheReplacement {
+				log.Printf(
+					"WARN: Open-Meteo returned truncated forecast for location %d (lat=%.5f lon=%.5f) during bulk refresh: future_hours=%d, threshold=%d. "+
+						"Skipping cache replacement to preserve previously-cached forecast.",
+					loc.ID, loc.Latitude, loc.Longitude,
+					futureHours, minForecastHoursForCacheReplacement,
+				)
+			} else {
+				// Atomically replace the future-forecast cache (delete + save in
+				// a single transaction) to prevent destructive intermediate
+				// state on transient DB errors.
+				if err := s.weatherRepo.ReplaceFutureForLocation(ctx, loc.ID, forecast); err != nil {
+					log.Printf("ERROR: failed to atomically replace future weather data for location %d: %v", loc.ID, err)
+				} else {
+					log.Printf("Updated forecast weather for location %d (%d hours)", loc.ID, len(forecast))
+				}
+			}
 		}
 
 		if err := s.weatherRepo.UpsertDailyAggregates(ctx, loc.ID, aggregateStartDate, aggregateEndDate); err != nil {

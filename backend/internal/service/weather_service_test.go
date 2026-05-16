@@ -2,12 +2,17 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
 	"github.com/alexscott64/woulder/backend/internal/weather"
+	"github.com/alexscott64/woulder/backend/internal/weather/client"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -443,6 +448,15 @@ func TestWeatherService_GetLocationWeather_PersistsFreshData(t *testing.T) {
 			deleteFutureLocID = locationID
 			return nil
 		},
+		ReplaceFutureForLocationFn: func(ctx context.Context, locationID int, rows []models.WeatherData) error {
+			// New atomic path replaces the legacy delete+save loop. Treat
+			// invocation as the equivalent of a delete + N saves so the
+			// existing assertions below stay meaningful.
+			deleteFutureCalled = true
+			deleteFutureLocID = locationID
+			saveCount += len(rows)
+			return nil
+		},
 		SaveFn: func(ctx context.Context, data *models.WeatherData) error {
 			saveCount++
 			return nil
@@ -523,6 +537,11 @@ func TestWeatherService_GetLocationWeather_StaleCreatedAtTriggersRefresh(t *test
 			deleteFutureCalled = true
 			return nil
 		},
+		ReplaceFutureForLocationFn: func(ctx context.Context, locationID int, rows []models.WeatherData) error {
+			deleteFutureCalled = true
+			saveCount += len(rows)
+			return nil
+		},
 		SaveFn: func(ctx context.Context, data *models.WeatherData) error {
 			saveCount++
 			return nil
@@ -564,8 +583,9 @@ func TestWeatherService_GetLocationWeather_StaleCreatedAtTriggersRefresh(t *test
 
 	assert.NotNil(t, forecast)
 
-	// Verify the stale cache triggered a refresh with DB persistence
-	assert.True(t, deleteFutureCalled, "DeleteFutureForLocation must be called when CreatedAt is stale")
+	// Verify the stale cache triggered a refresh with DB persistence (now via
+	// the atomic ReplaceFutureForLocation path).
+	assert.True(t, deleteFutureCalled, "ReplaceFutureForLocation must be called when CreatedAt is stale")
 	assert.Greater(t, saveCount, 100, "Save should be called for fresh data persistence (got %d)", saveCount)
 }
 
@@ -622,6 +642,11 @@ func TestWeatherService_GetLocationWeather_FreshCacheDoesNotPersist(t *testing.T
 			deleteFutureCalled = true
 			return nil
 		},
+		ReplaceFutureForLocationFn: func(ctx context.Context, locationID int, rows []models.WeatherData) error {
+			deleteFutureCalled = true
+			saveCount += len(rows)
+			return nil
+		},
 		SaveFn: func(ctx context.Context, data *models.WeatherData) error {
 			saveCount++
 			return nil
@@ -663,7 +688,7 @@ func TestWeatherService_GetLocationWeather_FreshCacheDoesNotPersist(t *testing.T
 	assert.Equal(t, 2, forecast.LocationID)
 
 	// Fresh cache should NOT trigger any DB writes
-	assert.False(t, deleteFutureCalled, "DeleteFutureForLocation should NOT be called for fresh cache")
+	assert.False(t, deleteFutureCalled, "DeleteFutureForLocation/ReplaceFutureForLocation should NOT be called for fresh cache")
 	assert.Equal(t, 0, saveCount, "Save should NOT be called for fresh cache")
 }
 
@@ -713,6 +738,11 @@ func TestWeatherService_OfflineMode_DoesNotCallAPI(t *testing.T) {
 			},
 			DeleteFutureForLocationFn: func(ctx context.Context, locationID int) error {
 				deleteFutureCalled = true
+				return nil
+			},
+			ReplaceFutureForLocationFn: func(ctx context.Context, locationID int, rows []models.WeatherData) error {
+				deleteFutureCalled = true
+				saveCount += len(rows)
 				return nil
 			},
 			SaveFn: func(ctx context.Context, data *models.WeatherData) error {
@@ -814,4 +844,208 @@ func TestWeatherService_OfflineMode_DoesNotCallAPI(t *testing.T) {
 		assert.NoError(t, err)
 		assert.False(t, getAllCalled, "RefreshAllWeather should short-circuit in offline mode before touching repos")
 	})
+}
+
+// buildOpenMeteoResponse synthesizes a JSON-serializable map mimicking the
+// Open-Meteo /v1/forecast response shape. `hourCount` controls the number of
+// hourly entries; `futureHours` controls how many of those entries have
+// timestamps strictly after time.Now() (the rest are dated in the past so
+// the service-level future-only count matches `futureHours`). Used by the
+// truncated-response cache-preservation test below.
+func buildOpenMeteoResponse(hourCount, futureHours int) map[string]interface{} {
+	now := time.Now().UTC().Truncate(time.Hour)
+	hourlyTimes := make([]string, hourCount)
+	hourlyTemp := make([]float64, hourCount)
+	hourlyHum := make([]int, hourCount)
+	hourlyPrecip := make([]float64, hourCount)
+	hourlyRain := make([]float64, hourCount)
+	hourlySnow := make([]float64, hourCount)
+	hourlyCloud := make([]int, hourCount)
+	hourlyWind := make([]float64, hourCount)
+	hourlyWindDir := make([]int, hourCount)
+	hourlyCode := make([]int, hourCount)
+	hourlyApp := make([]float64, hourCount)
+	hourlyPress := make([]float64, hourCount)
+	hourlySW := make([]float64, hourCount)
+	hourlyDir := make([]float64, hourCount)
+	hourlyDiff := make([]float64, hourCount)
+	hourlyDew := make([]float64, hourCount)
+
+	pastHours := hourCount - futureHours
+	for i := 0; i < hourCount; i++ {
+		// First `pastHours` rows are dated in the past, rest are future.
+		offset := time.Duration(i-pastHours) * time.Hour
+		ts := now.Add(offset)
+		hourlyTimes[i] = ts.Format("2006-01-02T15:04")
+		hourlyTemp[i] = 50.0
+		hourlyHum[i] = 60
+		hourlyCloud[i] = 50
+		hourlyWind[i] = 5.0
+		hourlyWindDir[i] = 180
+		hourlyCode[i] = 1
+		hourlyApp[i] = 48.0
+		hourlyPress[i] = 1013.0
+	}
+
+	return map[string]interface{}{
+		"current": map[string]interface{}{
+			"time":                 now.Format("2006-01-02T15:04"),
+			"temperature_2m":       50.0,
+			"relative_humidity_2m": 60,
+			"precipitation":        0.0,
+			"rain":                 0.0,
+			"snowfall":             0.0,
+			"cloud_cover":          50,
+			"wind_speed_10m":       5.0,
+			"wind_direction_10m":   180,
+			"weather_code":         1,
+			"apparent_temperature": 48.0,
+			"surface_pressure":     1013.0,
+			"shortwave_radiation":  0.0,
+			"direct_radiation":     0.0,
+			"diffuse_radiation":    0.0,
+			"dew_point_2m":         40.0,
+		},
+		"hourly": map[string]interface{}{
+			"time":                 hourlyTimes,
+			"temperature_2m":       hourlyTemp,
+			"relative_humidity_2m": hourlyHum,
+			"precipitation":        hourlyPrecip,
+			"rain":                 hourlyRain,
+			"snowfall":             hourlySnow,
+			"cloud_cover":          hourlyCloud,
+			"wind_speed_10m":       hourlyWind,
+			"wind_direction_10m":   hourlyWindDir,
+			"weather_code":         hourlyCode,
+			"apparent_temperature": hourlyApp,
+			"surface_pressure":     hourlyPress,
+			"shortwave_radiation":  hourlySW,
+			"direct_radiation":     hourlyDir,
+			"diffuse_radiation":    hourlyDiff,
+			"dew_point_2m":         hourlyDew,
+		},
+		"daily": map[string]interface{}{
+			"time":    []string{now.Format("2006-01-02")},
+			"sunrise": []string{now.Format("2006-01-02") + "T07:00"},
+			"sunset":  []string{now.Format("2006-01-02") + "T19:00"},
+		},
+	}
+}
+
+// TestWeatherService_GetLocationWeather_TruncatedResponse_PreservesCache
+// is the regression test for the "truncated daily forecast" bug (Fix 1).
+//
+// Setup: an httptest server returns a syntactically valid Open-Meteo response
+// with only 100 hourly rows (well below the 336-hour threshold). The service
+// is configured with the standard repo mock that records all writes.
+//
+// Expected behavior:
+//   - The service must NOT call ReplaceFutureForLocation (atomic delete+save
+//     for forecast cache).
+//   - The service must NOT call DeleteFutureForLocation (legacy path).
+//   - Forecast saves (the per-hour Save loop) must NOT happen — the existing
+//     cache is preserved as-is.
+//   - The function returns without a hard error: a stale-cache result is
+//     better than a poisoned cache. (NB: the openmeteo client now rejects
+//     truncated responses upstream as an error — `current` will end up nil
+//     and the service falls through to error-return BEFORE reaching the
+//     guard. That still satisfies the cache-preservation contract: no
+//     destructive writes occur. We assert on the writes side-effect only.)
+func TestWeatherService_GetLocationWeather_TruncatedResponse_PreservesCache(t *testing.T) {
+	var (
+		replaceFutureCalled bool
+		deleteFutureCalled  bool
+		forecastSaveCount   int
+	)
+
+	// Stub Open-Meteo with a truncated 100-hour response.
+	resp := buildOpenMeteoResponse(100, 100) // 100 future hours, all future
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	restore := client.SetForecastBaseURLForTest(server.URL)
+	defer restore()
+
+	mockWeatherRepo := &MockWeatherRepository{
+		// Cache miss → forces the API-fetch / persist branch.
+		GetCurrentFn: func(ctx context.Context, locationID int) (*models.WeatherData, error) {
+			return nil, nil
+		},
+		GetHistoricalFn: func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error) {
+			return []models.WeatherData{}, nil
+		},
+		GetForecastFn: func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error) {
+			return []models.WeatherData{}, nil
+		},
+		DeleteFutureForLocationFn: func(ctx context.Context, locationID int) error {
+			deleteFutureCalled = true
+			return nil
+		},
+		ReplaceFutureForLocationFn: func(ctx context.Context, locationID int, rows []models.WeatherData) error {
+			replaceFutureCalled = true
+			return nil
+		},
+		SaveFn: func(ctx context.Context, data *models.WeatherData) error {
+			// The "current" observation Save can still happen (it's a single
+			// row, not the multi-day forecast). Track only forecast-shaped
+			// saves — those are the ones that would poison the cache.
+			// We approximate "forecast save" as any Save not for the "current"
+			// row by matching on a non-zero precipitation/temperature pattern;
+			// since this test never reaches the forecast-save loop with the
+			// truncation guard in place, we just count all saves and assert
+			// the count is small (<=1, the current row).
+			forecastSaveCount++
+			return nil
+		},
+	}
+
+	mockLocationsRepo := &MockLocationsRepository{
+		GetByIDFn: func(ctx context.Context, id int) (*models.Location, error) {
+			return &models.Location{
+				ID: id, Name: "Trunc Test", Latitude: 47.0, Longitude: -121.0,
+			}, nil
+		},
+	}
+
+	mockRocksRepo := &MockRocksRepository{
+		GetRockTypesByLocationFn: func(ctx context.Context, locationID int) ([]models.RockType, error) {
+			return []models.RockType{
+				{ID: 1, Name: "Granite", BaseDryingHours: 4.0, PorosityPercent: 1.0},
+			}, nil
+		},
+		GetSunExposureByLocationFn: func(ctx context.Context, locationID int) (*models.LocationSunExposure, error) {
+			return &models.LocationSunExposure{LocationID: locationID, SouthFacingPercent: 50}, nil
+		},
+	}
+
+	weatherClient := weather.NewWeatherService("test_api_key")
+	service := NewWeatherService(mockWeatherRepo, mockLocationsRepo, mockRocksRepo, weatherClient, nil)
+
+	_, err := service.GetLocationWeather(context.Background(), 42)
+
+	// PRIMARY ASSERTIONS — the cache-preservation contract:
+	// (a) ReplaceFutureForLocation NOT called (no atomic cache replacement)
+	// (b) DeleteFutureForLocation NOT called (no destructive purge)
+	// (c) Forecast-shaped Save loop NOT called (no per-hour saves of the
+	//     truncated stub). We allow at most 1 Save (the standalone "current"
+	//     row in the service-level guard's degraded path). With Fix 3 in
+	//     place, the client rejects the response before parse, so the
+	//     service short-circuits with an error and Save is never called at
+	//     all (count=0). Either branch is acceptable.
+	assert.False(t, replaceFutureCalled, "ReplaceFutureForLocation must NOT be called on truncated upstream response")
+	assert.False(t, deleteFutureCalled, "DeleteFutureForLocation must NOT be called on truncated upstream response")
+	assert.LessOrEqual(t, forecastSaveCount, 1,
+		"At most 1 Save (the standalone current row) is allowed on truncated response; got %d. "+
+			"Saving the truncated forecast would poison the cache.", forecastSaveCount)
+
+	// We don't assert err==nil: with Fix 3 the client now returns an error
+	// for truncated responses, which the service propagates. Both outcomes
+	// (err==nil with cache preserved, or err!=nil with cache preserved) are
+	// equivalent for the bug we're fixing — the cache is what matters.
+	_ = err
+	_ = fmt.Sprintf // keep fmt import used if asserts are tightened later
 }

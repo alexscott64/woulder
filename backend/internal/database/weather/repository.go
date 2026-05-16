@@ -48,6 +48,19 @@ type Repository interface {
 	// preventing stale data from persisting when timestamps don't exactly match.
 	DeleteFutureForLocation(ctx context.Context, locationID int) error
 
+	// ReplaceFutureForLocation atomically deletes all future forecast rows for
+	// the given location and inserts the supplied rows in a single transaction.
+	// If the implementation backs onto a non-transactional connection, it will
+	// fall back to sequential delete+save (best-effort).
+	//
+	// This is the preferred entry point for cache replacement in the weather
+	// refresh hot path: it prevents the destructive intermediate state where
+	// the cache has been purged but a truncated upstream response leaves the
+	// table effectively empty (root cause of the "truncated daily forecast"
+	// bug). Callers are still responsible for validating the response length
+	// BEFORE invoking this method — see WeatherService for the threshold.
+	ReplaceFutureForLocation(ctx context.Context, locationID int, rows []models.WeatherData) error
+
 	// UpsertDailyAggregates upserts daily weather rollups for a location and date range.
 	// startDate and endDate are inclusive date boundaries in YYYY-MM-DD format.
 	UpsertDailyAggregates(ctx context.Context, locationID int, startDate, endDate string) error

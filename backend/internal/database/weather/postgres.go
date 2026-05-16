@@ -145,6 +145,61 @@ func (r *PostgresRepository) DeleteFutureForLocation(ctx context.Context, locati
 	return err
 }
 
+// ReplaceFutureForLocation atomically replaces future forecast rows for a
+// location: it deletes ALL current future rows and inserts the supplied rows
+// in a single transaction. Either all changes commit, or none do — eliminating
+// the destructive intermediate state where the cache was purged but a fresh
+// (potentially truncated) save did not complete.
+//
+// When the underlying DBConn is a *sql.DB this opens a real transaction.
+// When it is already a *sql.Tx (i.e. caller is composing into a larger
+// transaction) we run the operations inline on that tx. As a safety fallback
+// for any other DBConn implementation (mocks, etc.), we run the operations
+// sequentially without a transaction — callers in the hot path always use
+// *sql.DB in production.
+//
+// Note: locationID is also stamped onto each row before save, so callers can
+// pass rows fresh from the API client without pre-setting LocationID.
+func (r *PostgresRepository) ReplaceFutureForLocation(ctx context.Context, locationID int, rows []models.WeatherData) error {
+	exec := func(conn DBConn) error {
+		if _, err := conn.ExecContext(ctx, queryDeleteFutureForLocation, locationID); err != nil {
+			return err
+		}
+		for i := range rows {
+			rows[i].LocationID = locationID
+			d := &rows[i]
+			if _, err := conn.ExecContext(ctx, querySave,
+				d.LocationID, d.Timestamp, d.Temperature, d.FeelsLike,
+				d.Precipitation, d.Humidity, d.WindSpeed, d.WindDirection,
+				d.CloudCover, d.Pressure, d.Description, d.Icon,
+				d.ShortwaveRadiation, d.DirectRadiation, d.DiffuseRadiation, d.DewpointF,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	switch conn := r.db.(type) {
+	case *sql.DB:
+		tx, err := conn.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if err := exec(tx); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		return tx.Commit()
+	case *sql.Tx:
+		// Already in a transaction — run inline.
+		return exec(conn)
+	default:
+		// Fallback (e.g. test mocks): no transaction available.
+		return exec(r.db)
+	}
+}
+
 // UpsertDailyAggregates upserts daily weather rollups for a location/date range.
 func (r *PostgresRepository) UpsertDailyAggregates(ctx context.Context, locationID int, startDate, endDate string) error {
 	_, err := r.db.ExecContext(ctx, queryUpsertDailyAggregates, locationID, startDate, endDate)

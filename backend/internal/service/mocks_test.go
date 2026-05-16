@@ -25,15 +25,16 @@ import (
 
 // MockWeatherRepository implements weather.Repository
 type MockWeatherRepository struct {
-	SaveFn                    func(ctx context.Context, data *models.WeatherData) error
-	GetHistoricalFn           func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error)
-	GetForecastFn             func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error)
-	GetCurrentFn              func(ctx context.Context, locationID int) (*models.WeatherData, error)
-	CleanOldFn                func(ctx context.Context, daysToKeep int) error
-	DeleteOldForLocationFn    func(ctx context.Context, locationID int, daysToKeep int) error
-	DeleteFutureForLocationFn func(ctx context.Context, locationID int) error
-	UpsertDailyAggregatesFn   func(ctx context.Context, locationID int, startDate, endDate string) error
-	GetDailyAggregatesFn      func(ctx context.Context, locationID int, startDate, endDate string) ([]models.WeatherDailyAggregate, error)
+	SaveFn                     func(ctx context.Context, data *models.WeatherData) error
+	GetHistoricalFn            func(ctx context.Context, locationID int, days int) ([]models.WeatherData, error)
+	GetForecastFn              func(ctx context.Context, locationID int, hours int) ([]models.WeatherData, error)
+	GetCurrentFn               func(ctx context.Context, locationID int) (*models.WeatherData, error)
+	CleanOldFn                 func(ctx context.Context, daysToKeep int) error
+	DeleteOldForLocationFn     func(ctx context.Context, locationID int, daysToKeep int) error
+	DeleteFutureForLocationFn  func(ctx context.Context, locationID int) error
+	ReplaceFutureForLocationFn func(ctx context.Context, locationID int, rows []models.WeatherData) error
+	UpsertDailyAggregatesFn    func(ctx context.Context, locationID int, startDate, endDate string) error
+	GetDailyAggregatesFn       func(ctx context.Context, locationID int, startDate, endDate string) ([]models.WeatherDailyAggregate, error)
 }
 
 func (m *MockWeatherRepository) Save(ctx context.Context, data *models.WeatherData) error {
@@ -81,6 +82,13 @@ func (m *MockWeatherRepository) DeleteOldForLocation(ctx context.Context, locati
 func (m *MockWeatherRepository) DeleteFutureForLocation(ctx context.Context, locationID int) error {
 	if m.DeleteFutureForLocationFn != nil {
 		return m.DeleteFutureForLocationFn(ctx, locationID)
+	}
+	return nil
+}
+
+func (m *MockWeatherRepository) ReplaceFutureForLocation(ctx context.Context, locationID int, rows []models.WeatherData) error {
+	if m.ReplaceFutureForLocationFn != nil {
+		return m.ReplaceFutureForLocationFn(ctx, locationID, rows)
 	}
 	return nil
 }

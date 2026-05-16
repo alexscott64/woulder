@@ -32,6 +32,16 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/weather/client"
 )
 
+// minForecastHoursForCacheReplacement is the minimum number of FUTURE hourly
+// forecast rows that an Open-Meteo response must contain before we destroy and
+// replace the existing cache for a location.
+//
+// IMPORTANT: this constant is duplicated in
+// `internal/service/weather_service.go` (kept in sync manually). If you change
+// one, change the other. See that file for full background on the truncated-
+// forecast bug this guard prevents.
+const minForecastHoursForCacheReplacement = 14 * 24 // 336 hours = 14 days
+
 // LocationInfo holds the lat/lon of a single location.
 type LocationInfo struct {
 	ID        int
@@ -185,28 +195,48 @@ func syncLocation(ctx context.Context, repo *weatherRepo.PostgresRepository, om 
 		return 0, errors.New("open-meteo returned nil current weather")
 	}
 
-	// Purge stale future forecasts before saving fresh data — matches what
-	// the server's WeatherService.RefreshAllWeather does.
-	if err := repo.DeleteFutureForLocation(ctx, loc.ID); err != nil {
-		log.Printf("    Warning: failed to purge stale future forecasts for location %d: %v", loc.ID, err)
+	// FIX: Validate response length BEFORE replacing the cache.
+	// Open-Meteo intermittently returns short hourly arrays (HTTP 200, no
+	// error) which would otherwise poison the cache. Count future-only rows
+	// (the slice may include past spin-up rows from past_hours=12 in
+	// GetCurrentAndForecast) and only replace the cache if long enough.
+	now := time.Now().UTC()
+	futureHours := 0
+	for i := range forecast {
+		if forecast[i].Timestamp.After(now) {
+			futureHours++
+		}
 	}
 
 	rowsSaved := 0
 	current.LocationID = loc.ID
+
+	if futureHours < minForecastHoursForCacheReplacement {
+		log.Printf(
+			"    WARN: Open-Meteo returned truncated forecast for location %d (lat=%.5f lon=%.5f): future_hours=%d, threshold=%d. "+
+				"Skipping cache replacement to preserve previously-cached forecast; saving current observation only.",
+			loc.ID, loc.Latitude, loc.Longitude,
+			futureHours, minForecastHoursForCacheReplacement,
+		)
+		// Save just the current observation row — it's safe and useful.
+		if err := repo.Save(ctx, current); err != nil {
+			return rowsSaved, fmt.Errorf("save current (truncated forecast path): %w", err)
+		}
+		rowsSaved++
+		return rowsSaved, nil
+	}
+
+	// Atomically replace the future-forecast cache (delete + save in a single
+	// transaction) — matches the server's getLocationWeatherWithOptions path.
+	if err := repo.ReplaceFutureForLocation(ctx, loc.ID, forecast); err != nil {
+		return rowsSaved, fmt.Errorf("replace future forecast: %w", err)
+	}
+	rowsSaved += len(forecast)
+
 	if err := repo.Save(ctx, current); err != nil {
 		return rowsSaved, fmt.Errorf("save current: %w", err)
 	}
 	rowsSaved++
-
-	for i := range forecast {
-		forecast[i].LocationID = loc.ID
-		if err := repo.Save(ctx, &forecast[i]); err != nil {
-			// Don't abort the whole location for one bad row — log and continue.
-			log.Printf("    Warning: failed to save forecast hour %d: %v", i, err)
-			continue
-		}
-		rowsSaved++
-	}
 
 	return rowsSaved, nil
 }

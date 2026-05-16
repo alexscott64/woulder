@@ -11,12 +11,32 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
 
-const (
+// openMeteoForecastURL / openMeteoHistoricalURL are vars (not consts) so tests
+// can point them at httptest servers without exporting an injection seam. They
+// are not modified at runtime in production code paths.
+var (
 	openMeteoForecastURL   = "https://api.open-meteo.com/v1/forecast"
 	openMeteoHistoricalURL = "https://api.open-meteo.com/v1/archive"
-	maxRetries             = 3
-	initialRetryDelay      = 1 * time.Second
 )
+
+const (
+	maxRetries        = 3
+	initialRetryDelay = 1 * time.Second
+
+	// expectedMinForecastHours is the lower bound for `hourly.time` length on
+	// the GetCurrentAndForecast endpoint (which requests
+	// forecast_days=16&past_hours=12 ≈ 396 hours). We tolerate ~60 hours of
+	// upstream slack and only reject responses with fewer than 14 days × 24h
+	// of data — this matches the service-layer threshold and addresses the
+	// observed bug where Open-Meteo intermittently returned 69-359 hours.
+	expectedMinForecastHours = 14 * 24 // 336 hours
+)
+
+// errOpenMeteoTruncated is returned by the client (and recognized by the retry
+// loop) when Open-Meteo responds with HTTP 200 but a hourly array shorter than
+// expectedMinForecastHours. Using a sentinel-style prefix lets retryableGet
+// classify the error without coupling to fmt.Errorf-wrapped formatting.
+const truncatedResponseErrPrefix = "open-meteo response truncated"
 
 // OpenMeteoClient handles API calls to Open-Meteo
 type OpenMeteoClient struct {
@@ -92,6 +112,17 @@ func NewOpenMeteoClient() *OpenMeteoClient {
 	}
 }
 
+// SetForecastBaseURLForTest overrides the base Open-Meteo forecast URL used by
+// all OpenMeteoClient instances created in this process. It returns a restore
+// function the test should defer to put the original URL back. This is the
+// single supported test seam for redirecting clients at httptest servers; it
+// is not safe for concurrent use across parallel tests.
+func SetForecastBaseURLForTest(url string) (restore func()) {
+	original := openMeteoForecastURL
+	openMeteoForecastURL = url
+	return func() { openMeteoForecastURL = original }
+}
+
 // retryableGet performs an HTTP GET with retry logic for rate limiting and transient errors
 func (c *OpenMeteoClient) retryableGet(url string) (*http.Response, error) {
 	var lastErr error
@@ -133,6 +164,19 @@ func (c *OpenMeteoClient) retryableGet(url string) (*http.Response, error) {
 	}
 
 	return nil, fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
+}
+
+// isRetryableTruncationErr reports whether an error from a higher-level
+// fetch call (e.g. GetCurrentAndForecast) represents a truncated upstream
+// response that is worth retrying once. This is checked at the public API
+// method level rather than inside retryableGet because truncation is a
+// JSON-payload condition, not an HTTP-status one.
+func isRetryableTruncationErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return len(s) >= len(truncatedResponseErrPrefix) && s[:len(truncatedResponseErrPrefix)] == truncatedResponseErrPrefix
 }
 
 // parseTimestampUTC parses a timestamp string and returns it as UTC.
@@ -257,7 +301,25 @@ func (c *OpenMeteoClient) GetCurrentWeather(lat, lon float64) (*models.WeatherDa
 // GetCurrentAndForecast fetches both current weather and forecast in a single API call.
 // Uses default Open-Meteo model with timezone=UTC for consistent timestamp handling.
 // Daily sunrise/sunset is also returned in UTC and converted to RFC3339 for proper frontend display.
+//
+// On a truncated upstream response (see expectedMinForecastHours), the call is
+// retried once with a short backoff. After one failed retry the truncation
+// error is returned to the caller, which in the service layer triggers the
+// length-validation guard and preserves the existing cache.
 func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.WeatherData, []models.WeatherData, *SunTimes, error) {
+	current, forecast, sunTimes, err := c.getCurrentAndForecastOnce(lat, lon)
+	if err != nil && isRetryableTruncationErr(err) {
+		log.Printf("Open-Meteo returned truncated forecast for (%.5f,%.5f); retrying once: %v", lat, lon, err)
+		time.Sleep(initialRetryDelay)
+		current, forecast, sunTimes, err = c.getCurrentAndForecastOnce(lat, lon)
+	}
+	return current, forecast, sunTimes, err
+}
+
+// getCurrentAndForecastOnce performs a single Open-Meteo fetch and parse.
+// It is the workhorse called by GetCurrentAndForecast (which adds one-shot
+// retry on truncated responses).
+func (c *OpenMeteoClient) getCurrentAndForecastOnce(lat, lon float64) (*models.WeatherData, []models.WeatherData, *SunTimes, error) {
 	// All data (hourly, current, daily) uses timezone=UTC for consistent timestamp handling.
 	// Sunrise/sunset timestamps are converted to RFC3339 with Z suffix so the frontend
 	// can correctly interpret them as UTC and display in the user's local timezone.
@@ -286,6 +348,17 @@ func (c *OpenMeteoClient) GetCurrentAndForecast(lat, lon float64) (*models.Weath
 
 	if len(data.Hourly.Time) == 0 {
 		return nil, nil, nil, fmt.Errorf("no hourly data returned from Open-Meteo")
+	}
+
+	// FIX: Open-Meteo intermittently returns HTTP 200 with a truncated hourly
+	// array (observed: 69-359 hours instead of the expected ~396). Reject
+	// short responses here so the caller can preserve its existing cache
+	// rather than overwriting it with a stub. The error prefix is used by
+	// isRetryableTruncationErr() / GetCurrentAndForecastWithRetry() to drive
+	// at most one extra attempt.
+	if len(data.Hourly.Time) < expectedMinForecastHours {
+		return nil, nil, nil, fmt.Errorf("%s: got %d hours, expected at least %d",
+			truncatedResponseErrPrefix, len(data.Hourly.Time), expectedMinForecastHours)
 	}
 
 	precipitation := data.Hourly.Precipitation
