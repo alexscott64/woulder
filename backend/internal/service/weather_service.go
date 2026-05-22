@@ -209,6 +209,28 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 				}
 			}
 
+			// FIX (outage 2026-05-22): Detach the cache-persist block from the
+			// request context. Open-Meteo can take 30–60s with retries on 429
+			// throttle responses; by the time we get a fresh payload, the gin
+			// request context is often already canceled (browser disconnected,
+			// upstream timeout, etc.). Using the request ctx for the DB save
+			// then aborts both the ReplaceFutureForLocation transaction AND
+			// the current-row Save with "context canceled", silently dropping
+			// the fresh data we just spent 30+s fetching. Result: the cache
+			// for hot locations never persists, every subsequent request
+			// re-runs the slow upstream path, and the user sees an effectively
+			// infinite "Loading weather data..." spinner.
+			//
+			// context.WithoutCancel preserves any values on the request ctx
+			// (logging/tracing) but severs the cancellation signal. We add a
+			// generous timeout so a hung DB connection still can't pin a
+			// goroutine forever.
+			saveCtx, cancelSave := context.WithTimeout(
+				context.WithoutCancel(ctx),
+				30*time.Second,
+			)
+			defer cancelSave()
+
 			if futureHours < minForecastHoursForCacheReplacement {
 				log.Printf(
 					"WARN: Open-Meteo returned truncated forecast for location %d (lat=%.5f lon=%.5f): future_hours=%d, threshold=%d. "+
@@ -219,7 +241,7 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 				// Save just the current observation row (it's a single point;
 				// no risk of poisoning the multi-day forecast). The next
 				// refresh cycle will retry the forecast.
-				if err := s.weatherRepo.Save(ctx, current); err != nil {
+				if err := s.weatherRepo.Save(saveCtx, current); err != nil {
 					log.Printf("Warning: failed to save current weather for location %d: %v", locationID, err)
 				}
 			} else {
@@ -227,13 +249,23 @@ func (s *WeatherService) getLocationWeatherWithOptions(ctx context.Context, loca
 				// rows AND insert new ones in a single transaction. Either the
 				// cache is fully refreshed or it is left untouched — no destructive
 				// intermediate state.
-				if err := s.weatherRepo.ReplaceFutureForLocation(ctx, locationID, hourlyForecast); err != nil {
-					log.Printf("Warning: failed to atomically replace future forecasts for location %d: %v", locationID, err)
+				replaceErr := s.weatherRepo.ReplaceFutureForLocation(saveCtx, locationID, hourlyForecast)
+				if replaceErr != nil {
+					log.Printf("Warning: failed to atomically replace future forecasts for location %d: %v", locationID, replaceErr)
 				}
-				if err := s.weatherRepo.Save(ctx, current); err != nil {
-					log.Printf("Warning: failed to save current weather for location %d: %v", locationID, err)
+				saveErr := s.weatherRepo.Save(saveCtx, current)
+				if saveErr != nil {
+					log.Printf("Warning: failed to save current weather for location %d: %v", locationID, saveErr)
 				}
-				log.Printf("Persisted fresh weather data for location %d (%d hours, %d future)", locationID, len(hourlyForecast), futureHours)
+				// Only claim success when BOTH writes actually committed.
+				// Previous version logged unconditionally, which made the
+				// "context canceled" silent-drop bug invisible in the logs.
+				if replaceErr == nil && saveErr == nil {
+					log.Printf("Persisted fresh weather data for location %d (%d hours, %d future)", locationID, len(hourlyForecast), futureHours)
+				} else {
+					log.Printf("DID NOT persist fresh weather data for location %d (%d hours, %d future): replace_err=%v save_err=%v",
+						locationID, len(hourlyForecast), futureHours, replaceErr, saveErr)
+				}
 			}
 		}
 	}

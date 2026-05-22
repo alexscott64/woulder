@@ -3,10 +3,25 @@ package weather
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 
 	"github.com/alexscott64/woulder/backend/internal/database/dberrors"
 	"github.com/alexscott64/woulder/backend/internal/models"
 )
+
+// weatherDataColumnCount is the number of columns inserted per row by
+// bulkInsertForecast. Must stay in sync with the column list in
+// buildBulkInsertQuery and with querySave.
+const weatherDataColumnCount = 16
+
+// maxBulkInsertRows caps the number of rows in a single bulk INSERT.
+// PostgreSQL allows up to 65,535 bind parameters per statement (uint16);
+// at 16 params per row that's 4096 rows. We pick a comfortable margin
+// below that to leave room for query-planner overhead and to keep any one
+// transaction's WAL footprint bounded. The expected payload from Open-Meteo
+// is ~396 rows, so this only matters as a safety valve.
+const maxBulkInsertRows = 2000
 
 // PostgresRepository implements Repository using PostgreSQL.
 type PostgresRepository struct {
@@ -160,24 +175,30 @@ func (r *PostgresRepository) DeleteFutureForLocation(ctx context.Context, locati
 //
 // Note: locationID is also stamped onto each row before save, so callers can
 // pass rows fresh from the API client without pre-setting LocationID.
+//
+// PERFORMANCE: Previous implementation issued 1 DELETE + N (~384) single-row
+// INSERTs per call inside the transaction. Across ~34 locations on the
+// background refresh loop that produced ~13k statements per cycle, each one
+// a network round-trip to RDS, generating enough WAL churn to spike RDS
+// checkpoint lag into the multi-minute range. The current implementation
+// collapses the inserts into a single multi-row INSERT (chunked at
+// maxBulkInsertRows for safety against PostgreSQL's 65535-parameter limit),
+// reducing the per-location write to 1 DELETE + 1 INSERT (or a small handful
+// of INSERTs in the unlikely event of a >2000-row payload).
 func (r *PostgresRepository) ReplaceFutureForLocation(ctx context.Context, locationID int, rows []models.WeatherData) error {
+	// Stamp the location ID on every row up-front so the bulk-insert path
+	// can read the field uniformly. This also matches the previous
+	// behaviour where callers could pass rows fresh from the API client
+	// without pre-setting LocationID.
+	for i := range rows {
+		rows[i].LocationID = locationID
+	}
+
 	exec := func(conn DBConn) error {
 		if _, err := conn.ExecContext(ctx, queryDeleteFutureForLocation, locationID); err != nil {
 			return err
 		}
-		for i := range rows {
-			rows[i].LocationID = locationID
-			d := &rows[i]
-			if _, err := conn.ExecContext(ctx, querySave,
-				d.LocationID, d.Timestamp, d.Temperature, d.FeelsLike,
-				d.Precipitation, d.Humidity, d.WindSpeed, d.WindDirection,
-				d.CloudCover, d.Pressure, d.Description, d.Icon,
-				d.ShortwaveRadiation, d.DirectRadiation, d.DiffuseRadiation, d.DewpointF,
-			); err != nil {
-				return err
-			}
-		}
-		return nil
+		return bulkInsertForecast(ctx, conn, rows)
 	}
 
 	switch conn := r.db.(type) {
@@ -198,6 +219,84 @@ func (r *PostgresRepository) ReplaceFutureForLocation(ctx context.Context, locat
 		// Fallback (e.g. test mocks): no transaction available.
 		return exec(r.db)
 	}
+}
+
+// bulkInsertForecast inserts the supplied weather rows in chunks of
+// maxBulkInsertRows, each chunk as a single multi-row INSERT ... VALUES
+// statement. Uses the same ON CONFLICT(location_id, timestamp) DO UPDATE
+// behaviour as the single-row querySave, so re-inserting an existing
+// (location_id, timestamp) refreshes the row in place.
+//
+// No-op if rows is empty.
+func bulkInsertForecast(ctx context.Context, conn DBConn, rows []models.WeatherData) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	for start := 0; start < len(rows); start += maxBulkInsertRows {
+		end := start + maxBulkInsertRows
+		if end > len(rows) {
+			end = len(rows)
+		}
+		chunk := rows[start:end]
+		query, args := buildBulkInsertQuery(chunk)
+		if _, err := conn.ExecContext(ctx, query, args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// buildBulkInsertQuery constructs a single multi-row INSERT for the given
+// chunk of weather rows. Column list and ON CONFLICT clause mirror querySave
+// in queries.go so the cache-replacement path has identical upsert semantics
+// to the per-row Save path. The chunk MUST be non-empty.
+func buildBulkInsertQuery(chunk []models.WeatherData) (string, []interface{}) {
+	var b strings.Builder
+	b.WriteString(`INSERT INTO woulder.weather_data (
+		location_id, timestamp, temperature, feels_like, precipitation,
+		humidity, wind_speed, wind_direction, cloud_cover, pressure,
+		description, icon,
+		shortwave_radiation, direct_radiation, diffuse_radiation, dewpoint_f
+	) VALUES `)
+
+	args := make([]interface{}, 0, len(chunk)*weatherDataColumnCount)
+	for i, d := range chunk {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		base := i * weatherDataColumnCount
+		// $1..$16 for the first row, $17..$32 for the second, etc.
+		fmt.Fprintf(&b,
+			"($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d)",
+			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8,
+			base+9, base+10, base+11, base+12, base+13, base+14, base+15, base+16,
+		)
+		args = append(args,
+			d.LocationID, d.Timestamp, d.Temperature, d.FeelsLike,
+			d.Precipitation, d.Humidity, d.WindSpeed, d.WindDirection,
+			d.CloudCover, d.Pressure, d.Description, d.Icon,
+			d.ShortwaveRadiation, d.DirectRadiation, d.DiffuseRadiation, d.DewpointF,
+		)
+	}
+
+	b.WriteString(` ON CONFLICT(location_id, timestamp) DO UPDATE SET
+		temperature = EXCLUDED.temperature,
+		feels_like = EXCLUDED.feels_like,
+		precipitation = EXCLUDED.precipitation,
+		humidity = EXCLUDED.humidity,
+		wind_speed = EXCLUDED.wind_speed,
+		wind_direction = EXCLUDED.wind_direction,
+		cloud_cover = EXCLUDED.cloud_cover,
+		pressure = EXCLUDED.pressure,
+		description = EXCLUDED.description,
+		icon = EXCLUDED.icon,
+		shortwave_radiation = EXCLUDED.shortwave_radiation,
+		direct_radiation = EXCLUDED.direct_radiation,
+		diffuse_radiation = EXCLUDED.diffuse_radiation,
+		dewpoint_f = EXCLUDED.dewpoint_f,
+		created_at = CURRENT_TIMESTAMP`)
+
+	return b.String(), args
 }
 
 // UpsertDailyAggregates upserts daily weather rollups for a location/date range.

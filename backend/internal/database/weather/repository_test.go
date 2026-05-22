@@ -2,6 +2,8 @@ package weather_test
 
 import (
 	"context"
+	"database/sql/driver"
+	"regexp"
 	"testing"
 	"time"
 
@@ -377,6 +379,110 @@ func TestPostgresRepository_GetDailyAggregates(t *testing.T) {
 		if result[0].SunriseAt == nil || result[0].SunsetAt == nil {
 			t.Errorf("GetDailyAggregates() expected sunrise/sunset to be non-nil")
 		}
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// TestPostgresRepository_ReplaceFutureForLocation_BulkInsert is the regression
+// test for the outage-recovery fix: ReplaceFutureForLocation must issue a
+// single multi-row INSERT (per chunk) rather than N single-row INSERTs. The
+// previous N-statement implementation produced ~13k statements per background
+// refresh cycle, which spiked RDS checkpoint lag into the multi-minute range.
+//
+// What this test guards:
+//   - Exactly one DELETE statement is issued (purging future rows for the
+//     location).
+//   - Exactly one INSERT statement is issued for the supplied 3-row payload
+//     (i.e. it is NOT one INSERT per row).
+//   - All 3 * 16 = 48 bind parameters are passed in row-major order.
+//   - Everything runs inside a single transaction (BEGIN/COMMIT).
+func TestPostgresRepository_ReplaceFutureForLocation_BulkInsert(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now().UTC()
+	rows := []models.WeatherData{
+		{Timestamp: now.Add(1 * time.Hour), Temperature: 50.1, FeelsLike: 49.0, Precipitation: 0.0, Humidity: 70, WindSpeed: 5.0, WindDirection: 180, CloudCover: 40, Pressure: 1013, Description: "Clear", Icon: "01d"},
+		{Timestamp: now.Add(2 * time.Hour), Temperature: 51.2, FeelsLike: 50.1, Precipitation: 0.0, Humidity: 68, WindSpeed: 6.0, WindDirection: 190, CloudCover: 45, Pressure: 1012, Description: "Clear", Icon: "01d"},
+		{Timestamp: now.Add(3 * time.Hour), Temperature: 52.3, FeelsLike: 51.2, Precipitation: 0.0, Humidity: 65, WindSpeed: 7.0, WindDirection: 200, CloudCover: 50, Pressure: 1011, Description: "Clear", Icon: "02d"},
+	}
+
+	const locationID = 42
+
+	// Build the 48 expected args in row-major order. locationID must be
+	// stamped on every row by ReplaceFutureForLocation regardless of what
+	// the caller set on the input rows.
+	expectedArgs := make([]driver.Value, 0, len(rows)*16)
+	for _, d := range rows {
+		expectedArgs = append(expectedArgs,
+			locationID,
+			d.Timestamp,
+			d.Temperature,
+			d.FeelsLike,
+			d.Precipitation,
+			d.Humidity,
+			d.WindSpeed,
+			d.WindDirection,
+			d.CloudCover,
+			d.Pressure,
+			d.Description,
+			d.Icon,
+			d.ShortwaveRadiation,
+			d.DirectRadiation,
+			d.DiffuseRadiation,
+			d.DewpointF,
+		)
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM woulder.weather_data`)).
+		WithArgs(locationID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	// Match a single INSERT that contains both the column list AND three
+	// VALUES groups. If the implementation regresses to N single-row
+	// INSERTs, this expectation will fail because only the first INSERT
+	// will be matched and the next two will be unexpected.
+	mock.ExpectExec(`INSERT INTO woulder\.weather_data .*VALUES\s*\(\$1,.*\$16\),\s*\(\$17,.*\$32\),\s*\(\$33,.*\$48\)`).
+		WithArgs(expectedArgs...).
+		WillReturnResult(sqlmock.NewResult(0, int64(len(rows))))
+	mock.ExpectCommit()
+
+	repo := weather.NewPostgresRepository(db)
+	if err := repo.ReplaceFutureForLocation(context.Background(), locationID, rows); err != nil {
+		t.Fatalf("ReplaceFutureForLocation() error = %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// TestPostgresRepository_ReplaceFutureForLocation_EmptyRows verifies that
+// passing an empty forecast slice still issues the DELETE (we want to purge
+// future rows when Open-Meteo returned nothing) but does NOT attempt an
+// empty INSERT (which would produce malformed SQL like `VALUES `).
+func TestPostgresRepository_ReplaceFutureForLocation_EmptyRows(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM woulder.weather_data`)).
+		WithArgs(7).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	repo := weather.NewPostgresRepository(db)
+	if err := repo.ReplaceFutureForLocation(context.Background(), 7, nil); err != nil {
+		t.Fatalf("ReplaceFutureForLocation() error = %v", err)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
