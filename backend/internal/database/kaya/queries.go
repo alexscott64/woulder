@@ -4,6 +4,15 @@ package kaya
 
 // Users queries
 const (
+	// querySaveUser upserts a Kaya user.
+	//
+	// PERFORMANCE: The DO UPDATE branch is guarded by IS DISTINCT FROM so
+	// that re-scraping a user whose profile hasn't changed produces zero
+	// writes. kaya_users previously accumulated 21M+ updates against only
+	// ~8.6k rows (~2,457 updates per row), which was a major source of
+	// RDS WAL churn during the scheduled Kaya sync. updated_at only
+	// advances on a real content change because the WHERE clause skips
+	// the entire UPDATE branch when nothing differs.
 	querySaveUser = `
 		INSERT INTO woulder.kaya_users (
 			kaya_user_id, username, fname, lname, photo_url, bio,
@@ -25,6 +34,19 @@ const (
 			is_private = EXCLUDED.is_private,
 			is_premium = EXCLUDED.is_premium,
 			updated_at = NOW()
+		WHERE kaya_users.username                    IS DISTINCT FROM EXCLUDED.username
+		   OR kaya_users.fname                       IS DISTINCT FROM EXCLUDED.fname
+		   OR kaya_users.lname                       IS DISTINCT FROM EXCLUDED.lname
+		   OR kaya_users.photo_url                   IS DISTINCT FROM EXCLUDED.photo_url
+		   OR kaya_users.bio                         IS DISTINCT FROM EXCLUDED.bio
+		   OR kaya_users.height                      IS DISTINCT FROM EXCLUDED.height
+		   OR kaya_users.ape_index                   IS DISTINCT FROM EXCLUDED.ape_index
+		   OR kaya_users.limit_grade_bouldering_id   IS DISTINCT FROM EXCLUDED.limit_grade_bouldering_id
+		   OR kaya_users.limit_grade_bouldering_name IS DISTINCT FROM EXCLUDED.limit_grade_bouldering_name
+		   OR kaya_users.limit_grade_routes_id       IS DISTINCT FROM EXCLUDED.limit_grade_routes_id
+		   OR kaya_users.limit_grade_routes_name     IS DISTINCT FROM EXCLUDED.limit_grade_routes_name
+		   OR kaya_users.is_private                  IS DISTINCT FROM EXCLUDED.is_private
+		   OR kaya_users.is_premium                  IS DISTINCT FROM EXCLUDED.is_premium
 	`
 
 	queryGetUserByID = `
@@ -160,6 +182,17 @@ const (
 
 // Climbs queries
 const (
+	// querySaveClimb upserts a Kaya climb.
+	//
+	// PERFORMANCE: kaya_climbs accumulated 45M+ updates against ~84k live
+	// rows (~538 updates per row); this guard collapses the no-op case so
+	// only climbs whose content has actually changed produce heap/WAL
+	// writes. The COALESCE on woulder_location_id is preserved as before
+	// so we never blow away an existing matched location.
+	//
+	// We compare ascent_count too because the upstream payload includes
+	// it; if ascent counts are growing each scrape the row genuinely
+	// changes and we should still write.
 	querySaveClimb = `
 		INSERT INTO woulder.kaya_climbs (
 			kaya_climb_id, slug, name, grade_id, grade_name, grade_ordering,
@@ -197,6 +230,30 @@ const (
 			woulder_location_id = COALESCE(kaya_climbs.woulder_location_id, EXCLUDED.woulder_location_id),
 			last_synced_at = EXCLUDED.last_synced_at,
 			updated_at = NOW()
+		WHERE kaya_climbs.kaya_climb_id         IS DISTINCT FROM EXCLUDED.kaya_climb_id
+		   OR kaya_climbs.name                  IS DISTINCT FROM EXCLUDED.name
+		   OR kaya_climbs.grade_id              IS DISTINCT FROM EXCLUDED.grade_id
+		   OR kaya_climbs.grade_name            IS DISTINCT FROM EXCLUDED.grade_name
+		   OR kaya_climbs.grade_ordering        IS DISTINCT FROM EXCLUDED.grade_ordering
+		   OR kaya_climbs.grade_climb_type_id   IS DISTINCT FROM EXCLUDED.grade_climb_type_id
+		   OR kaya_climbs.climb_type_id         IS DISTINCT FROM EXCLUDED.climb_type_id
+		   OR kaya_climbs.climb_type_name       IS DISTINCT FROM EXCLUDED.climb_type_name
+		   OR kaya_climbs.rating                IS DISTINCT FROM EXCLUDED.rating
+		   OR kaya_climbs.ascent_count          IS DISTINCT FROM EXCLUDED.ascent_count
+		   OR kaya_climbs.kaya_destination_id   IS DISTINCT FROM EXCLUDED.kaya_destination_id
+		   OR kaya_climbs.kaya_destination_name IS DISTINCT FROM EXCLUDED.kaya_destination_name
+		   OR kaya_climbs.kaya_area_id          IS DISTINCT FROM EXCLUDED.kaya_area_id
+		   OR kaya_climbs.kaya_area_name        IS DISTINCT FROM EXCLUDED.kaya_area_name
+		   OR kaya_climbs.color_name            IS DISTINCT FROM EXCLUDED.color_name
+		   OR kaya_climbs.gym_name              IS DISTINCT FROM EXCLUDED.gym_name
+		   OR kaya_climbs.board_name            IS DISTINCT FROM EXCLUDED.board_name
+		   OR kaya_climbs.is_gb_moderated       IS DISTINCT FROM EXCLUDED.is_gb_moderated
+		   OR kaya_climbs.is_access_sensitive   IS DISTINCT FROM EXCLUDED.is_access_sensitive
+		   OR kaya_climbs.is_closed             IS DISTINCT FROM EXCLUDED.is_closed
+		   OR kaya_climbs.is_offensive          IS DISTINCT FROM EXCLUDED.is_offensive
+		   -- Only true when current is NULL and EXCLUDED is non-NULL
+		   -- (the SET uses COALESCE so an existing non-NULL is never overwritten).
+		   OR (kaya_climbs.woulder_location_id IS NULL AND EXCLUDED.woulder_location_id IS NOT NULL)
 	`
 
 	queryGetClimbBySlug = `
@@ -364,6 +421,13 @@ const (
 
 // Ascents queries
 const (
+	// querySaveAscent upserts a Kaya ascent.
+	//
+	// PERFORMANCE: kaya_ascents accumulated 20M+ updates against ~107k
+	// rows (~195 updates per row). Ascents are immutable from the
+	// climber's perspective once logged, so almost every re-upsert during
+	// a scrape is a no-op. IS DISTINCT FROM lets Postgres short-circuit
+	// the UPDATE branch entirely.
 	querySaveAscent = `
 		INSERT INTO woulder.kaya_ascents (
 			kaya_ascent_id, kaya_climb_slug, kaya_user_id, date, comment, rating,
@@ -381,6 +445,15 @@ const (
 			video_url = EXCLUDED.video_url,
 			video_thumb_url = EXCLUDED.video_thumb_url,
 			updated_at = NOW()
+		WHERE kaya_ascents.comment         IS DISTINCT FROM EXCLUDED.comment
+		   OR kaya_ascents.rating          IS DISTINCT FROM EXCLUDED.rating
+		   OR kaya_ascents.stiffness       IS DISTINCT FROM EXCLUDED.stiffness
+		   OR kaya_ascents.grade_id        IS DISTINCT FROM EXCLUDED.grade_id
+		   OR kaya_ascents.grade_name      IS DISTINCT FROM EXCLUDED.grade_name
+		   OR kaya_ascents.photo_url       IS DISTINCT FROM EXCLUDED.photo_url
+		   OR kaya_ascents.photo_thumb_url IS DISTINCT FROM EXCLUDED.photo_thumb_url
+		   OR kaya_ascents.video_url       IS DISTINCT FROM EXCLUDED.video_url
+		   OR kaya_ascents.video_thumb_url IS DISTINCT FROM EXCLUDED.video_thumb_url
 	`
 
 	queryGetAscentByID = `

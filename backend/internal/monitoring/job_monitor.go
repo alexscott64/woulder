@@ -431,42 +431,55 @@ func (r *ProgressReporter) GetProgress() (processed, succeeded, failed int) {
 	return r.processed, r.succeeded, r.failed
 }
 
-// SaveCheckpoint updates job metadata with checkpoint data
+// SaveCheckpoint updates job metadata with checkpoint data.
+//
+// PERFORMANCE: The previous implementation issued SELECT metadata + UPDATE
+// metadata = <entire blob>, which is a read-modify-write of the whole JSONB.
+// When jobs accumulated checkpoint state (e.g. completed-route ID arrays in
+// the multi-thousand range, ~120 KB metadata payloads), every save TOAST'd
+// the value and rewrote the entire TOAST chain plus all index entries on
+// job_executions. With per-state / per-batch checkpoints across several
+// concurrent long-running sync jobs this dominated RDS WAL volume and
+// pushed checkpoint write/sync time on the database into the multi-minute
+// range, which in turn forced user-request backends to flush their own
+// dirty buffers and inflated /api/* TTFB.
+//
+// The current implementation uses jsonb_set in a single round-trip UPDATE
+// to mutate only the `checkpoint` and `last_checkpoint_time` keys. It does
+// not pull the existing JSONB into the application, never re-serializes the
+// untouched fields, and (combined with the smaller checkpoint payloads now
+// produced by callers in climb_tracking_service.go) lets Postgres reliably
+// do HOT updates on small in-place tuples instead of full TOAST rewrites.
 func (m *JobMonitor) SaveCheckpoint(ctx context.Context, jobID int64, checkpoint map[string]interface{}) error {
-	// Get existing metadata
-	var metadataJSON []byte
-	query := `SELECT metadata FROM woulder.job_executions WHERE id = $1`
-	err := m.db.QueryRowContext(ctx, query, jobID).Scan(&metadataJSON)
+	checkpointJSON, err := json.Marshal(checkpoint)
 	if err != nil {
-		return fmt.Errorf("failed to get metadata: %w", err)
+		return fmt.Errorf("failed to marshal checkpoint: %w", err)
 	}
 
-	// Parse and merge
-	var metadata map[string]interface{}
-	if len(metadataJSON) > 0 {
-		if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
-			metadata = make(map[string]interface{})
-		}
-	} else {
-		metadata = make(map[string]interface{})
-	}
-
-	// Update checkpoint
-	metadata["checkpoint"] = checkpoint
-	metadata["last_checkpoint_time"] = time.Now().Format(time.RFC3339)
-
-	// Save back
-	updatedJSON, err := json.Marshal(metadata)
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
-	}
-
-	updateQuery := `
+	const updateQuery = `
 		UPDATE woulder.job_executions
-		SET metadata = $1, updated_at = NOW()
-		WHERE id = $2
+		SET metadata = jsonb_set(
+		        jsonb_set(
+		            COALESCE(metadata, '{}'::jsonb),
+		            '{checkpoint}',
+		            $1::jsonb,
+		            true
+		        ),
+		        '{last_checkpoint_time}',
+		        to_jsonb($2::text),
+		        true
+		    ),
+		    updated_at = NOW()
+		WHERE id = $3
 	`
-	_, err = m.db.ExecContext(ctx, updateQuery, updatedJSON, jobID)
+
+	_, err = m.db.ExecContext(
+		ctx,
+		updateQuery,
+		checkpointJSON,
+		time.Now().UTC().Format(time.RFC3339),
+		jobID,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to update checkpoint: %w", err)
 	}

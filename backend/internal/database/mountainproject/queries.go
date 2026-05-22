@@ -5,6 +5,17 @@ package mountainproject
 // querySaveArea inserts or updates a Mountain Project area.
 // Uses ON CONFLICT to handle upserts efficiently.
 // Indexes: mp_area_id UNIQUE
+//
+// PERFORMANCE: The DO UPDATE branch is guarded by IS DISTINCT FROM so that
+// re-scraping an area whose content has not changed produces zero heap
+// writes, zero WAL records, and zero index churn. The catalog is largely
+// static (areas only change when MP editors edit them), so the
+// overwhelming majority of upserts during background sync are no-ops; this
+// guard collapses ~millions of "rewrite an identical row" UPDATEs that
+// would otherwise dirty heap pages and inflate RDS checkpoint write/sync
+// time. last_synced_at is intentionally excluded from the comparison
+// because we want it to update only when the row actually changes; if
+// you need a "last seen" timestamp regardless, query the sync job log.
 const querySaveArea = `
 	INSERT INTO woulder.mp_areas (
 		mp_area_id, name, parent_mp_area_id, area_type, location_id,
@@ -19,6 +30,12 @@ const querySaveArea = `
 		latitude = EXCLUDED.latitude,
 		longitude = EXCLUDED.longitude,
 		last_synced_at = EXCLUDED.last_synced_at
+	WHERE mp_areas.name              IS DISTINCT FROM EXCLUDED.name
+	   OR mp_areas.parent_mp_area_id IS DISTINCT FROM EXCLUDED.parent_mp_area_id
+	   OR mp_areas.area_type         IS DISTINCT FROM EXCLUDED.area_type
+	   OR mp_areas.location_id       IS DISTINCT FROM EXCLUDED.location_id
+	   OR mp_areas.latitude          IS DISTINCT FROM EXCLUDED.latitude
+	   OR mp_areas.longitude         IS DISTINCT FROM EXCLUDED.longitude
 `
 
 // queryGetAreaByID retrieves a Mountain Project area by its MP area ID.
@@ -65,6 +82,15 @@ const queryGetAllStateConfigs = `
 // querySaveRoute inserts or updates a Mountain Project route.
 // Uses ON CONFLICT to handle upserts efficiently.
 // Indexes: mp_route_id UNIQUE
+//
+// PERFORMANCE: As with querySaveArea, the DO UPDATE branch is guarded so
+// that re-scraping an unchanged route produces zero writes. mp_routes was
+// previously the single largest source of UPDATEs in the database: 287k
+// live rows accumulated 84M+ UPDATEs (~293 updates per row), and only
+// ~25% of those were HOT, meaning ~63M index entries were being rewritten
+// for no functional benefit. The IS DISTINCT FROM guard short-circuits
+// the no-op case at the Postgres level (no tuple version, no WAL, no
+// index update).
 const querySaveRoute = `
 	INSERT INTO woulder.mp_routes (
 		mp_route_id, mp_area_id, name, route_type, rating, location_id,
@@ -80,6 +106,14 @@ const querySaveRoute = `
 		latitude = EXCLUDED.latitude,
 		longitude = EXCLUDED.longitude,
 		aspect = EXCLUDED.aspect
+	WHERE mp_routes.mp_area_id  IS DISTINCT FROM EXCLUDED.mp_area_id
+	   OR mp_routes.name        IS DISTINCT FROM EXCLUDED.name
+	   OR mp_routes.route_type  IS DISTINCT FROM EXCLUDED.route_type
+	   OR mp_routes.rating      IS DISTINCT FROM EXCLUDED.rating
+	   OR mp_routes.location_id IS DISTINCT FROM EXCLUDED.location_id
+	   OR mp_routes.latitude    IS DISTINCT FROM EXCLUDED.latitude
+	   OR mp_routes.longitude   IS DISTINCT FROM EXCLUDED.longitude
+	   OR mp_routes.aspect      IS DISTINCT FROM EXCLUDED.aspect
 `
 
 // queryGetRouteByID retrieves a Mountain Project route by its MP route ID.
@@ -155,6 +189,11 @@ const queryGetRouteIDsForArea = `
 
 // queryUpsertRoute inserts or updates a route with full update semantics.
 // Used by mountainprojectsync for compatibility.
+//
+// PERFORMANCE: See querySaveRoute. Same IS DISTINCT FROM guard, with the
+// added wrinkle that updated_at = NOW() in the SET list is fine because
+// the WHERE clause skips the entire UPDATE branch when nothing changed,
+// so updated_at only advances when there is a real content change.
 const queryUpsertRoute = `
 	INSERT INTO woulder.mp_routes (
 		mp_route_id, mp_area_id, location_id, name, route_type, rating,
@@ -170,6 +209,13 @@ const queryUpsertRoute = `
 		longitude = EXCLUDED.longitude,
 		aspect = EXCLUDED.aspect,
 		updated_at = NOW()
+	WHERE mp_routes.mp_area_id IS DISTINCT FROM EXCLUDED.mp_area_id
+	   OR mp_routes.name       IS DISTINCT FROM EXCLUDED.name
+	   OR mp_routes.route_type IS DISTINCT FROM EXCLUDED.route_type
+	   OR mp_routes.rating     IS DISTINCT FROM EXCLUDED.rating
+	   OR mp_routes.latitude   IS DISTINCT FROM EXCLUDED.latitude
+	   OR mp_routes.longitude  IS DISTINCT FROM EXCLUDED.longitude
+	   OR mp_routes.aspect     IS DISTINCT FROM EXCLUDED.aspect
 `
 
 // queryUpdateRouteDetails updates detailed route information fields.
@@ -220,6 +266,10 @@ const queryGetLastTickTimestamp = `
 // querySaveAreaComment inserts or updates an area comment.
 // Uses ON CONFLICT to handle upserts efficiently.
 // Indexes: mp_comment_id UNIQUE
+//
+// PERFORMANCE: IS DISTINCT FROM guard, same rationale as querySaveRoute.
+// Comments are immutable from MP's perspective in practice, so almost
+// every upsert during a re-scrape is a no-op.
 const querySaveAreaComment = `
 	INSERT INTO woulder.mp_comments (
 		mp_comment_id, comment_type, mp_area_id, mp_route_id,
@@ -232,11 +282,16 @@ const querySaveAreaComment = `
 		comment_text = EXCLUDED.comment_text,
 		commented_at = EXCLUDED.commented_at,
 		updated_at = CURRENT_TIMESTAMP
+	WHERE mp_comments.user_name    IS DISTINCT FROM EXCLUDED.user_name
+	   OR mp_comments.comment_text IS DISTINCT FROM EXCLUDED.comment_text
+	   OR mp_comments.commented_at IS DISTINCT FROM EXCLUDED.commented_at
 `
 
 // querySaveRouteComment inserts or updates a route comment.
 // Uses ON CONFLICT to handle upserts efficiently.
 // Indexes: mp_comment_id UNIQUE
+//
+// PERFORMANCE: See querySaveAreaComment.
 const querySaveRouteComment = `
 	INSERT INTO woulder.mp_comments (
 		mp_comment_id, comment_type, mp_area_id, mp_route_id,
@@ -249,6 +304,9 @@ const querySaveRouteComment = `
 		comment_text = EXCLUDED.comment_text,
 		commented_at = EXCLUDED.commented_at,
 		updated_at = CURRENT_TIMESTAMP
+	WHERE mp_comments.user_name    IS DISTINCT FROM EXCLUDED.user_name
+	   OR mp_comments.comment_text IS DISTINCT FROM EXCLUDED.comment_text
+	   OR mp_comments.commented_at IS DISTINCT FROM EXCLUDED.commented_at
 `
 
 // queryUpdateRouteCommentSyncTimestamp updates last_comment_sync_at for a route.
@@ -260,6 +318,10 @@ const queryUpdateRouteCommentSyncTimestamp = `
 
 // queryUpsertAreaComment inserts or updates an area comment with user_id support.
 // Used by mountainprojectsync for compatibility.
+//
+// PERFORMANCE: See querySaveAreaComment. user_id is included in the
+// comparison because it's part of the payload here (unlike the
+// querySave* variants which always pass NULL for user_id).
 const queryUpsertAreaComment = `
 	INSERT INTO woulder.mp_comments (
 		mp_comment_id, comment_type, mp_area_id, mp_route_id,
@@ -272,10 +334,16 @@ const queryUpsertAreaComment = `
 		comment_text = EXCLUDED.comment_text,
 		commented_at = EXCLUDED.commented_at,
 		updated_at = NOW()
+	WHERE mp_comments.user_name    IS DISTINCT FROM EXCLUDED.user_name
+	   OR mp_comments.user_id      IS DISTINCT FROM EXCLUDED.user_id
+	   OR mp_comments.comment_text IS DISTINCT FROM EXCLUDED.comment_text
+	   OR mp_comments.commented_at IS DISTINCT FROM EXCLUDED.commented_at
 `
 
 // queryUpsertRouteComment inserts or updates a route comment with user_id support.
 // Used by mountainprojectsync for compatibility.
+//
+// PERFORMANCE: See queryUpsertAreaComment.
 const queryUpsertRouteComment = `
 	INSERT INTO woulder.mp_comments (
 		mp_comment_id, comment_type, mp_area_id, mp_route_id,
@@ -288,6 +356,10 @@ const queryUpsertRouteComment = `
 		comment_text = EXCLUDED.comment_text,
 		commented_at = EXCLUDED.commented_at,
 		updated_at = NOW()
+	WHERE mp_comments.user_name    IS DISTINCT FROM EXCLUDED.user_name
+	   OR mp_comments.user_id      IS DISTINCT FROM EXCLUDED.user_id
+	   OR mp_comments.comment_text IS DISTINCT FROM EXCLUDED.comment_text
+	   OR mp_comments.commented_at IS DISTINCT FROM EXCLUDED.commented_at
 `
 
 // SyncRepository queries

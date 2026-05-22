@@ -717,7 +717,6 @@ func (s *ClimbTrackingService) SyncNewRoutesForAllStates(ctx context.Context) er
 	}
 
 	var startIndex int
-	var completedStates []string
 	var totalNewRoutes int
 	var resumingJob *monitoring.JobExecution
 
@@ -725,23 +724,26 @@ func (s *ClimbTrackingService) SyncNewRoutesForAllStates(ctx context.Context) er
 		log.Printf("Found interrupted job from %v, attempting to resume...", interrupted.StartedAt)
 		resumingJob = interrupted
 
-		// Extract checkpoint data
+		// Extract checkpoint data.
+		//
+		// Resume only requires the index (the cursor) and the running
+		// totals. We deliberately do not persist or read back a list of
+		// completed state names: the previous shape stored that list in
+		// metadata JSONB, which grew unboundedly across the run, TOAST'd
+		// the row, and caused every SaveCheckpoint to rewrite hundreds of
+		// kilobytes of WAL on job_executions. Since `current_state_index`
+		// already tells us exactly how many states are done (and which
+		// ones, by definition, since the order is fixed by
+		// GetAllStateConfigs), the array was redundant.
 		if checkpoint, ok := interrupted.Metadata["checkpoint"].(map[string]interface{}); ok {
 			if idx, ok := checkpoint["current_state_index"].(float64); ok {
 				startIndex = int(idx)
-			}
-			if states, ok := checkpoint["states_completed"].([]interface{}); ok {
-				for _, s := range states {
-					if str, ok := s.(string); ok {
-						completedStates = append(completedStates, str)
-					}
-				}
 			}
 			if routes, ok := checkpoint["total_new_routes"].(float64); ok {
 				totalNewRoutes = int(routes)
 			}
 			log.Printf("Resuming from state index %d (%d states already completed, %d routes found)",
-				startIndex, len(completedStates), totalNewRoutes)
+				startIndex, startIndex, totalNewRoutes)
 		} else {
 			log.Printf("DEBUG: No checkpoint data found in metadata, starting from beginning")
 		}
@@ -760,10 +762,10 @@ func (s *ClimbTrackingService) SyncNewRoutesForAllStates(ctx context.Context) er
 		jobExec = resumingJob
 		log.Printf("Continuing job execution ID %d", jobExec.ID)
 	} else {
-		// Create new job
+		// Create new job. The initial checkpoint is intentionally tiny
+		// (just the index/total) so we never seed a TOAST-able payload.
 		jobExec, err = s.jobMonitor.StartJob(ctx, "route_sync_all_states", "route_sync", len(states), map[string]interface{}{
 			"checkpoint": map[string]interface{}{
-				"states_completed":    []string{},
 				"current_state_index": 0,
 				"total_new_routes":    0,
 			},
@@ -774,7 +776,9 @@ func (s *ClimbTrackingService) SyncNewRoutesForAllStates(ctx context.Context) er
 		}
 	}
 
-	successCount := len(completedStates)
+	// successCount on resume = startIndex (each completed state advanced
+	// the index by 1). Avoids needing a persisted completedStates array.
+	successCount := startIndex
 	failCount := 0
 
 	// STEP 4: Process states starting from checkpoint
@@ -807,12 +811,13 @@ func (s *ClimbTrackingService) SyncNewRoutesForAllStates(ctx context.Context) er
 		}
 
 		successCount++
-		completedStates = append(completedStates, state.StateName)
 
-		// STEP 5: Save checkpoint after EVERY state (critical for Air hot-reload)
+		// STEP 5: Save checkpoint after EVERY state (critical for Air hot-reload).
+		// Payload is intentionally small (~5 keys, no arrays) so this UPDATE
+		// stays well under the TOAST threshold and gets HOT-updated in place.
+		// See job_monitor.SaveCheckpoint for the jsonb_set rationale.
 		if jobExec != nil {
 			checkpointData := map[string]interface{}{
-				"states_completed":    completedStates,
 				"current_state_index": i + 1,
 				"current_state_name":  state.StateName,
 				"total_new_routes":    totalNewRoutes,
@@ -1121,7 +1126,6 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 	interrupted, err := s.jobMonitor.GetInterruptedJob(ctx, jobName)
 
 	var startIndex int
-	var completedRoutes []string
 	var totalNewTicks int
 	var resumingJob *monitoring.JobExecution
 
@@ -1129,23 +1133,23 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 		log.Printf("Found interrupted tick sync job from %v, attempting to resume...", interrupted.StartedAt)
 		resumingJob = interrupted
 
-		// Extract checkpoint data
+		// Extract checkpoint data.
+		//
+		// As with SyncNewRoutesForAllStates, we no longer persist the list
+		// of completed route IDs in metadata JSONB. `current_route_index`
+		// is sufficient to resume since rateLimitedSync iterates routeIDs
+		// in stable order. Persisting the full list previously produced
+		// ~120 KB metadata bodies, which TOAST'd job_executions and was
+		// the dominant source of RDS WAL volume / checkpoint pressure.
 		if checkpoint, ok := interrupted.Metadata["checkpoint"].(map[string]interface{}); ok {
 			if idx, ok := checkpoint["current_route_index"].(float64); ok {
 				startIndex = int(idx)
-			}
-			if routes, ok := checkpoint["routes_completed"].([]interface{}); ok {
-				for _, r := range routes {
-					if str, ok := r.(string); ok {
-						completedRoutes = append(completedRoutes, str)
-					}
-				}
 			}
 			if ticks, ok := checkpoint["total_new_ticks"].(float64); ok {
 				totalNewTicks = int(ticks)
 			}
 			log.Printf("Resuming from route index %d (%d routes already completed, %d ticks found)",
-				startIndex, len(completedRoutes), totalNewTicks)
+				startIndex, startIndex, totalNewTicks)
 		} else {
 			log.Printf("No checkpoint data found in metadata, starting from beginning")
 		}
@@ -1160,7 +1164,6 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 		jobExec, err = s.jobMonitor.StartJob(ctx, jobName, "location_tick_sync", len(routeIDs), map[string]interface{}{
 			"type": "location_routes",
 			"checkpoint": map[string]interface{}{
-				"routes_completed":    []string{},
 				"current_route_index": 0,
 				"total_new_ticks":     0,
 			},
@@ -1304,12 +1307,16 @@ func (s *ClimbTrackingService) SyncLocationRouteTicks(ctx context.Context) error
 			newTickCount++
 		}
 		totalNewTicks += newTickCount
-		completedRoutes = append(completedRoutes, routeID)
 
-		// STEP 4: Save checkpoint every 50 routes
-		if jobExec != nil && (currentIndex+1)%50 == 0 {
+		// STEP 4: Save checkpoint every 250 routes (was 50). Each save is
+		// now a tiny jsonb_set UPDATE on a ~80-byte payload, but it still
+		// produces a WAL record per call and contends with foreground
+		// queries. Saving every 250 routes loses at most ~250 routes of
+		// progress on a crash (re-fetched from the cache on resume), in
+		// exchange for ~5x fewer job_executions writes during the largest
+		// scheduled sync.
+		if jobExec != nil && (currentIndex+1)%250 == 0 {
 			checkpointData := map[string]interface{}{
-				"routes_completed":    completedRoutes,
 				"current_route_index": currentIndex + 1,
 				"total_new_ticks":     totalNewTicks,
 				"routes_remaining":    len(routeIDs) - (currentIndex + 1),
