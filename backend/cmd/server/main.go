@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 
 	"github.com/alexscott64/woulder/backend/internal/api"
@@ -102,6 +103,11 @@ func main() {
 		AllowCredentials: cfg.Server.CORS.AllowCredentials,
 		MaxAge:           cfg.Server.CORS.MaxAge,
 	}))
+
+	// Enable gzip compression for all responses (after logger/recovery/CORS,
+	// before route registration). Clients without Accept-Encoding: gzip still
+	// receive uncompressed responses. Level 6 (DefaultCompression).
+	router.Use(gzip.Gzip(gzip.DefaultCompression))
 
 	// API routes
 	apiGroup := router.Group("/api")
