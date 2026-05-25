@@ -45,7 +45,7 @@ export function ClusterDetailDrawer({ areas, isOpen, onClose, onAreaClick, dateR
           endDate: dateRange.end,
           limit: 200,
         });
-        setSearchResults(response.routes);
+        setSearchResults(response.routes ?? []);
       } catch (error) {
         console.error('Failed to search routes:', error);
         setSearchResults([]);
@@ -69,7 +69,7 @@ export function ClusterDetailDrawer({ areas, isOpen, onClose, onAreaClick, dateR
     }
 
     // When searching, only show areas that have matching routes
-    const areasWithMatches = new Set(searchResults.map(r => r.mp_area_id));
+    const areasWithMatches = new Set((searchResults ?? []).map(r => r.mp_area_id));
     
     // Also include areas whose names match the search
     const query = searchQuery.toLowerCase();
@@ -83,7 +83,7 @@ export function ClusterDetailDrawer({ areas, isOpen, onClose, onAreaClick, dateR
   // Group routes by area
   const routesByArea = useMemo(() => {
     const map = new Map<number, RouteActivity[]>();
-    searchResults.forEach(route => {
+    (searchResults ?? []).forEach(route => {
       const routes = map.get(route.mp_area_id) || [];
       routes.push(route);
       map.set(route.mp_area_id, routes);
@@ -184,7 +184,7 @@ export function ClusterDetailDrawer({ areas, isOpen, onClose, onAreaClick, dateR
                     </p>
                   ) : (
                     <p className="text-xs text-gray-600 dark:text-gray-400">
-                      <span className="font-semibold">{filteredAreas.length}</span> areas, <span className="font-semibold">{searchResults.length}</span> routes match
+                      <span className="font-semibold">{filteredAreas.length}</span> areas, <span className="font-semibold">{(searchResults ?? []).length}</span> routes match
                     </p>
                   )}
                   <button
