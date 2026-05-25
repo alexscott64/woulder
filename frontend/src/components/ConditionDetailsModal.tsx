@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 
-import { ConditionLevel } from '../types/weather';
+import { ConditionLevel, RockTemperatureStatus } from '../types/weather';
+import { SendWindowDayView } from './weather/SendWindowDayView';
 
 interface ConditionDetailsModalProps {
   locationName: string;
@@ -8,6 +9,16 @@ interface ConditionDetailsModalProps {
   conditionLabel: string;
   reasons: string[];
   onClose: () => void;
+  /**
+   * Surface-temperature/friction status for the area. When provided
+   * alongside `targetDate`, a "Send Windows" section is rendered below
+   * the Contributing Factors list with a single-day Gantt strip + DayCard
+   * for that date. Reuses the same data source that powers the Rock Temp
+   * tab in `ConditionsModal`, so no extra API calls are made.
+   */
+  rockTempStatus?: RockTemperatureStatus;
+  /** Target day in local YYYY-MM-DD form (matches `DailyRockTemp.local_date`). */
+  targetDate?: string;
 }
 
 export function ConditionDetailsModal({
@@ -15,7 +26,9 @@ export function ConditionDetailsModal({
   conditionLevel,
   conditionLabel,
   reasons,
-  onClose
+  onClose,
+  rockTempStatus,
+  targetDate,
 }: ConditionDetailsModalProps) {
   const getBadgeColor = (level: ConditionLevel) => {
     switch (level) {
@@ -29,6 +42,11 @@ export function ConditionDetailsModal({
         return 'bg-red-200 text-red-900 dark:bg-red-900 dark:text-red-100 border-red-500 dark:border-red-600';
     }
   };
+
+  // Only show the Send Windows section if we have both a status source
+  // and a target date. The wrapper itself handles "no windows" gracefully
+  // via DayCard, so we don't need to pre-filter here.
+  const showSendWindows = !!rockTempStatus && !!targetDate;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50 p-4">
@@ -75,6 +93,18 @@ export function ConditionDetailsModal({
               ))}
             </ul>
           </div>
+
+          {/* Send Windows — single-day Gantt strip + DayCard for this day,
+              wired to the same surface-temperature/friction data that
+              powers the Rock Temp tab. */}
+          {showSendWindows && (
+            <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                Send Windows
+              </h4>
+              <SendWindowDayView status={rockTempStatus!} date={targetDate!} />
+            </div>
+          )}
 
           {/* Guidelines */}
           <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">

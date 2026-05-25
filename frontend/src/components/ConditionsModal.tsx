@@ -13,14 +13,11 @@ import {
   FRICTION_QUALITY_COLORS,
   FRICTION_QUALITY_LABELS,
   CONDENSATION_OVERLAY_CLASS,
-  formatWeekdayLong,
   formatTimeAxisLabel,
   computeWindowGanttPlacement,
-  formatSendWindowDetail,
-  formatCompactTimeRange,
-  formatCompactDuration,
 } from './weather/weatherDisplay';
-import type { DailyRockTemp, RockCondition, RockTempHour, SendWindow } from '../types/weather';
+import { SendWindowGanttRow, DayCard } from './weather/SendWindowDayView';
+import type { RockTempHour } from '../types/weather';
 
 /**
  * Stable section anchors inside the modal that callers can deep-link to.
@@ -714,27 +711,6 @@ interface RockTempTabContentProps {
   status: RockTemperatureStatus;
 }
 
-// Rank used to determine the "worst" / "best" condition over a set of
-// hourly samples. Lower index = better climbing. Kept here so the Gantt
-// row tooltip can summarize a day quickly without exporting another
-// helper.
-const ROCK_CONDITION_RANK: Record<RockCondition, number> = {
-  prime: 0,
-  good: 1,
-  marginal: 2,
-  too_cold: 3,
-  poor: 4,
-  very_poor: 5,
-};
-
-function rankWorst(a: RockCondition, b: RockCondition): RockCondition {
-  return ROCK_CONDITION_RANK[a] >= ROCK_CONDITION_RANK[b] ? a : b;
-}
-
-function rankBest(a: RockCondition, b: RockCondition): RockCondition {
-  return ROCK_CONDITION_RANK[a] <= ROCK_CONDITION_RANK[b] ? a : b;
-}
-
 function RockTempTabContent({ status: s }: RockTempTabContentProps) {
   const fmtTime = (iso: string) =>
     new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -956,103 +932,14 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
                   const p = computeWindowGanttPlacement(w, day.local_date);
                   return p.widthPercent > 0;
                 });
-                const summary = buildDaySummary(day, dayHours, windows);
                 return (
-                  <div key={day.local_date} className="flex items-center gap-2" title={summary}>
-                    <div
-                      data-testid="send-window-day-axis-label"
-                      className={`w-10 sm:w-12 flex-shrink-0 text-[10px] sm:text-xs ${
-                        isToday
-                          ? 'font-bold text-blue-600 dark:text-blue-300'
-                          : 'text-gray-600 dark:text-gray-400'
-                      }`}
-                    >
-                      {isToday ? 'Today' : formatWeekdayLong(day.local_date).slice(0, 3)}
-                    </div>
-                    <div
-                      className={`relative flex-1 h-3 sm:h-5 rounded overflow-hidden ${
-                        isToday
-                          ? 'bg-gray-200 dark:bg-gray-700 ring-1 ring-blue-400/40'
-                          : 'bg-gray-100 dark:bg-gray-800'
-                      }`}
-                    >
-                      {/* Layer 1: hourly heatmap (24 absolutely-positioned cells) */}
-                      {Array.from({ length: 24 }, (_, hour) => {
-                        const sample = pickHourSample(dayHours, hour);
-                        const left = (hour / 24) * 100;
-                        const width = (1 / 24) * 100;
-                        if (!sample) {
-                          // Fallback to daily summary condition if available;
-                          // otherwise render a striped "no data" cell.
-                          const fallback = day.overall_condition;
-                          if (fallback) {
-                            return (
-                              <span
-                                key={hour}
-                                className="absolute top-0 bottom-0 opacity-40"
-                                style={{
-                                  left: `${left}%`,
-                                  width: `${width}%`,
-                                  backgroundColor: ROCK_CONDITION_COLORS[fallback],
-                                }}
-                              />
-                            );
-                          }
-                          return (
-                            <span
-                              key={hour}
-                              className={`absolute top-0 bottom-0 bg-gray-300/40 dark:bg-gray-600/30 ${CONDENSATION_OVERLAY_CLASS}`}
-                              style={{ left: `${left}%`, width: `${width}%` }}
-                            />
-                          );
-                        }
-                        return (
-                          <span
-                            key={hour}
-                            className={`absolute top-0 bottom-0 ${sample.condensing ? CONDENSATION_OVERLAY_CLASS : ''}`}
-                            style={{
-                              left: `${left}%`,
-                              width: `${width}%`,
-                              backgroundColor: ROCK_CONDITION_COLORS[sample.condition],
-                            }}
-                          />
-                        );
-                      })}
-
-                      {/* 6h gridlines */}
-                      {[6, 12, 18].map((h) => (
-                        <span
-                          key={`grid-${h}`}
-                          className="absolute top-0 bottom-0 w-px bg-gray-700/30 dark:bg-gray-100/20"
-                          style={{ left: `${(h / 24) * 100}%` }}
-                          aria-hidden="true"
-                        />
-                      ))}
-
-                      {/* Layer 2: send-window outline overlays */}
-                      {windows.map((w, i) => {
-                        const { leftPercent, widthPercent } = computeWindowGanttPlacement(
-                          w,
-                          day.local_date,
-                        );
-                        const tip = `${formatSendWindowDetail(w)}${w.dry_throughout ? '' : ' (may be damp early)'}`;
-                        return (
-                          <div
-                            key={`win-${i}`}
-                            data-testid="send-window-bar"
-                            title={tip}
-                            className="absolute top-0 bottom-0 rounded-sm border-2 pointer-events-none"
-                            style={{
-                              left: `${leftPercent}%`,
-                              width: `${widthPercent}%`,
-                              borderColor: ROCK_CONDITION_COLORS[w.condition],
-                              backgroundColor: 'transparent',
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <SendWindowGanttRow
+                    key={day.local_date}
+                    day={day}
+                    hourlyForDay={dayHours}
+                    windowsForDay={windows}
+                    isToday={isToday}
+                  />
                 );
               })}
             </div>
@@ -1129,117 +1016,3 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
   );
 }
 
-/**
- * Pick the best hourly sample for a given local hour-of-day from
- * a day's hourly array (already filtered to that local date).
- * Linear scan — at most 24 entries.
- */
-function pickHourSample(dayHours: RockTempHour[], hour: number): RockTempHour | undefined {
-  for (const h of dayHours) {
-    const d = new Date(h.time);
-    if (d.getHours() === hour) return h;
-  }
-  return undefined;
-}
-
-/**
- * Build the row tooltip summarizing best/worst condition + windows.
- */
-function buildDaySummary(
-  day: DailyRockTemp,
-  hours: RockTempHour[],
-  windows: SendWindow[],
-): string {
-  let best: RockCondition | undefined;
-  let worst: RockCondition | undefined;
-  for (const h of hours) {
-    best = best ? rankBest(best, h.condition) : h.condition;
-    worst = worst ? rankWorst(worst, h.condition) : h.condition;
-  }
-  // Fall back to daily roll-up if hourly samples aren't available.
-  if (!best) best = day.peak_condition;
-  if (!worst) worst = day.overall_condition;
-
-  const parts: string[] = [];
-  parts.push(`${formatWeekdayLong(day.local_date)}`);
-  if (best && worst) {
-    parts.push(
-      best === worst
-        ? `${ROCK_CONDITION_LABELS[best]}`
-        : `${ROCK_CONDITION_LABELS[best]} → ${ROCK_CONDITION_LABELS[worst]}`,
-    );
-  }
-  if (windows.length === 0) {
-    parts.push('no send windows');
-  } else if (windows.length === 1) {
-    parts.push('1 send window');
-  } else {
-    parts.push(`${windows.length} send windows`);
-  }
-  return parts.join(' • ');
-}
-
-interface DayCardProps {
-  day: DailyRockTemp;
-  windows: SendWindow[];
-  isToday: boolean;
-}
-
-/**
- * Compact day card used in the responsive grid replacing the old
- * vertical "Details" list. Renders a header (weekday + overall
- * condition dot) and a stack of send windows with compact range +
- * duration + peak temp.
- */
-function DayCard({ day, windows, isToday }: DayCardProps) {
-  return (
-    <div
-      data-testid="send-window-daycard"
-      className={`rounded-md border border-gray-200 dark:border-gray-700 p-3 text-xs min-h-[80px] ${
-        isToday ? 'ring-2 ring-blue-400/50 bg-blue-50/40 dark:bg-blue-900/10' : 'bg-white dark:bg-gray-900/40'
-      }`}
-    >
-      <div className="flex items-center justify-between mb-1.5">
-        <span
-          className={`text-sm font-semibold truncate ${
-            isToday
-              ? 'text-blue-700 dark:text-blue-300'
-              : 'text-gray-700 dark:text-gray-300'
-          }`}
-        >
-          {isToday ? 'Today' : formatWeekdayLong(day.local_date).slice(0, 3)}
-        </span>
-        <span
-          className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
-          style={{ backgroundColor: ROCK_CONDITION_COLORS[day.overall_condition] }}
-          title={ROCK_CONDITION_LABELS[day.overall_condition]}
-        />
-      </div>
-      {windows.length === 0 ? (
-        <p className="text-[11px] text-gray-400 dark:text-gray-500 italic">no windows</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {windows.map((w, i) => (
-            <li key={i} className="leading-tight">
-              <div className="flex items-center gap-1.5">
-                <span
-                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: ROCK_CONDITION_COLORS[w.condition] }}
-                />
-                <span className="text-[13px] text-gray-700 dark:text-gray-300 truncate">
-                  {formatCompactTimeRange(w.start_time, w.end_time)}
-                  <span className="text-gray-400 dark:text-gray-500"> · </span>
-                  {formatCompactDuration(w.duration_h)}
-                </span>
-              </div>
-              <div className="text-[11px] text-gray-500 dark:text-gray-500 ml-3.5">
-                peak {Math.round(w.peak_temp_f)}°F
-                {!w.dry_throughout && <span className="ml-1">· damp early</span>}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}

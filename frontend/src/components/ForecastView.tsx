@@ -187,6 +187,9 @@ export function ForecastView({ locationId: _locationId, timezone, hourlyData, cu
     dayName: string;
     level: 'good' | 'marginal' | 'bad' | 'do_not_climb';
     reasons: string[];
+    // Local YYYY-MM-DD for the selected day, used to scope the Send
+    // Windows section in the details modal to that single day.
+    dateKey: string;
   } | null>(null);
 
   // State and ref for floating day label
@@ -623,7 +626,8 @@ export function ForecastView({ locationId: _locationId, timezone, hourlyData, cu
                     setSelectedDayCondition({
                       dayName: day.dayName,
                       level: day.condition,
-                      reasons: day.conditionReasons || []
+                      reasons: day.conditionReasons || [],
+                      dateKey: dayKey,
                     });
                     setShowConditionModal(true);
                   }}
@@ -900,6 +904,8 @@ export function ForecastView({ locationId: _locationId, timezone, hourlyData, cu
           conditionLevel={selectedDayCondition.level}
           conditionLabel={getConditionLabel(selectedDayCondition.level)}
           reasons={selectedDayCondition.reasons}
+          rockTempStatus={rockTempStatus}
+          targetDate={selectedDayCondition.dateKey}
           onClose={() => {
             setShowConditionModal(false);
             setSelectedDayCondition(null);
