@@ -3,7 +3,7 @@ import { RockTempIcon } from './icons/RockTempIcon';
 import { format } from 'date-fns';
 import { RockDryingStatus, WeatherCondition, PestConditions, PestLevel, RockTemperatureStatus } from '../types/weather';
 import { RiverData } from '../types/river';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { formatDryTime } from '../utils/weather/formatters';
 import {
   getConditionBadgeStyles,
@@ -745,6 +745,58 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
   const hasDaily = dailyForecast.length > 0;
   const allHourly = s.hourly_forecast ?? [];
 
+  // ---------------------------------------------------------------------------
+  // 7-day cap for the "Send Windows" subsection (Gantt + per-day Details grid).
+  //
+  // The backend returns the full 16-day forecast horizon (daily_forecast,
+  // hourly_forecast, send_windows). The "Send Windows" section, however,
+  // advertises "Next 7 days" and must visually end at day 7 — both the
+  // Gantt's day-axis (one row per day) and the DayCard grid below it.
+  //
+  // We derive a single cutoff and apply it consistently to:
+  //   1. visibleDays         — drives the Gantt day-rows + DayCard grid.
+  //   2. visibleHourly       — drives the per-hour heatmap inside each row
+  //                            (so we don't carry hour samples past day 7).
+  //   3. visibleSendWindows  — defense-in-depth: clip window rectangles
+  //                            whose start_time is past the cutoff.
+  //
+  // Important: this filter is scoped to the Send Windows subsection ONLY.
+  // The headline sparkline above (Next 24h) and the rest of the rock-temp
+  // tab continue to use the full unfiltered data.
+  //
+  // Inclusion rule: keep entries whose start (or local_date midnight) is
+  // STRICTLY BEFORE now + 168h. Windows that start in-range but end past
+  // the boundary are kept whole — only their start matters.
+  // ---------------------------------------------------------------------------
+  const sevenDayCutoffMs = useMemo(
+    () => Date.now() + 7 * 24 * 60 * 60 * 1000,
+    // Recompute when send_windows identity changes (proxy for "data refreshed").
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [s.send_windows, s.daily_forecast, s.hourly_forecast],
+  );
+
+  const visibleDays = useMemo(() => {
+    return dailyForecast.filter((d) => {
+      // local_date is "YYYY-MM-DD"; parse as local-midnight so we compare
+      // apples-to-apples with Date.now() (which is also local-zone-aware).
+      const [y, m, day] = d.local_date.split('-').map((n) => parseInt(n, 10));
+      if (!y || !m || !day) return true; // fail-open on malformed input
+      const t = new Date(y, m - 1, day).getTime();
+      return t < sevenDayCutoffMs;
+    });
+  }, [dailyForecast, sevenDayCutoffMs]);
+
+  const visibleHourly = useMemo(
+    () => allHourly.filter((h) => new Date(h.time).getTime() < sevenDayCutoffMs),
+    [allHourly, sevenDayCutoffMs],
+  );
+
+  const visibleSendWindows = useMemo(() => {
+    return (s.send_windows ?? []).filter(
+      (w) => new Date(w.start_time).getTime() < sevenDayCutoffMs,
+    );
+  }, [s.send_windows, sevenDayCutoffMs]);
+
   // Today's local date for highlighting in the Gantt. Uses the
   // browser's local zone (which matches the location TZ for the
   // typical user — the backend already keys per-day buckets to the
@@ -762,7 +814,7 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
   // reason `todayKey` does — the typical user views their own area.
   const hourlyByDate = (() => {
     const map = new Map<string, RockTempHour[]>();
-    for (const h of allHourly) {
+    for (const h of visibleHourly) {
       const d = new Date(h.time);
       if (isNaN(d.getTime())) continue;
       const y = d.getFullYear();
@@ -897,10 +949,10 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
                          without hiding the underlying conditions.
             */}
             <div className="space-y-1 mt-1">
-              {dailyForecast.map((day) => {
+              {visibleDays.map((day) => {
                 const isToday = day.local_date === todayKey;
                 const dayHours = hourlyByDate.get(day.local_date) ?? [];
-                const windows = (s.send_windows ?? []).filter((w) => {
+                const windows = visibleSendWindows.filter((w) => {
                   const p = computeWindowGanttPlacement(w, day.local_date);
                   return p.widthPercent > 0;
                 });
@@ -908,6 +960,7 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
                 return (
                   <div key={day.local_date} className="flex items-center gap-2" title={summary}>
                     <div
+                      data-testid="send-window-day-axis-label"
                       className={`w-10 sm:w-12 flex-shrink-0 text-[10px] sm:text-xs ${
                         isToday
                           ? 'font-bold text-blue-600 dark:text-blue-300'
@@ -986,6 +1039,7 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
                         return (
                           <div
                             key={`win-${i}`}
+                            data-testid="send-window-bar"
                             title={tip}
                             className="absolute top-0 bottom-0 rounded-sm border-2 pointer-events-none"
                             style={{
@@ -1034,8 +1088,8 @@ function RockTempTabContent({ status: s }: RockTempTabContentProps) {
               Details
             </h4>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4 gap-3">
-              {dailyForecast.map((day) => {
-                const dayWindows = (s.send_windows ?? []).filter((w) => {
+              {visibleDays.map((day) => {
+                const dayWindows = visibleSendWindows.filter((w) => {
                   const p = computeWindowGanttPlacement(w, day.local_date);
                   return p.widthPercent > 0;
                 });
@@ -1140,6 +1194,7 @@ interface DayCardProps {
 function DayCard({ day, windows, isToday }: DayCardProps) {
   return (
     <div
+      data-testid="send-window-daycard"
       className={`rounded-md border border-gray-200 dark:border-gray-700 p-3 text-xs min-h-[80px] ${
         isToday ? 'ring-2 ring-blue-400/50 bg-blue-50/40 dark:bg-blue-900/10' : 'bg-white dark:bg-gray-900/40'
       }`}
