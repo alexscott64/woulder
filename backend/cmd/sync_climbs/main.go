@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -13,14 +14,18 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// AreaConfig defines the mapping between locations and their Mountain Project area IDs
-type AreaConfig struct {
-	LocationName string
-	LocationID   int
-	MPAreaIDs    []int64
-}
-
 func main() {
+	// Flags
+	//   --discover-areas: skip the full per-root recursive seed below and
+	//     instead invoke ClimbTrackingService.SyncLocationAreaDiscovery
+	//     once. This is the on-demand counterpart to the scheduled
+	//     `location_area_discovery` job and is the recommended way to pull
+	//     in newly-added MP sub-areas (e.g. Fantasia Boulders) without
+	//     waiting for the weekly schedule.
+	discoverAreas := flag.Bool("discover-areas", false,
+		"Run only the location_area_discovery job (crawl configured roots to pick up new MP sub-areas) and exit")
+	flag.Parse()
+
 	log.Println("Starting Mountain Project climb data sync...")
 
 	// Load environment variables from backend directory
@@ -41,93 +46,25 @@ func main() {
 	// Initialize climb tracking service (no job monitor for manual sync)
 	climbService := service.NewClimbTrackingService(db.MountainProject(), db.Climbing(), mpClient, nil)
 
-	// Define area mappings (location ID -> Mountain Project area IDs)
-	// IMPORTANT: These IDs must match the actual database location IDs
-	areaConfigs := []AreaConfig{
-		{
-			LocationName: "Skykomish - Money Creek",
-			LocationID:   1,
-			MPAreaIDs:    []int64{120714486},
-		},
-		{
-			LocationName: "Index",
-			LocationID:   2,
-			MPAreaIDs:    []int64{108123669},
-		},
-		{
-			LocationName: "Gold Bar",
-			LocationID:   3,
-			MPAreaIDs:    []int64{105805788},
-		},
-		{
-			LocationName: "Bellingham",
-			LocationID:   4,
-			MPAreaIDs:    []int64{107627792, 125093900, 108045031, 118561215},
-		},
-		{
-			LocationName: "Icicle Creek (Leavenworth)",
-			LocationID:   5,
-			MPAreaIDs:    []int64{105790237, 105794001, 105790727},
-		},
-		{
-			LocationName: "Squamish",
-			LocationID:   6,
-			// Stawamus Chief boulder areas (from within 105805895):
-			//   - Grand Wall Boulders (112842712)
-			//   - North Wall Boulders (108506197)
-			//   - Apron Boulders (106025685)
-			// Paradise Valley Boulders (110937821) - contains sub-areas
-			// Powerline Boulders (121199811)
-			MPAreaIDs: []int64{112842712, 108506197, 106025685, 110937821, 121199811},
-		},
-		{
-			LocationName: "Skykomish - Paradise",
-			LocationID:   7,
-			MPAreaIDs:    []int64{120379690},
-		},
-		{
-			LocationName: "Treasury",
-			LocationID:   8,
-			MPAreaIDs:    []int64{119589316},
-		},
-		{
-			LocationName: "Calendar Butte",
-			LocationID:   9,
-			MPAreaIDs:    []int64{127029858},
-		},
-		{
-			LocationName: "Joshua Tree",
-			LocationID:   10,
-			MPAreaIDs:    []int64{106098051},
-		},
-		{
-			LocationName: "Black Mountain",
-			LocationID:   11,
-			MPAreaIDs:    []int64{105991127},
-		},
-		{
-			LocationName: "Buttermilks",
-			LocationID:   12,
-			MPAreaIDs:    []int64{106132808},
-		},
-		{
-			LocationName: "Happy / Sad Boulders",
-			LocationID:   13,
-			MPAreaIDs:    []int64{105799640, 106068462},
-		},
-		{
-			LocationName: "Yosemite",
-			LocationID:   14,
-			MPAreaIDs:    []int64{107457415},
-		},
-		{
-			LocationName: "Tramway",
-			LocationID:   15,
-			MPAreaIDs:    []int64{105991060},
-		},
+	ctx := context.Background()
+
+	if *discoverAreas {
+		log.Println("Running one-shot location_area_discovery (new sub-area pickup)...")
+		startTime := time.Now()
+		if err := climbService.SyncLocationAreaDiscovery(ctx); err != nil {
+			log.Printf("location_area_discovery returned error: %v", err)
+			log.Printf("Time elapsed: %s", time.Since(startTime).Round(time.Second))
+			os.Exit(1)
+		}
+		log.Printf("location_area_discovery complete in %s", time.Since(startTime).Round(time.Second))
+		return
 	}
 
-	ctx := context.Background()
+	// Default mode: full per-root recursive seed using the shared
+	// LocationRoots() registry (single source of truth — also consumed by
+	// the scheduled SyncLocationAreaDiscovery job).
+	areaConfigs := service.LocationRoots()
+
 	totalAreas := 0
 	successCount := 0
 	failCount := 0
@@ -140,13 +77,16 @@ func main() {
 		log.Printf("Processing location: %s (ID: %d)", config.LocationName, config.LocationID)
 		log.Printf("========================================")
 
+		// Local copy so we can take its address safely inside the loop.
+		locationID := config.LocationID
+
 		for _, areaID := range config.MPAreaIDs {
 			totalAreas++
 			log.Printf("\nSyncing area ID: %d for %s...", areaID, config.LocationName)
 
 			// Convert int64 to string for API call
 			areaIDStr := fmt.Sprintf("%d", areaID)
-			err := climbService.SyncAreaRecursive(ctx, areaIDStr, &config.LocationID)
+			err := climbService.SyncAreaRecursive(ctx, areaIDStr, &locationID)
 			if err != nil {
 				log.Printf("ERROR syncing area %d: %v", areaID, err)
 				failCount++

@@ -212,6 +212,45 @@ func (h *Handler) runLocationRouteSync() {
 	log.Println("Location route sync complete")
 }
 
+// StartLocationAreaDiscovery starts a background job that crawls the
+// configured MP area roots (LocationRoots) to discover any newly-added
+// sub-areas / routes underneath them.
+//
+// This is the scheduled counterpart to the on-demand
+// `sync_climbs --discover-areas` CLI. Runs weekly by default and is
+// intentionally lighter-touch than StartLocationRouteSync (which runs
+// daily and hits every individual route).
+//
+// To avoid stampeding the MP API at boot time alongside the daily
+// StartLocationRouteSync (which also runs immediately), this scheduler
+// does NOT run immediately on startup — it waits for the first tick.
+// Crash-recovery still works because recoverInterruptedJobs() will pick
+// up any "running"/"paused" location_area_discovery job from a previous
+// boot the next time this ticker fires (the service-level
+// GetInterruptedJob check inside SyncLocationAreaDiscovery handles that).
+func (h *Handler) StartLocationAreaDiscovery(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		log.Printf("Starting location area discovery scheduler (every %v, first run at +%v)", interval, interval)
+
+		for range ticker.C {
+			h.runLocationAreaDiscovery()
+		}
+	}()
+}
+
+func (h *Handler) runLocationAreaDiscovery() {
+	log.Println("Starting location area discovery (new sub-area pickup)...")
+	ctx := context.Background()
+	if err := h.climbTrackingService.SyncLocationAreaDiscovery(ctx); err != nil {
+		log.Printf("Error in location area discovery: %v", err)
+	} else {
+		log.Println("Location area discovery complete")
+	}
+}
+
 // StartHighPrioritySync starts a background job that syncs high-priority non-location routes daily
 func (h *Handler) StartHighPrioritySync(interval time.Duration) {
 	go func() {

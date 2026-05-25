@@ -793,7 +793,7 @@
                 const jobs = data.jobs || [];
                 
                 // Filter for sync jobs only (include location sync jobs and Kaya sync)
-                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc', 'location_tick_sync', 'location_comment_sync', 'kaya_sync'];
+                const syncTypes = ['tick_sync', 'comment_sync', 'priority_recalc', 'location_tick_sync', 'location_comment_sync', 'location_area_discovery', 'kaya_sync'];
                 const syncJobs = jobs.filter(job => syncTypes.includes(job.job_type));
                 
                 renderHistory(syncJobs);
@@ -817,6 +817,7 @@
                 'priority_recalc': 'Priority Recalculation',
                 'location_tick_sync': 'Location Tick Sync',
                 'location_comment_sync': 'Location Comment Sync',
+                'location_area_discovery': 'Location Area Discovery',
                 'kaya_sync': 'Kaya Data Sync'
             };
 

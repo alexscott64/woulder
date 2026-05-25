@@ -121,6 +121,7 @@ func (h *Handler) GetJobsSummary(c *gin.Context) {
 		"priority_recalculation":       24 * time.Hour,
 		"location_tick_sync":           24 * time.Hour,
 		"location_comment_sync":        24 * time.Hour,
+		"location_area_discovery":      7 * 24 * time.Hour,
 		"high_priority_tick_sync":      24 * time.Hour,
 		"high_priority_comment_sync":   24 * time.Hour,
 		"medium_priority_tick_sync":    7 * 24 * time.Hour,

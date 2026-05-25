@@ -77,6 +77,11 @@ func main() {
 		handler.StartPriorityRecalculation(24 * time.Hour)
 		// Location route sync runs SECOND (ensures woulder locations are fresh - most critical)
 		handler.StartLocationRouteSync(24 * time.Hour)
+		// Location area discovery runs weekly to pick up any newly-added MP sub-areas
+		// under configured location roots (e.g. new boulders appearing in Squamish).
+		// Does NOT run immediately on startup — first fire is +interval to avoid
+		// colliding with StartLocationRouteSync's immediate-run at boot.
+		handler.StartLocationAreaDiscovery(7 * 24 * time.Hour)
 		// High-priority sync runs THIRD (ensures popular non-location routes are fresh)
 		handler.StartHighPrioritySync(24 * time.Hour)
 		// Medium-priority sync runs weekly
@@ -235,6 +240,12 @@ func recoverInterruptedJobs(
 		case "location_comment_sync":
 			// Don't start in goroutine - resumes automatically when background scheduler runs
 			log.Printf("Location comment sync job will be resumed by StartLocationRouteSync")
+
+		case "location_area_discovery":
+			// Don't start in goroutine - resumes automatically when StartLocationAreaDiscovery's
+			// ticker fires (SyncLocationAreaDiscovery internally calls GetInterruptedJob
+			// and continues from the last checkpoint).
+			log.Printf("Location area discovery job will be resumed by StartLocationAreaDiscovery")
 
 		default:
 			// Priority-based sync jobs (high_priority_tick_sync, medium_priority_tick_sync, etc.)

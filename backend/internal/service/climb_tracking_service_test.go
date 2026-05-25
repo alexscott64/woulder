@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/alexscott64/woulder/backend/internal/monitoring"
 	"github.com/alexscott64/woulder/backend/internal/mountainproject"
 	"github.com/stretchr/testify/assert"
 )
@@ -812,4 +813,385 @@ func TestJamieZeldaRailsScenario(t *testing.T) {
 		t.Logf("Saved tick time: %s", tick.ClimbedAt.Format(time.RFC3339))
 		t.Logf("Tick time in Pacific: %s", tickInPacific.Format(time.RFC3339))
 	}
+}
+
+// ============================================================================
+// SyncLocationAreaDiscovery tests
+// ============================================================================
+
+// mockAreaDiscoveryJobMonitor implements AreaDiscoveryJobMonitor and records
+// the calls made against it. We use a local mock (rather than extending
+// mocks_test.go) because *monitoring.JobMonitor is a concrete struct used by
+// many other service methods directly; this narrow interface is only relevant
+// to SyncLocationAreaDiscovery.
+type mockAreaDiscoveryJobMonitor struct {
+	StartJobCalls          []startJobCall
+	CompleteJobCalls       []int64
+	FailJobCalls           []failJobCall
+	MarkJobPausedCalls     []int64
+	UpdateProgressCalls    []updateProgressCall
+	SaveCheckpointCalls    []saveCheckpointCall
+	GetInterruptedJobCalls []string
+
+	nextJobID           int64
+	StartJobErr         error
+	GetInterruptedJobFn func(ctx context.Context, jobName string) (*monitoring.JobExecution, error)
+}
+
+type startJobCall struct {
+	JobName    string
+	JobType    string
+	TotalItems int
+	Metadata   map[string]interface{}
+}
+
+type failJobCall struct {
+	JobID    int64
+	ErrorMsg string
+}
+
+type updateProgressCall struct {
+	JobID          int64
+	ItemsProcessed int
+	Succeeded      int
+	Failed         int
+}
+
+type saveCheckpointCall struct {
+	JobID      int64
+	Checkpoint map[string]interface{}
+}
+
+func (m *mockAreaDiscoveryJobMonitor) StartJob(ctx context.Context, jobName, jobType string, totalItems int, metadata map[string]interface{}) (*monitoring.JobExecution, error) {
+	m.StartJobCalls = append(m.StartJobCalls, startJobCall{
+		JobName:    jobName,
+		JobType:    jobType,
+		TotalItems: totalItems,
+		Metadata:   metadata,
+	})
+	if m.StartJobErr != nil {
+		return nil, m.StartJobErr
+	}
+	m.nextJobID++
+	return &monitoring.JobExecution{
+		ID:       m.nextJobID,
+		JobName:  jobName,
+		JobType:  jobType,
+		Status:   monitoring.StatusRunning,
+		Metadata: metadata,
+	}, nil
+}
+
+func (m *mockAreaDiscoveryJobMonitor) CompleteJob(ctx context.Context, jobID int64) error {
+	m.CompleteJobCalls = append(m.CompleteJobCalls, jobID)
+	return nil
+}
+
+func (m *mockAreaDiscoveryJobMonitor) FailJob(ctx context.Context, jobID int64, errorMsg string) error {
+	m.FailJobCalls = append(m.FailJobCalls, failJobCall{JobID: jobID, ErrorMsg: errorMsg})
+	return nil
+}
+
+func (m *mockAreaDiscoveryJobMonitor) MarkJobPaused(ctx context.Context, jobID int64) error {
+	m.MarkJobPausedCalls = append(m.MarkJobPausedCalls, jobID)
+	return nil
+}
+
+func (m *mockAreaDiscoveryJobMonitor) UpdateProgress(ctx context.Context, jobID int64, itemsProcessed, succeeded, failed int) error {
+	m.UpdateProgressCalls = append(m.UpdateProgressCalls, updateProgressCall{
+		JobID: jobID, ItemsProcessed: itemsProcessed, Succeeded: succeeded, Failed: failed,
+	})
+	return nil
+}
+
+func (m *mockAreaDiscoveryJobMonitor) SaveCheckpoint(ctx context.Context, jobID int64, checkpoint map[string]interface{}) error {
+	m.SaveCheckpointCalls = append(m.SaveCheckpointCalls, saveCheckpointCall{
+		JobID: jobID, Checkpoint: checkpoint,
+	})
+	return nil
+}
+
+func (m *mockAreaDiscoveryJobMonitor) GetInterruptedJob(ctx context.Context, jobName string) (*monitoring.JobExecution, error) {
+	m.GetInterruptedJobCalls = append(m.GetInterruptedJobCalls, jobName)
+	if m.GetInterruptedJobFn != nil {
+		return m.GetInterruptedJobFn(ctx, jobName)
+	}
+	return nil, nil
+}
+
+// TestSyncLocationAreaDiscovery_FantasiaBoulders is the regression test for
+// the exact scenario that motivated this job's existence: a new MP sub-area
+// (Fantasia Boulders, mp_area_id 202944793) is added underneath an existing
+// Squamish parent (Apron Boulders, mp_area_id 106025685) and must be picked
+// up automatically without manual seeding.
+func TestSyncLocationAreaDiscovery_FantasiaBoulders(t *testing.T) {
+	const (
+		apronParentID    = int64(106025685)
+		fantasiaChildID  = int64(202944793)
+		syntheticRoute1  = 900000001
+		syntheticRoute2  = 900000002
+		squamishLocation = 6
+	)
+
+	// Configure LocationRoots to expose exactly one root for this test.
+	restoreRoots := SetLocationRootsForTest([]LocationRootConfig{
+		{
+			LocationName: "Squamish",
+			LocationID:   squamishLocation,
+			MPAreaIDs:    []int64{apronParentID},
+		},
+	})
+	defer restoreRoots()
+
+	mockMPRepo := NewMockMountainProjectRepository()
+	mockClimbingRepo := NewMockClimbingRepository()
+
+	// Capture SaveArea calls so we can assert on them.
+	var savedAreas []*models.MPArea
+	mockMPRepo.areas.SaveAreaFn = func(ctx context.Context, area *models.MPArea) error {
+		// Copy to avoid retaining a shared pointer.
+		copy := *area
+		savedAreas = append(savedAreas, &copy)
+		return nil
+	}
+
+	// Capture SaveRoute calls (SyncAreaRecursive uses SaveRoute, not UpsertRoute).
+	var savedRoutes []*models.MPRoute
+	mockMPRepo.routes.SaveRouteFn = func(ctx context.Context, route *models.MPRoute) error {
+		copy := *route
+		savedRoutes = append(savedRoutes, &copy)
+		return nil
+	}
+
+	// Mock MP API: parent area returns Fantasia as its only child; Fantasia
+	// returns two synthetic route children with no further sub-areas.
+	mockMPClient := &MockMPClient{
+		GetAreaFn: func(areaID string) (*mountainproject.AreaResponse, error) {
+			switch areaID {
+			case "106025685":
+				return &mountainproject.AreaResponse{
+					ID:    int(apronParentID),
+					Title: "Apron Boulders",
+					Type:  "Area",
+					Children: []mountainproject.ChildElement{
+						{
+							ID:    int(fantasiaChildID),
+							Title: "Fantasia Boulders",
+							Type:  "Area",
+						},
+					},
+				}, nil
+			case "202944793":
+				return &mountainproject.AreaResponse{
+					ID:    int(fantasiaChildID),
+					Title: "Fantasia Boulders",
+					Type:  "Area",
+					Children: []mountainproject.ChildElement{
+						{
+							ID:         syntheticRoute1,
+							Title:      "Fantasia Direct",
+							Type:       "Route",
+							RouteTypes: []string{"Boulder"},
+						},
+						{
+							ID:         syntheticRoute2,
+							Title:      "Fantasia Traverse",
+							Type:       "Route",
+							RouteTypes: []string{"Boulder"},
+						},
+					},
+				}, nil
+			}
+			return nil, errors.New("unexpected area: " + areaID)
+		},
+		// GetRouteTicks / GetRouteComments return empty - keep the test focused.
+		GetRouteTicksFn:    func(_ string) ([]mountainproject.Tick, error) { return nil, nil },
+		GetRouteCommentsFn: func(_ string) ([]mountainproject.Comment, error) { return nil, nil },
+		GetAreaCommentsFn:  func(_ string) ([]mountainproject.Comment, error) { return nil, nil },
+	}
+
+	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
+	mockMonitor := &mockAreaDiscoveryJobMonitor{}
+	restoreMonitor := service.SetAreaDiscoveryJobMonitorForTest(mockMonitor)
+	defer restoreMonitor()
+
+	err := service.SyncLocationAreaDiscovery(context.Background())
+	assert.NoError(t, err, "discovery should succeed when no roots fail")
+
+	// --- Assertion 1: Fantasia Boulders area was saved with correct parent + location.
+	var fantasia *models.MPArea
+	for _, a := range savedAreas {
+		if a.MPAreaID == fantasiaChildID {
+			fantasia = a
+			break
+		}
+	}
+	if assert.NotNil(t, fantasia, "Fantasia Boulders (mp_area_id=%d) must be discovered and saved", fantasiaChildID) {
+		assert.Equal(t, "Fantasia Boulders", fantasia.Name)
+		if assert.NotNil(t, fantasia.ParentMPAreaID, "parent_mp_area_id must be set") {
+			assert.Equal(t, apronParentID, *fantasia.ParentMPAreaID,
+				"Fantasia's parent must be Apron Boulders (mp_area_id=%d)", apronParentID)
+		}
+		if assert.NotNil(t, fantasia.LocationID, "location_id must be set") {
+			assert.Equal(t, squamishLocation, *fantasia.LocationID,
+				"Fantasia must be tagged with Squamish location_id=%d", squamishLocation)
+		}
+	}
+
+	// --- Assertion 2: synthetic routes were saved with the same location_id.
+	assert.GreaterOrEqual(t, len(savedRoutes), 2, "expected at least the two synthetic Fantasia routes to be saved")
+	routeIDs := map[int64]*models.MPRoute{}
+	for _, r := range savedRoutes {
+		routeIDs[r.MPRouteID] = r
+	}
+	for _, id := range []int64{syntheticRoute1, syntheticRoute2} {
+		r, ok := routeIDs[id]
+		if assert.True(t, ok, "route %d should have been saved", id) {
+			if assert.NotNil(t, r.LocationID, "route %d location_id must be set", id) {
+				assert.Equal(t, squamishLocation, *r.LocationID,
+					"route %d must be tagged with Squamish location_id", id)
+			}
+		}
+	}
+
+	// --- Assertion 3: job_monitor was driven with the right job_name + total.
+	if assert.Len(t, mockMonitor.StartJobCalls, 1, "StartJob should be called exactly once") {
+		call := mockMonitor.StartJobCalls[0]
+		assert.Equal(t, "location_area_discovery", call.JobName, "job_name must match for jtrack pickup")
+		assert.Equal(t, "location_area_discovery", call.JobType, "job_type must match")
+		assert.Equal(t, 1, call.TotalItems, "total = 1 root configured in this test")
+	}
+
+	// --- Assertion 4: CompleteJob fired with success (no FailJob).
+	assert.Len(t, mockMonitor.CompleteJobCalls, 1, "CompleteJob should fire once on success")
+	assert.Empty(t, mockMonitor.FailJobCalls, "FailJob should not fire when all roots succeed")
+}
+
+// TestSyncLocationAreaDiscovery_ErrorIsolation verifies that a failure on
+// one root does not prevent subsequent roots from being processed, and that
+// the job is marked as failed (not silently completed) when any root errors.
+func TestSyncLocationAreaDiscovery_ErrorIsolation(t *testing.T) {
+	const (
+		failingRootID = int64(111111111)
+		workingRootID = int64(222222222)
+	)
+
+	restoreRoots := SetLocationRootsForTest([]LocationRootConfig{
+		{LocationName: "Failing", LocationID: 100, MPAreaIDs: []int64{failingRootID}},
+		{LocationName: "Working", LocationID: 101, MPAreaIDs: []int64{workingRootID}},
+	})
+	defer restoreRoots()
+
+	mockMPRepo := NewMockMountainProjectRepository()
+	mockClimbingRepo := NewMockClimbingRepository()
+
+	var savedAreas []int64
+	mockMPRepo.areas.SaveAreaFn = func(ctx context.Context, area *models.MPArea) error {
+		savedAreas = append(savedAreas, area.MPAreaID)
+		return nil
+	}
+
+	getAreaCalls := map[string]int{}
+	mockMPClient := &MockMPClient{
+		GetAreaFn: func(areaID string) (*mountainproject.AreaResponse, error) {
+			getAreaCalls[areaID]++
+			switch areaID {
+			case "111111111":
+				return nil, errors.New("simulated MP API failure")
+			case "222222222":
+				return &mountainproject.AreaResponse{
+					ID:       int(workingRootID),
+					Title:    "Working Root",
+					Type:     "Area",
+					Children: nil,
+				}, nil
+			}
+			return nil, errors.New("unexpected area: " + areaID)
+		},
+	}
+
+	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
+	mockMonitor := &mockAreaDiscoveryJobMonitor{}
+	restoreMonitor := service.SetAreaDiscoveryJobMonitorForTest(mockMonitor)
+	defer restoreMonitor()
+
+	err := service.SyncLocationAreaDiscovery(context.Background())
+	assert.Error(t, err, "an error should be returned when any root fails")
+
+	// Both roots were attempted (error isolation - second still runs).
+	assert.GreaterOrEqual(t, getAreaCalls["111111111"], 1, "failing root must have been attempted")
+	assert.GreaterOrEqual(t, getAreaCalls["222222222"], 1, "second root must still be attempted after the first fails")
+
+	// Working root's area was saved (proves second root executed end-to-end).
+	assert.Contains(t, savedAreas, workingRootID,
+		"working root's area must be saved even though the first root failed")
+
+	// Job ended in a non-success state.
+	assert.Empty(t, mockMonitor.CompleteJobCalls,
+		"CompleteJob should NOT fire when any root failed")
+	assert.Len(t, mockMonitor.FailJobCalls, 1,
+		"FailJob should fire exactly once to surface the partial-failure outcome")
+
+	// Total items reported as 2 (one per root).
+	if assert.Len(t, mockMonitor.StartJobCalls, 1) {
+		assert.Equal(t, 2, mockMonitor.StartJobCalls[0].TotalItems)
+	}
+}
+
+// TestSyncLocationAreaDiscovery_ContextCancellation verifies the loop exits
+// cleanly between roots when the context is cancelled, without panicking,
+// and marks the job as paused (mirroring SyncLocationRouteTicks' behavior).
+func TestSyncLocationAreaDiscovery_ContextCancellation(t *testing.T) {
+	const (
+		firstRootID  = int64(333333333)
+		secondRootID = int64(444444444)
+	)
+
+	restoreRoots := SetLocationRootsForTest([]LocationRootConfig{
+		{LocationName: "First", LocationID: 200, MPAreaIDs: []int64{firstRootID}},
+		{LocationName: "Second", LocationID: 201, MPAreaIDs: []int64{secondRootID}},
+	})
+	defer restoreRoots()
+
+	mockMPRepo := NewMockMountainProjectRepository()
+	mockClimbingRepo := NewMockClimbingRepository()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	getAreaCalls := map[string]int{}
+	mockMPClient := &MockMPClient{
+		GetAreaFn: func(areaID string) (*mountainproject.AreaResponse, error) {
+			getAreaCalls[areaID]++
+			// After the first root finishes, cancel the context so the
+			// loop exits before processing the second root.
+			if areaID == "333333333" {
+				cancel()
+				return &mountainproject.AreaResponse{
+					ID: int(firstRootID), Title: "First", Type: "Area",
+				}, nil
+			}
+			return &mountainproject.AreaResponse{
+				ID: int(secondRootID), Title: "Second", Type: "Area",
+			}, nil
+		},
+	}
+
+	service := NewClimbTrackingService(mockMPRepo, mockClimbingRepo, mockMPClient, nil)
+	mockMonitor := &mockAreaDiscoveryJobMonitor{}
+	restoreMonitor := service.SetAreaDiscoveryJobMonitorForTest(mockMonitor)
+	defer restoreMonitor()
+
+	// Should not panic.
+	err := service.SyncLocationAreaDiscovery(ctx)
+	assert.ErrorIs(t, err, context.Canceled, "cancellation should propagate as context.Canceled")
+
+	// Second root should NOT have been processed.
+	assert.Equal(t, 1, getAreaCalls["333333333"], "first root processed")
+	assert.Equal(t, 0, getAreaCalls["444444444"], "second root must be skipped after cancellation")
+
+	// Job marked paused (not completed/failed) so it can resume on next boot.
+	assert.Empty(t, mockMonitor.CompleteJobCalls, "CompleteJob must not fire on cancellation")
+	assert.Empty(t, mockMonitor.FailJobCalls, "FailJob must not fire on cancellation")
+	assert.Len(t, mockMonitor.MarkJobPausedCalls, 1,
+		"MarkJobPaused should fire exactly once so the next boot resumes the run")
 }

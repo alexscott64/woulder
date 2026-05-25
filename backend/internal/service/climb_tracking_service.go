@@ -30,15 +30,43 @@ type MPClientInterface interface {
 // Ensure real Client implements the interface
 var _ MPClientInterface = (*mpClient.Client)(nil)
 
+// AreaDiscoveryJobMonitor is the narrow subset of *monitoring.JobMonitor used
+// by SyncLocationAreaDiscovery. Defining it as an interface (rather than
+// reusing the concrete *monitoring.JobMonitor everywhere) lets tests inject
+// a mock without touching the rest of the service's monitoring call sites,
+// which still use the concrete *monitoring.JobMonitor on s.jobMonitor for
+// backwards compatibility.
+//
+// The real *monitoring.JobMonitor satisfies this interface automatically.
+type AreaDiscoveryJobMonitor interface {
+	StartJob(ctx context.Context, jobName, jobType string, totalItems int, metadata map[string]interface{}) (*monitoring.JobExecution, error)
+	CompleteJob(ctx context.Context, jobID int64) error
+	FailJob(ctx context.Context, jobID int64, errorMsg string) error
+	MarkJobPaused(ctx context.Context, jobID int64) error
+	UpdateProgress(ctx context.Context, jobID int64, itemsProcessed, succeeded, failed int) error
+	SaveCheckpoint(ctx context.Context, jobID int64, checkpoint map[string]interface{}) error
+	GetInterruptedJob(ctx context.Context, jobName string) (*monitoring.JobExecution, error)
+}
+
+// Compile-time check that the real JobMonitor satisfies AreaDiscoveryJobMonitor.
+var _ AreaDiscoveryJobMonitor = (*monitoring.JobMonitor)(nil)
+
 // ClimbTrackingService handles Mountain Project data synchronization and retrieval
 type ClimbTrackingService struct {
 	mountainProjectRepo mountainproject.Repository
 	climbingRepo        climbing.Repository
 	mpClient            MPClientInterface
 	jobMonitor          *monitoring.JobMonitor
-	syncMutex           sync.Mutex
-	lastSyncTime        time.Time
-	isSyncing           bool
+	// areaDiscoveryMonitor is an optional injection point used only by
+	// SyncLocationAreaDiscovery. When nil, the method falls back to
+	// s.jobMonitor (which itself may be nil for one-shot CLI callers).
+	// Production wiring leaves this nil; tests use
+	// SetAreaDiscoveryJobMonitorForTest to inject a mock so they can
+	// observe StartJob/CompleteJob/etc. without a real database.
+	areaDiscoveryMonitor AreaDiscoveryJobMonitor
+	syncMutex            sync.Mutex
+	lastSyncTime         time.Time
+	isSyncing            bool
 }
 
 // NewClimbTrackingService creates a new climb tracking service
@@ -53,6 +81,31 @@ func NewClimbTrackingService(
 		climbingRepo:        climbingRepo,
 		mpClient:            mpClient,
 		jobMonitor:          jobMonitor,
+	}
+}
+
+// areaDiscoveryJobMonitor returns the monitor used by
+// SyncLocationAreaDiscovery, preferring the test-injected interface when
+// set and falling back to the concrete *monitoring.JobMonitor otherwise.
+// Returns nil if neither is configured (one-shot CLI usage).
+func (s *ClimbTrackingService) areaDiscoveryJobMonitor() AreaDiscoveryJobMonitor {
+	if s.areaDiscoveryMonitor != nil {
+		return s.areaDiscoveryMonitor
+	}
+	if s.jobMonitor != nil {
+		return s.jobMonitor
+	}
+	return nil
+}
+
+// SetAreaDiscoveryJobMonitorForTest replaces the AreaDiscoveryJobMonitor on
+// the service with the supplied mock, and returns a restore function.
+// Intended for use only from *_test.go files in this package.
+func (s *ClimbTrackingService) SetAreaDiscoveryJobMonitorForTest(m AreaDiscoveryJobMonitor) func() {
+	prev := s.areaDiscoveryMonitor
+	s.areaDiscoveryMonitor = m
+	return func() {
+		s.areaDiscoveryMonitor = prev
 	}
 }
 
@@ -1770,5 +1823,197 @@ func (s *ClimbTrackingService) rateLimitedSync(
 		}
 	}
 
+	return nil
+}
+
+// SyncLocationAreaDiscovery walks the Mountain Project area trees rooted at
+// every configured location root (see LocationRoots) and inserts any newly
+// discovered MP sub-areas / routes into the database.
+//
+// This is the scheduled counterpart to the manual `cmd/sync_climbs` backfill:
+// it ensures that when MP adds a new sub-area underneath one of our tracked
+// location roots (e.g. "Fantasia Boulders" appearing under Squamish's "Apron
+// Boulders" / mp_area_id 106025685), the new area is automatically picked up
+// without a human re-running the seed CLI.
+//
+// Behavior:
+//   - Iterates LocationRoots() and calls SyncAreaRecursive once per root MP
+//     area ID. Per-root failures are logged and counted but do not abort the
+//     whole job; the next root still runs.
+//   - Each completed (or attempted) root advances a job_monitor checkpoint
+//     so the job can resume after a crash.
+//   - Honors ctx.Done() between roots for clean shutdown.
+//   - Uses job_name / job_type = "location_area_discovery" so jtrack picks
+//     up the run automatically via the existing monitoring API.
+func (s *ClimbTrackingService) SyncLocationAreaDiscovery(ctx context.Context) error {
+	const jobName = "location_area_discovery"
+
+	startTime := time.Now()
+	roots := LocationRoots()
+
+	totalRoots := 0
+	for _, cfg := range roots {
+		totalRoots += len(cfg.MPAreaIDs)
+	}
+
+	if totalRoots == 0 {
+		log.Println("location_area_discovery: no roots configured, nothing to do")
+		return nil
+	}
+
+	// STEP 1: Check for interrupted job from previous run (mirrors
+	// SyncLocationRouteTicks). If we find one, resume from its checkpoint
+	// index instead of restarting from the first root.
+	monitor := s.areaDiscoveryJobMonitor()
+	var startIndex int
+	var resumingJob *monitoring.JobExecution
+	if monitor != nil {
+		interrupted, err := monitor.GetInterruptedJob(ctx, jobName)
+		if err != nil {
+			log.Printf("Warning: failed to check for interrupted %s job: %v", jobName, err)
+		} else if interrupted != nil {
+			resumingJob = interrupted
+			if checkpoint, ok := interrupted.Metadata["checkpoint"].(map[string]interface{}); ok {
+				if idx, ok := checkpoint["current_root_index"].(float64); ok {
+					startIndex = int(idx)
+				}
+			}
+			log.Printf("Resuming %s from root index %d (job id=%d)", jobName, startIndex, interrupted.ID)
+		}
+	}
+
+	// STEP 2: START / RESUME MONITORING
+	var jobExec *monitoring.JobExecution
+	if monitor != nil {
+		if resumingJob != nil {
+			jobExec = resumingJob
+		} else {
+			je, err := monitor.StartJob(ctx, jobName, jobName, totalRoots, map[string]interface{}{
+				"type": "location_area_discovery",
+				"checkpoint": map[string]interface{}{
+					"current_root_index": 0,
+					"roots_failed":       0,
+				},
+			})
+			if err != nil {
+				log.Printf("Warning: failed to start job monitoring for %s: %v", jobName, err)
+			} else {
+				jobExec = je
+			}
+		}
+	}
+
+	log.Printf("location_area_discovery: starting (%d total roots across %d locations, start index=%d)",
+		totalRoots, len(roots), startIndex)
+
+	// Flatten roots into a single ordered list so currentIndex/checkpoint
+	// math is straightforward and matches totalRoots.
+	type flatRoot struct {
+		locationID   int
+		locationName string
+		mpAreaID     int64
+	}
+	flat := make([]flatRoot, 0, totalRoots)
+	for _, cfg := range roots {
+		for _, id := range cfg.MPAreaIDs {
+			flat = append(flat, flatRoot{
+				locationID:   cfg.LocationID,
+				locationName: cfg.LocationName,
+				mpAreaID:     id,
+			})
+		}
+	}
+
+	rootsFailed := 0
+	rootsProcessed := 0
+	rootsSucceeded := 0
+	cancelled := false
+
+	for i := startIndex; i < len(flat); i++ {
+		// Respect cancellation between roots.
+		select {
+		case <-ctx.Done():
+			log.Printf("location_area_discovery: context cancelled at root index %d/%d", i, len(flat))
+			if jobExec != nil && monitor != nil {
+				_ = monitor.MarkJobPaused(ctx, jobExec.ID)
+			}
+			cancelled = true
+			goto done
+		default:
+		}
+
+		root := flat[i]
+		locID := root.locationID
+		log.Printf("location_area_discovery: [%d/%d] %s (location_id=%d, mp_area_id=%d)",
+			i+1, len(flat), root.locationName, locID, root.mpAreaID)
+
+		areaIDStr := fmt.Sprint(root.mpAreaID)
+
+		// Probe the root area first. SyncAreaRecursive internally
+		// swallows MP API fetch errors (it logs and continues so that
+		// one bad area doesn't kill the whole BFS), which means a
+		// completely unreachable root would otherwise look like a
+		// "successful" no-op. Probing here lets us correctly count
+		// fully-failed roots and surface them via FailJob, while still
+		// keeping per-root failures isolated from one another.
+		if _, probeErr := s.mpClient.GetArea(areaIDStr); probeErr != nil {
+			log.Printf("Warning: location_area_discovery root %d (%s) unreachable: %v",
+				root.mpAreaID, root.locationName, probeErr)
+			rootsFailed++
+		} else if err := s.SyncAreaRecursive(ctx, areaIDStr, &locID); err != nil {
+			// Non-fatal: log and continue with the next root.
+			log.Printf("Warning: location_area_discovery root %d (%s) failed: %v",
+				root.mpAreaID, root.locationName, err)
+			rootsFailed++
+		} else {
+			rootsSucceeded++
+		}
+
+		rootsProcessed++
+
+		// Checkpoint after every root so a crash mid-run can resume.
+		if jobExec != nil && monitor != nil {
+			checkpoint := map[string]interface{}{
+				"current_root_index": i + 1,
+				"roots_failed":       rootsFailed,
+			}
+			if err := monitor.SaveCheckpoint(ctx, jobExec.ID, checkpoint); err != nil {
+				log.Printf("Warning: failed to save %s checkpoint: %v", jobName, err)
+			}
+			if err := monitor.UpdateProgress(ctx, jobExec.ID,
+				i+1, rootsSucceeded, rootsFailed); err != nil {
+				log.Printf("Warning: failed to update %s progress: %v", jobName, err)
+			}
+		}
+	}
+
+done:
+	duration := time.Since(startTime)
+
+	// STEP 3: Complete or fail the job. If any roots failed, surface that
+	// via FailJob so jtrack flags the run; if cancelled, leave as paused so
+	// the next server boot resumes it.
+	if jobExec != nil && monitor != nil && !cancelled {
+		if rootsFailed > 0 {
+			msg := fmt.Sprintf("%d/%d roots failed", rootsFailed, rootsProcessed)
+			if err := monitor.FailJob(ctx, jobExec.ID, msg); err != nil {
+				log.Printf("Warning: failed to mark %s job as failed: %v", jobName, err)
+			}
+		} else {
+			if err := monitor.CompleteJob(ctx, jobExec.ID); err != nil {
+				log.Printf("Warning: failed to complete %s job: %v", jobName, err)
+			}
+		}
+	}
+
+	log.Printf("location_area_discovery complete: processed=%d succeeded=%d failed=%d (%.1f minutes)",
+		rootsProcessed, rootsSucceeded, rootsFailed, duration.Minutes())
+
+	if cancelled {
+		return ctx.Err()
+	}
+	if rootsFailed > 0 {
+		return fmt.Errorf("location_area_discovery: %d/%d roots failed", rootsFailed, rootsProcessed)
+	}
 	return nil
 }
