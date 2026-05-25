@@ -86,7 +86,7 @@ export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack, s
             {(view === 'route' || (view === 'area' && onBack)) && (
               <button
                 onClick={view === 'route' ? handleBackToArea : onBack}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shrink-0"
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shrink-0 text-gray-700 dark:text-gray-200"
                 title={view === 'route' ? 'Back to area' : 'Back to cluster'}
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -99,7 +99,7 @@ export function AreaDetailDrawer({ areaId, dateRange, isOpen, onClose, onBack, s
             </h2>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shrink-0"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shrink-0 text-gray-700 dark:text-gray-200"
               title="Close"
             >
               <X className="w-5 h-5" />

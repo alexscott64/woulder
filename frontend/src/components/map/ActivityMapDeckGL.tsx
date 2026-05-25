@@ -267,7 +267,7 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
   // Only render deck.gl when component is ready and has data to avoid WebGL errors
   if (!isReady || points.length === 0) {
     return <div className="h-full w-full relative flex items-center justify-center">
-      <p className="text-gray-500">{points.length === 0 ? 'No activity data to display' : 'Loading map...'}</p>
+      <p className="text-gray-500 dark:text-gray-400">{points.length === 0 ? 'No activity data to display' : 'Loading map...'}</p>
     </div>;
   }
 
@@ -298,13 +298,13 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
         >
           {hoveredObject.isCluster ? (
             <div>
-              <h3 className="font-bold text-base mb-2">
+              <h3 className="font-bold text-base mb-2 text-gray-900 dark:text-white">
                 {hoveredObject.count} Climbing {hoveredObject.count === 1 ? 'Area' : 'Areas'}
               </h3>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Total Activity:</span>
-                  <span className="font-semibold">{Math.round(hoveredObject.colorValue || 0).toLocaleString()}</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">{Math.round(hoveredObject.colorValue || 0).toLocaleString()}</span>
                 </div>
                 {hoveredObject.points.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -328,23 +328,23 @@ export function ActivityMapDeckGL({ points, onAreaClick, selectedAreaId, onShowC
             </div>
           ) : (
             <div>
-              <h3 className="font-bold text-base mb-2">{hoveredObject.name}</h3>
+              <h3 className="font-bold text-base mb-2 text-gray-900 dark:text-white">{hoveredObject.name}</h3>
               <div className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Activity Score:</span>
-                  <span className="font-semibold">{hoveredObject.activity_score}</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">{hoveredObject.activity_score}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Total Ticks:</span>
-                  <span className="font-semibold">{hoveredObject.total_ticks}</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">{hoveredObject.total_ticks}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Active Routes:</span>
-                  <span className="font-semibold">{hoveredObject.active_routes}</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">{hoveredObject.active_routes}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Climbers:</span>
-                  <span className="font-semibold">{hoveredObject.unique_climbers}</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">{hoveredObject.unique_climbers}</span>
                 </div>
               </div>
               <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">

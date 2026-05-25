@@ -129,7 +129,7 @@ export function ClusterDetailDrawer({ areas, isOpen, onClose, onAreaClick, dateR
             </h2>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shrink-0"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shrink-0 text-gray-700 dark:text-gray-200"
               title="Close"
             >
               <X className="w-5 h-5" />
