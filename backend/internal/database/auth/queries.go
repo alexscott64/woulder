@@ -16,6 +16,17 @@ const (
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, email, display_name, password_hash, role, is_active, created_at, updated_at, last_login_at
 	`
+	queryUpdateUserCredentials = `
+		UPDATE woulder.users
+		SET email = $2,
+		    display_name = $3,
+		    password_hash = $4,
+		    role = $5,
+		    is_active = TRUE,
+		    updated_at = now()
+		WHERE id = $1
+		RETURNING id, email, display_name, password_hash, role, is_active, created_at, updated_at, last_login_at
+	`
 	queryUpdateLastLogin    = `UPDATE woulder.users SET last_login_at = now(), updated_at = now() WHERE id = $1`
 	queryCreateRefreshToken = `
 		INSERT INTO woulder.auth_refresh_tokens (user_id, token_hash, expires_at)

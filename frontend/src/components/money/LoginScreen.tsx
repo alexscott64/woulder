@@ -3,20 +3,21 @@ import { Loader2, Lock, Mountain, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 export function LoginScreen() {
-  const { login, isLoading, error } = useAuth();
-  const [email, setEmail] = useState('');
+  const { login, isLoginSubmitting, error } = useAuth();
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setLocalError(null);
-    if (!email.trim() || !password) {
-      setLocalError('Email and password are required.');
+    if (!username.trim() || !password) {
+      setLocalError('Username and password are required.');
       return;
     }
     try {
-      await login(email.trim(), password);
+      console.debug('[money-auth] login form submitted');
+      await login(username.trim(), password);
     } catch {
       setLocalError('Unable to sign in.');
     }
@@ -57,14 +58,14 @@ export function LoginScreen() {
           </div>
 
           <label className="mb-4 block">
-            <span className="mb-2 block text-sm font-medium text-slate-200">Email</span>
+            <span className="mb-2 block text-sm font-medium text-slate-200">Username or email</span>
             <input
-              autoComplete="email"
-              type="email"
-              value={email}
-              onChange={event => setEmail(event.target.value)}
+              autoComplete="username"
+              type="text"
+              value={username}
+              onChange={event => setUsername(event.target.value)}
               className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none ring-emerald-300/60 transition placeholder:text-slate-500 focus:ring-2"
-              placeholder="developer@example.com"
+              placeholder="MONEY_USERNAME"
             />
           </label>
 
@@ -88,10 +89,10 @@ export function LoginScreen() {
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoginSubmitting}
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-300 px-4 py-3 font-bold text-slate-950 shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isLoginSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
             Enter toolkit
           </button>
         </form>

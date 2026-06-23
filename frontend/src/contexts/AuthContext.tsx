@@ -6,7 +6,8 @@ import { MoneyCurrentUser } from '../types/money';
 interface AuthContextValue {
   user: MoneyCurrentUser | null;
   isAuthenticated: boolean;
-  isLoading: boolean;
+  isBootstrapping: boolean;
+  isLoginSubmitting: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -18,19 +19,21 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<MoneyCurrentUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [isLoginSubmitting, setIsLoginSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refreshSession = useCallback(async () => {
     if (!getStoredRefreshToken()) {
       setUser(null);
-      setIsLoading(false);
+      setIsBootstrapping(false);
       return;
     }
 
-    setIsLoading(true);
+    setIsBootstrapping(true);
     setError(null);
     try {
+      console.debug('[money-auth] refreshing persisted session');
       const refreshed = await authApi.refresh();
       setUser(refreshed.user);
     } catch {
@@ -38,7 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setError('Session expired. Sign in again.');
     } finally {
-      setIsLoading(false);
+      setIsBootstrapping(false);
     }
   }, []);
 
@@ -49,9 +52,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshSession]);
 
   const login = useCallback(async (email: string, password: string) => {
-    setIsLoading(true);
+    setIsLoginSubmitting(true);
     setError(null);
     try {
+      console.debug('[money-auth] submitting login request');
       const response = await authApi.login(email, password);
       setUser(response.user);
     } catch {
@@ -59,30 +63,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       throw new Error('Invalid email or password.');
     } finally {
-      setIsLoading(false);
+      setIsLoginSubmitting(false);
     }
   }, []);
 
   const logout = useCallback(async () => {
-    setIsLoading(true);
+    setIsLoginSubmitting(true);
     try {
       await authApi.logout();
       setUser(null);
     } finally {
-      setIsLoading(false);
+      setIsLoginSubmitting(false);
     }
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
     isAuthenticated: Boolean(user),
-    isLoading,
+    isBootstrapping,
+    isLoginSubmitting,
     error,
     login,
     logout,
     refreshSession,
     canWrite: user?.role === 'admin' || user?.role === 'developer',
-  }), [error, isLoading, login, logout, refreshSession, user]);
+  }), [error, isBootstrapping, isLoginSubmitting, login, logout, refreshSession, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

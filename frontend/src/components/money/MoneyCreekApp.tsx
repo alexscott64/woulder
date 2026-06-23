@@ -19,7 +19,7 @@ const PROJECT_SLUG = 'money-creek';
 const EMPTY_FEATURES: MoneyFeature[] = [];
 
 function MoneyCreekWorkspace() {
-  const { user, isAuthenticated, isLoading, canWrite, logout } = useAuth();
+  const { user, isAuthenticated, isBootstrapping, canWrite, logout } = useAuth();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<MoneyFeatureFilters>({ type: 'all', status: 'all', search: '' });
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
@@ -87,7 +87,7 @@ function MoneyCreekWorkspace() {
   const features = snapshotQuery.data?.features ?? EMPTY_FEATURES;
   const filteredMapFeatures = useMemo(() => features.filter(feature => feature.status !== 'archived' || filters.status === 'archived'), [features, filters.status]);
 
-  if (isLoading) {
+  if (isBootstrapping) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
         <Loader2 className="mr-3 h-6 w-6 animate-spin text-emerald-200" />

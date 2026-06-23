@@ -82,8 +82,12 @@ func main() {
 		command = os.Args[1]
 	}
 
-	// Get migrations directory
-	migrationsPath := filepath.Join("..", "..", "internal", "database", "migrations")
+	// Get migrations directory. MIGRATIONS_PATH is used by deployment where the
+	// migrate binary runs outside the source tree.
+	migrationsPath := os.Getenv("MIGRATIONS_PATH")
+	if migrationsPath == "" {
+		migrationsPath = filepath.Join("..", "..", "internal", "database", "migrations")
+	}
 
 	// Execute command
 	switch command {

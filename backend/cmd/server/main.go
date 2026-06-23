@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -62,6 +63,12 @@ func main() {
 	authService := service.NewAuthService(db.Auth(), cfg.Auth)
 	if err := authService.BootstrapAdmin(context.Background()); err != nil {
 		log.Printf("Warning: failed to bootstrap app admin: %v", err)
+	}
+	if cfg.Upload.StorageDriver != "local" {
+		log.Printf("Warning: unsupported upload storage driver %q; falling back to local storage", cfg.Upload.StorageDriver)
+	}
+	if err := os.MkdirAll(cfg.Upload.Dir, 0755); err != nil {
+		log.Fatalf("Failed to create upload directory %s: %v", cfg.Upload.Dir, err)
 	}
 	uploadStorage := storage.NewLocalStorage(cfg.Upload.Dir)
 	moneyService := service.NewMoneyService(db.Money(), uploadStorage, cfg.Upload.MaxBytes)

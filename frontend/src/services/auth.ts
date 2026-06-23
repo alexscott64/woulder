@@ -32,6 +32,7 @@ export function clearAuthTokens() {
 
 export const authApi = {
   async login(email: string, password: string): Promise<AuthResponse> {
+    console.debug('[money-auth] POST /auth/login');
     const response = await authApiClient.post<AuthResponse>('/auth/login', { email, password });
     setAuthTokens(response.data);
     return response.data;

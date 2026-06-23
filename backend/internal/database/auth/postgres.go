@@ -28,6 +28,10 @@ func (r *PostgresRepository) CreateUser(ctx context.Context, user models.User) (
 	return r.scanUser(r.db.QueryRowContext(ctx, queryCreateUser, user.Email, user.DisplayName, user.PasswordHash, user.Role))
 }
 
+func (r *PostgresRepository) UpdateUserCredentials(ctx context.Context, user models.User) (*models.User, error) {
+	return r.scanUser(r.db.QueryRowContext(ctx, queryUpdateUserCredentials, user.ID, user.Email, user.DisplayName, user.PasswordHash, user.Role))
+}
+
 func (r *PostgresRepository) UpdateLastLogin(ctx context.Context, userID string) error {
 	_, err := r.db.ExecContext(ctx, queryUpdateLastLogin, userID)
 	return err

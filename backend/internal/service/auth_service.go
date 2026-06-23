@@ -34,26 +34,33 @@ func NewAuthService(repo auth.Repository, cfg config.AuthConfig) *AuthService {
 }
 
 func (s *AuthService) BootstrapAdmin(ctx context.Context) error {
-	if strings.TrimSpace(s.cfg.AdminEmail) == "" || s.cfg.AdminPassword == "" {
+	email := strings.ToLower(strings.TrimSpace(s.cfg.AdminEmail))
+	if email == "" || s.cfg.AdminPassword == "" {
 		return nil
 	}
-	_, err := s.repo.GetUserByEmail(ctx, s.cfg.AdminEmail)
-	if err == nil {
-		return nil
-	}
-	if !dberrors.IsNotFound(err) {
-		return err
+	displayName := strings.TrimSpace(s.cfg.AdminDisplayName)
+	if displayName == "" {
+		displayName = "Money Creek Admin"
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(s.cfg.AdminPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	_, err = s.repo.CreateUser(ctx, models.User{Email: strings.ToLower(strings.TrimSpace(s.cfg.AdminEmail)), DisplayName: s.cfg.AdminDisplayName, PasswordHash: string(hash), Role: models.RoleAdmin})
+
+	u, err := s.repo.GetUserByEmail(ctx, email)
+	if err == nil {
+		_, err = s.repo.UpdateUserCredentials(ctx, models.User{ID: u.ID, Email: email, DisplayName: displayName, PasswordHash: string(hash), Role: models.RoleAdmin})
+		return err
+	}
+	if !dberrors.IsNotFound(err) {
+		return err
+	}
+	_, err = s.repo.CreateUser(ctx, models.User{Email: email, DisplayName: displayName, PasswordHash: string(hash), Role: models.RoleAdmin})
 	return err
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (*models.AuthResponse, error) {
-	u, err := s.repo.GetUserByEmail(ctx, strings.TrimSpace(email))
+	u, err := s.repo.GetUserByEmail(ctx, strings.ToLower(strings.TrimSpace(email)))
 	if err != nil {
 		return nil, ErrAuthInvalidCredentials
 	}
