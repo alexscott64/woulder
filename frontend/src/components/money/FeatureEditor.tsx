@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { Archive, Loader2, Save } from 'lucide-react';
 import { moneyApi } from '../../services/money';
 import { MoneyFeature, MoneyFeatureRequest, MoneyFeatureStatus } from '../../types/money';
@@ -17,13 +17,6 @@ export function FeatureEditor({ feature, canWrite, onSaved, onArchived }: Featur
   const [status, setStatus] = useState<MoneyFeatureStatus>(feature.status);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setTitle(feature.title);
-    setDescription(feature.description ?? '');
-    setStatus(feature.status);
-    setError(null);
-  }, [feature]);
 
   const payload = (): MoneyFeatureRequest => ({
     feature_type: feature.feature_type,
