@@ -19,6 +19,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/mountainproject"
 	"github.com/alexscott64/woulder/backend/internal/rivers"
 	"github.com/alexscott64/woulder/backend/internal/service"
+	"github.com/alexscott64/woulder/backend/internal/storage"
 	"github.com/alexscott64/woulder/backend/internal/weather"
 )
 
@@ -58,9 +59,15 @@ func main() {
 	boulderDryingService := service.NewBoulderDryingService(db.Boulders(), db.Weather(), db.Locations(), db.Rocks(), db.MountainProject(), weatherClient)
 	heatMapService := service.NewHeatMapService(db.HeatMap())
 	analyticsService := service.NewAnalyticsService(db.Analytics())
+	authService := service.NewAuthService(db.Auth(), cfg.Auth)
+	if err := authService.BootstrapAdmin(context.Background()); err != nil {
+		log.Printf("Warning: failed to bootstrap app admin: %v", err)
+	}
+	uploadStorage := storage.NewLocalStorage(cfg.Upload.Dir)
+	moneyService := service.NewMoneyService(db.Money(), uploadStorage, cfg.Upload.MaxBytes)
 
 	// Initialize API handler with services
-	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService, analyticsService, db.Kaya(), jobMonitor)
+	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService, analyticsService, authService, moneyService, db.Kaya(), jobMonitor)
 
 	// Start background syncs only if not disabled (e.g., in development)
 	if cfg.Server.DisableBackgroundSyncs {
@@ -157,6 +164,34 @@ func main() {
 		apiGroup.GET("/monitoring/jobs/history", handler.GetJobHistory)
 		apiGroup.GET("/monitoring/jobs/summary", handler.GetJobsSummary)
 		apiGroup.GET("/monitoring/jobs/:job_id", handler.GetJobStatus)
+		// General app auth routes
+		authGroup := apiGroup.Group("/auth")
+		{
+			authGroup.POST("/login", handler.AuthLogin)
+			authGroup.POST("/refresh", handler.AuthRefresh)
+			authGroup.POST("/logout", handler.AuthLogout)
+			authGroup.GET("/me", middleware.Auth(authService), handler.AuthMe)
+		}
+
+		// Money Creek toolkit routes (auth required)
+		moneyGroup := apiGroup.Group("/money")
+		moneyGroup.Use(middleware.Auth(authService))
+		{
+			moneyGroup.GET("/projects/:project_id", handler.GetMoneyProject)
+			moneyGroup.GET("/projects/:project_id/snapshot", handler.GetMoneySnapshot)
+			moneyGroup.GET("/projects/:project_id/features", handler.ListMoneyFeatures)
+			moneyGroup.POST("/projects/:project_id/features", middleware.RequireMoneyWrite(), handler.CreateMoneyFeature)
+			moneyGroup.POST("/projects/:project_id/uploads", middleware.RequireMoneyWrite(), handler.UploadMoneyImage)
+			moneyGroup.GET("/features/:feature_id", handler.GetMoneyFeature)
+			moneyGroup.PATCH("/features/:feature_id", middleware.RequireMoneyWrite(), handler.UpdateMoneyFeature)
+			moneyGroup.DELETE("/features/:feature_id", middleware.RequireMoneyWrite(), handler.ArchiveMoneyFeature)
+			moneyGroup.GET("/features/:feature_id/notes", handler.ListMoneyNotes)
+			moneyGroup.POST("/features/:feature_id/notes", middleware.RequireMoneyWrite(), handler.CreateMoneyNote)
+			moneyGroup.PATCH("/notes/:note_id", middleware.RequireMoneyWrite(), handler.UpdateMoneyNote)
+			moneyGroup.DELETE("/notes/:note_id", middleware.RequireMoneyWrite(), handler.DeleteMoneyNote)
+			moneyGroup.GET("/uploads/:upload_id", handler.StreamMoneyUpload)
+			moneyGroup.DELETE("/uploads/:upload_id", middleware.RequireMoneyWrite(), handler.DeleteMoneyUpload)
+		}
 	}
 
 	// Serve job monitoring dashboard at /jtrack

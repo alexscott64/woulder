@@ -15,6 +15,8 @@ type Config struct {
 	Database DatabaseConfig
 	Weather  WeatherConfig
 	Cache    CacheConfig
+	Auth     AuthConfig
+	Upload   UploadConfig
 }
 
 // ServerConfig holds server-related configuration
@@ -68,6 +70,23 @@ type CacheConfig struct {
 	DurationMinutes int
 }
 
+// AuthConfig holds general app auth configuration.
+type AuthConfig struct {
+	JWTSecret          string
+	AccessTokenMinutes int
+	RefreshTokenDays   int
+	AdminEmail         string
+	AdminPassword      string
+	AdminDisplayName   string
+}
+
+// UploadConfig holds local upload storage configuration.
+type UploadConfig struct {
+	StorageDriver string
+	Dir           string
+	MaxBytes      int64
+}
+
 // Load reads configuration from environment variables
 func Load() (*Config, error) {
 	// Load .env file if it exists (ignore error if not found)
@@ -80,7 +99,7 @@ func Load() (*Config, error) {
 			DisableBackgroundSyncs: getEnvAsBool("DISABLE_BACKGROUND_SYNCS", false),
 			CORS: CORSConfig{
 				AllowOrigins:     []string{"*"}, // TODO: Configure per environment
-				AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+				AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 				AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 				ExposeHeaders:    []string{"Content-Length"},
 				AllowCredentials: true,
@@ -107,6 +126,19 @@ func Load() (*Config, error) {
 		},
 		Cache: CacheConfig{
 			DurationMinutes: getEnvAsInt("CACHE_DURATION", 10),
+		},
+		Auth: AuthConfig{
+			JWTSecret:          getEnv("APP_JWT_SECRET", "development-only-change-me"),
+			AccessTokenMinutes: getEnvAsInt("APP_ACCESS_TOKEN_MINUTES", 15),
+			RefreshTokenDays:   getEnvAsInt("APP_REFRESH_TOKEN_DAYS", 30),
+			AdminEmail:         getEnv("APP_ADMIN_EMAIL", ""),
+			AdminPassword:      getEnv("APP_ADMIN_PASSWORD", ""),
+			AdminDisplayName:   getEnv("APP_ADMIN_DISPLAY_NAME", "Money Creek Admin"),
+		},
+		Upload: UploadConfig{
+			StorageDriver: getEnv("UPLOAD_STORAGE_DRIVER", "local"),
+			Dir:           getEnv("UPLOAD_DIR", "./uploads"),
+			MaxBytes:      int64(getEnvAsInt("UPLOAD_MAX_BYTES", 10*1024*1024)),
 		},
 	}
 
