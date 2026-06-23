@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { authApi, clearAuthTokens, getStoredRefreshToken } from '../services/auth';
 import { MoneyCurrentUser } from '../types/money';
@@ -42,6 +43,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Auth bootstrap intentionally synchronizes persisted refresh-token state into React state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshSession();
   }, [refreshSession]);
 

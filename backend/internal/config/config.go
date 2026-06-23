@@ -131,8 +131,8 @@ func Load() (*Config, error) {
 			JWTSecret:          getEnv("APP_JWT_SECRET", "development-only-change-me"),
 			AccessTokenMinutes: getEnvAsInt("APP_ACCESS_TOKEN_MINUTES", 15),
 			RefreshTokenDays:   getEnvAsInt("APP_REFRESH_TOKEN_DAYS", 30),
-			AdminEmail:         getEnv("APP_ADMIN_EMAIL", ""),
-			AdminPassword:      getEnv("APP_ADMIN_PASSWORD", ""),
+			AdminEmail:         getEnv("APP_ADMIN_EMAIL", getEnv("MONEY_USERNAME", "")),
+			AdminPassword:      getEnv("APP_ADMIN_PASSWORD", getEnv("MONEY_PASSWORD", "")),
 			AdminDisplayName:   getEnv("APP_ADMIN_DISPLAY_NAME", "Money Creek Admin"),
 		},
 		Upload: UploadConfig{

@@ -160,7 +160,7 @@ export function MoneyMap({ project, features, selectedFeatureId, drawingType, dr
         stroked: true,
       }),
     ].filter(Boolean);
-  }, [draftPoints, drawingType, features, onAddDraftPoint, onSelectFeature, project.center_lat, project.center_lon, selectedFeatureId]);
+  }, [draftPoints, drawingType, features, onSelectFeature, project.center_lat, project.center_lon, selectedFeatureId]);
 
   return (
     <div className="absolute inset-0 bg-slate-900">
