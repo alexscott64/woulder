@@ -132,8 +132,8 @@ export interface MoneySnapshot {
 
 export interface MoneyFeatureDetail {
   feature: MoneyFeature;
-  notes: MoneyNote[];
-  uploads: MoneyUpload[];
+  notes: MoneyNote[] | null;
+  uploads: MoneyUpload[] | null;
 }
 
 export interface MoneyFeatureRequest {

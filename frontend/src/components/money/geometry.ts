@@ -44,8 +44,8 @@ export function featureTypeLabel(type: MoneyFeatureType): string {
   const labels: Record<MoneyFeatureType, string> = {
     trail: 'Trail',
     topo: 'Topo',
-    poi: 'POI',
-    drawing: 'Drawing',
+    poi: 'Map pin',
+    drawing: 'Sketch',
   };
   return labels[type];
 }
