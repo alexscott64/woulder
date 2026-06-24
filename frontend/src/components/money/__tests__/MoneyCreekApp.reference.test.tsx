@@ -11,7 +11,7 @@ vi.mock('../../../contexts/AuthContext', () => ({
 vi.mock('../../../services/money', () => ({
   moneyApi: {
     getProject: vi.fn().mockResolvedValue({ project: { id: 'project-1', slug: 'money-creek', name: 'Money Creek', center_lat: 0, center_lon: 0, default_zoom: 14, created_at: '', updated_at: '' }, user: {}, permissions: { can_write: true } }),
-    getCragSnapshot: vi.fn().mockResolvedValue({ project: { id: 'project-1', slug: 'money-creek', name: 'Money Creek', center_lat: 0, center_lon: 0, default_zoom: 14, created_at: '', updated_at: '' }, trails: [], notes: [], uploads: [], root: { feature: { id: 'area-1', project_id: 'project-1', feature_type: 'area', title: 'Money Creek', description: 'Reference crag', status: 'active', geojson: { type: 'Polygon', coordinates: [[[0,0],[100,0],[100,100],[0,0]]] }, style: {}, properties: { kind: 'Crag', aspect: 'Skykomish' }, sort_order: 0, created_by: 'u', updated_by: 'u', created_at: '', updated_at: '' }, children: [], boulders: [], problems: [] } }),
+    getCragSnapshot: vi.fn().mockResolvedValue({ project: { id: 'project-1', slug: 'money-creek', name: 'Money Creek', center_lat: 0, center_lon: 0, default_zoom: 14, created_at: '', updated_at: '' }, trails: null, notes: null, uploads: null, root: { feature: { id: 'area-1', project_id: 'project-1', feature_type: 'area', title: 'Money Creek', description: 'Reference crag', status: 'active', geojson: { type: 'Polygon', coordinates: [[[0,0],[100,0],[100,100],[0,0]]] }, style: {}, properties: { kind: 'Crag', aspect: 'Skykomish' }, sort_order: 0, created_by: 'u', updated_by: 'u', created_at: '', updated_at: '' }, children: null, boulders: null, problems: null } }),
   },
 }));
 

@@ -42,8 +42,18 @@ func main() {
 	}
 	defer file.Close()
 
+	gpxPath := os.Getenv("MONEY_REFERENCE_GPX")
+	if gpxPath == "" {
+		gpxPath = "internal/database/money/fixtures/onx-markups-06232026.gpx"
+	}
+	gpxFile, err := os.Open(gpxPath)
+	if err != nil {
+		log.Fatalf("open GPX %s: %v", gpxPath, err)
+	}
+	defer gpxFile.Close()
+
 	svc := service.NewMoneyService(db.Money(), storage.NewLocalStorage(os.TempDir()), 25<<20)
-	if err := svc.ImportReferenceCrag(ctx, project.ID, file, user); err != nil {
+	if err := svc.ImportReferenceCragWithGPX(ctx, project.ID, file, gpxFile, user); err != nil {
 		log.Fatalf("import fixture: %v", err)
 	}
 	log.Printf("Imported Money Creek reference crag into project %s as %s", project.ID, user.Email)

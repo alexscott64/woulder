@@ -74,6 +74,10 @@ func (r *PostgresRepository) UpdateFeature(ctx context.Context, f models.MoneyFe
 	return scanFeature(r.db.QueryRowContext(ctx, queryUpdateFeature, f.ID, f.ParentFeatureID, f.FeatureType, f.Title, f.Description, f.Status, f.GeoJSON, f.Style, f.Properties, f.MinLat, f.MinLon, f.MaxLat, f.MaxLon, f.SortOrder, f.ExternalRef, f.ImportSource, f.UpdatedBy))
 }
 
+func (r *PostgresRepository) UpdateFeatureGeometry(ctx context.Context, id string, geojson []byte, bbox models.BBox, updatedBy string) (*models.MoneyFeature, error) {
+	return scanFeature(r.db.QueryRowContext(ctx, queryUpdateFeatureGeometry, id, geojson, bbox.MinLat, bbox.MinLon, bbox.MaxLat, bbox.MaxLon, updatedBy))
+}
+
 func (r *PostgresRepository) UpsertFeatureByExternalRef(ctx context.Context, f models.MoneyFeature) (*models.MoneyFeature, error) {
 	return scanFeature(r.db.QueryRowContext(ctx, queryUpsertFeatureByExternalRef, f.ProjectID, f.ParentFeatureID, f.FeatureType, f.Title, f.Description, f.Status, f.GeoJSON, f.Style, f.Properties, f.MinLat, f.MinLon, f.MaxLat, f.MaxLon, f.SortOrder, f.ExternalRef, f.ImportSource, f.CreatedBy, f.UpdatedBy))
 }

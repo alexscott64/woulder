@@ -89,8 +89,10 @@ type UploadConfig struct {
 
 // Load reads configuration from environment variables
 func Load() (*Config, error) {
-	// Load .env file if it exists (ignore error if not found)
-	_ = godotenv.Load()
+	// Load .env files if they exist (ignore error if not found). Include
+	// backend/.env so app auth can use MONEY_USERNAME/MONEY_PASSWORD when the
+	// server is launched from the repository root.
+	_ = godotenv.Load(".env", "backend/.env", "../.env", "../../backend/.env")
 
 	cfg := &Config{
 		Server: ServerConfig{

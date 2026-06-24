@@ -286,10 +286,10 @@
       {
         "id": "a-5",
         "type": "area",
-        "name": "Gamecube",
+        "name": "GameCube",
         "kind": "Boulders",
         "aspect": "SW · mixed",
-        "desc": "Cluster of cube-shaped blocks — the Gamecube boulders and neighbors.",
+        "desc": "Cluster of cube-shaped blocks — the GameCube boulders and neighbors.",
         "children": [],
         "boulders": [
           {
@@ -1158,18 +1158,18 @@
       {
         "id": "a-25",
         "type": "area",
-        "name": "Dire Creek",
+        "name": "DotA Boulders",
         "kind": "Boulders",
         "aspect": "NE · main development",
-        "desc": "The core developed zone — Dota-named blocks, the cave cluster, and the Radiant boulders.",
+        "desc": "Parent zone for the Dota-themed boulders on the right side of Money Creek.",
         "children": [
           {
             "id": "a-56",
             "type": "area",
-            "name": "Lower Dire & Cave",
+            "name": "Dire Boulders",
             "kind": "Boulders",
-            "aspect": "",
-            "desc": "",
+            "aspect": "right-side approach",
+            "desc": "Boulders reached by the approach trail in the DotA zone, including the cave and lower-right clusters.",
             "children": [],
             "boulders": [
               {
@@ -2023,10 +2023,10 @@
           {
             "id": "a-87",
             "type": "area",
-            "name": "Upper Dire",
+            "name": "Radiant Boulders",
             "kind": "Boulders",
-            "aspect": "",
-            "desc": "",
+            "aspect": "creekside",
+            "desc": "Creekside Dota-themed boulders including Brewmaster, Invoker, Tusk, and neighboring blocks.",
             "children": [],
             "boulders": [
               {
@@ -2668,7 +2668,7 @@
   "trails": [
     {
       "id": "tr1",
-      "name": "Dire Approach",
+      "name": "Dire Boulders Approach",
       "source": "gpx",
       "dist": "0.33 mi",
       "gain": "—",
@@ -2767,7 +2767,7 @@
     },
     {
       "id": "tr2",
-      "name": "Upper Dire Spur",
+      "name": "Radiant Boulders Spur",
       "source": "gpx",
       "dist": "0.52 mi",
       "gain": "—",

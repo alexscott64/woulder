@@ -169,6 +169,10 @@ type MoneyCragAreaRequest struct {
 	Properties      json.RawMessage `json:"properties"`
 }
 
+type MoneyAreaGeometryRequest struct {
+	GeoJSON json.RawMessage `json:"geojson"`
+}
+
 type MoneyCragBoulderRequest struct {
 	ParentFeatureID string          `json:"parent_feature_id"`
 	Title           string          `json:"title"`

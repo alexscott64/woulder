@@ -6,6 +6,8 @@ export function cragProblems(node: MoneyCragNode): MoneyCragNode[] { return node
 
 export const W = 1000;
 export const H = 680;
+export const MONEY_CREEK_CENTER: MoneyPosition = [-121.4703, 47.6997];
+export const MONEY_CREEK_FALLBACK_BBOX: [number, number, number, number] = [-121.492, 47.695, -121.458, 47.707];
 
 export function geometryPoints(geojson: MoneyGeoJSON): MoneyPosition[] {
   const geometry: MoneyGeometry | undefined = geojson.type === 'Feature' ? geojson.geometry : geojson.type === 'FeatureCollection' ? geojson.features[0]?.geometry : geojson;
@@ -25,14 +27,25 @@ export function lineGeoJSON(points: MoneyPosition[]): MoneyGeoJSON { return { ty
 export function pointGeoJSON(point: MoneyPosition): MoneyGeoJSON { return { type: 'Point', coordinates: point }; }
 
 export function centroid(points: MoneyPosition[]): MoneyPosition {
-  if (!points.length) return [500, 340];
+  if (!points.length) return MONEY_CREEK_CENTER;
   return points.reduce<MoneyPosition>((a, p) => [a[0] + p[0] / points.length, a[1] + p[1] / points.length], [0, 0]);
 }
 
 export function bbox(node: MoneyCragNode): [number, number, number, number] {
-  const pts = geometryPoints(node.feature.geojson);
-  if (!pts.length) return [440, 280, 560, 400];
+  const pts = collectNodePoints(node);
+  if (!pts.length) return MONEY_CREEK_FALLBACK_BBOX;
   return pts.reduce<[number, number, number, number]>((a, p) => [Math.min(a[0], p[0]), Math.min(a[1], p[1]), Math.max(a[2], p[0]), Math.max(a[3], p[1])], [1e9, 1e9, -1e9, -1e9]);
+}
+
+export function bboxCenter(box: [number, number, number, number]): MoneyPosition {
+  return [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
+}
+
+function collectNodePoints(node: MoneyCragNode): MoneyPosition[] {
+  const pts = [...geometryPoints(node.feature.geojson)];
+  cragChildren(node).forEach(child => pts.push(...geometryPoints(child.feature.geojson)));
+  cragBoulders(node).forEach(boulder => pts.push(...geometryPoints(boulder.feature.geojson)));
+  return pts;
 }
 
 export function poly(points: MoneyPosition[]) { return points.map(p => p.join(',')).join(' '); }

@@ -27,7 +27,7 @@ var ErrMoneyForbidden = errors.New("forbidden")
 var ErrMoneyInvalidInput = errors.New("invalid input")
 
 const maxGeoJSONBytes = 512 * 1024
-const moneyReferenceImportSource = "new_money_reference"
+const moneyReferenceImportSource = "money_reference"
 
 type MoneyService struct {
 	repo      money.Repository

@@ -13,6 +13,7 @@ type Repository interface {
 	GetFeature(ctx context.Context, id string) (*models.MoneyFeature, error)
 	CreateFeature(ctx context.Context, feature models.MoneyFeature) (*models.MoneyFeature, error)
 	UpdateFeature(ctx context.Context, feature models.MoneyFeature) (*models.MoneyFeature, error)
+	UpdateFeatureGeometry(ctx context.Context, id string, geojson []byte, bbox models.BBox, updatedBy string) (*models.MoneyFeature, error)
 	UpsertFeatureByExternalRef(ctx context.Context, feature models.MoneyFeature) (*models.MoneyFeature, error)
 	ArchiveFeature(ctx context.Context, id, userID string) error
 	ListNotes(ctx context.Context, featureID string) ([]models.MoneyNote, error)

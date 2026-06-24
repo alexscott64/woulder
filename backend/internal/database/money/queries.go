@@ -31,6 +31,13 @@ const (
 		RETURNING id, project_id, parent_feature_id, feature_type, title, description, status, geojson, style, properties,
 		       min_lat, min_lon, max_lat, max_lon, sort_order, external_ref, import_source, created_by, updated_by, created_at, updated_at
 	`
+	queryUpdateFeatureGeometry = `
+		UPDATE woulder.money_features SET
+		  geojson=$2, min_lat=$3, min_lon=$4, max_lat=$5, max_lon=$6, updated_by=$7, updated_at=now()
+		WHERE id=$1
+		RETURNING id, project_id, parent_feature_id, feature_type, title, description, status, geojson, style, properties,
+		       min_lat, min_lon, max_lat, max_lon, sort_order, external_ref, import_source, created_by, updated_by, created_at, updated_at
+	`
 	queryUpsertFeatureByExternalRef = `
 		INSERT INTO woulder.money_features
 		(project_id, parent_feature_id, feature_type, title, description, status, geojson, style, properties, min_lat, min_lon, max_lat, max_lon, sort_order, external_ref, import_source, created_by, updated_by)
