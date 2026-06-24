@@ -7,6 +7,7 @@ import (
 
 	"github.com/alexscott64/woulder/backend/internal/database/dberrors"
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/lib/pq"
 )
 
 type PostgresRepository struct {
@@ -44,7 +45,7 @@ func (r *PostgresRepository) ListFeatures(ctx context.Context, projectID string,
 		args = append(args, *filter.UpdatedAfter)
 		query += fmt.Sprintf(" AND updated_at > $%d", len(args))
 	}
-	query += " ORDER BY updated_at DESC"
+	query += " ORDER BY sort_order ASC, title ASC, updated_at DESC"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -66,11 +67,15 @@ func (r *PostgresRepository) GetFeature(ctx context.Context, id string) (*models
 }
 
 func (r *PostgresRepository) CreateFeature(ctx context.Context, f models.MoneyFeature) (*models.MoneyFeature, error) {
-	return scanFeature(r.db.QueryRowContext(ctx, queryCreateFeature, f.ProjectID, f.FeatureType, f.Title, f.Description, f.Status, f.GeoJSON, f.Style, f.Properties, f.MinLat, f.MinLon, f.MaxLat, f.MaxLon, f.CreatedBy, f.UpdatedBy))
+	return scanFeature(r.db.QueryRowContext(ctx, queryCreateFeature, f.ProjectID, f.ParentFeatureID, f.FeatureType, f.Title, f.Description, f.Status, f.GeoJSON, f.Style, f.Properties, f.MinLat, f.MinLon, f.MaxLat, f.MaxLon, f.SortOrder, f.ExternalRef, f.ImportSource, f.CreatedBy, f.UpdatedBy))
 }
 
 func (r *PostgresRepository) UpdateFeature(ctx context.Context, f models.MoneyFeature) (*models.MoneyFeature, error) {
-	return scanFeature(r.db.QueryRowContext(ctx, queryUpdateFeature, f.ID, f.FeatureType, f.Title, f.Description, f.Status, f.GeoJSON, f.Style, f.Properties, f.MinLat, f.MinLon, f.MaxLat, f.MaxLon, f.UpdatedBy))
+	return scanFeature(r.db.QueryRowContext(ctx, queryUpdateFeature, f.ID, f.ParentFeatureID, f.FeatureType, f.Title, f.Description, f.Status, f.GeoJSON, f.Style, f.Properties, f.MinLat, f.MinLon, f.MaxLat, f.MaxLon, f.SortOrder, f.ExternalRef, f.ImportSource, f.UpdatedBy))
+}
+
+func (r *PostgresRepository) UpsertFeatureByExternalRef(ctx context.Context, f models.MoneyFeature) (*models.MoneyFeature, error) {
+	return scanFeature(r.db.QueryRowContext(ctx, queryUpsertFeatureByExternalRef, f.ProjectID, f.ParentFeatureID, f.FeatureType, f.Title, f.Description, f.Status, f.GeoJSON, f.Style, f.Properties, f.MinLat, f.MinLon, f.MaxLat, f.MaxLon, f.SortOrder, f.ExternalRef, f.ImportSource, f.CreatedBy, f.UpdatedBy))
 }
 
 func (r *PostgresRepository) ArchiveFeature(ctx context.Context, id, userID string) error {
@@ -84,19 +89,20 @@ func (r *PostgresRepository) ListNotes(ctx context.Context, featureID string) ([
 		return nil, err
 	}
 	defer rows.Close()
-	var notes []models.MoneyNote
-	for rows.Next() {
-		n, err := scanNoteRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		notes = append(notes, *n)
+	return scanNotes(rows)
+}
+
+func (r *PostgresRepository) ListNotesByProject(ctx context.Context, projectID string) ([]models.MoneyNote, error) {
+	rows, err := r.db.QueryContext(ctx, queryListNotesByProject, projectID)
+	if err != nil {
+		return nil, err
 	}
-	return notes, rows.Err()
+	defer rows.Close()
+	return scanNotes(rows)
 }
 
 func (r *PostgresRepository) CreateNote(ctx context.Context, n models.MoneyNote) (*models.MoneyNote, error) {
-	return scanNote(r.db.QueryRowContext(ctx, queryCreateNote, n.ProjectID, n.FeatureID, n.Body, n.Visibility, n.CreatedBy, n.UpdatedBy))
+	return scanNote(r.db.QueryRowContext(ctx, queryCreateNote, n.ProjectID, n.FeatureID, n.TargetType, n.TargetRef, n.Body, n.Visibility, pq.Array(n.Tags), n.Blocks, n.ExternalRef, n.ImportSource, n.CreatedBy, n.UpdatedBy))
 }
 
 func (r *PostgresRepository) UpdateNote(ctx context.Context, noteID, body, visibility, userID, role string) (*models.MoneyNote, error) {
@@ -109,7 +115,7 @@ func (r *PostgresRepository) DeleteNote(ctx context.Context, noteID, userID, rol
 }
 
 func (r *PostgresRepository) CreateUpload(ctx context.Context, u models.MoneyUpload) (*models.MoneyUpload, error) {
-	return scanUpload(r.db.QueryRowContext(ctx, queryCreateUpload, u.ID, u.ProjectID, u.FeatureID, u.NoteID, u.OriginalFilename, u.StorageKey, u.ContentType, u.ByteSize, u.Width, u.Height, u.ChecksumSHA256, u.UploadedBy))
+	return scanUpload(r.db.QueryRowContext(ctx, queryCreateUpload, u.ID, u.ProjectID, u.FeatureID, u.NoteID, u.OriginalFilename, u.StorageKey, u.ContentType, u.ByteSize, u.Width, u.Height, u.ChecksumSHA256, u.BlockKind, u.Metadata, u.UploadedBy))
 }
 
 func (r *PostgresRepository) GetUpload(ctx context.Context, id string) (*models.MoneyUpload, error) {
@@ -122,15 +128,16 @@ func (r *PostgresRepository) ListUploadsByFeature(ctx context.Context, featureID
 		return nil, err
 	}
 	defer rows.Close()
-	var uploads []models.MoneyUpload
-	for rows.Next() {
-		u, err := scanUploadRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		uploads = append(uploads, *u)
+	return scanUploads(rows)
+}
+
+func (r *PostgresRepository) ListUploadsByProject(ctx context.Context, projectID string) ([]models.MoneyUpload, error) {
+	rows, err := r.db.QueryContext(ctx, queryListUploadsByProject, projectID)
+	if err != nil {
+		return nil, err
 	}
-	return uploads, rows.Err()
+	defer rows.Close()
+	return scanUploads(rows)
 }
 
 func (r *PostgresRepository) DeleteUpload(ctx context.Context, uploadID, userID, role string) error {
@@ -200,8 +207,24 @@ func scanFeature(row scanner) (*models.MoneyFeature, error) {
 
 func scanFeatureRows(row scanner) (*models.MoneyFeature, error) {
 	var f models.MoneyFeature
-	err := row.Scan(&f.ID, &f.ProjectID, &f.FeatureType, &f.Title, &f.Description, &f.Status, &f.GeoJSON, &f.Style, &f.Properties, &f.MinLat, &f.MinLon, &f.MaxLat, &f.MaxLon, &f.CreatedBy, &f.UpdatedBy, &f.CreatedAt, &f.UpdatedAt)
+	err := row.Scan(&f.ID, &f.ProjectID, &f.ParentFeatureID, &f.FeatureType, &f.Title, &f.Description, &f.Status, &f.GeoJSON, &f.Style, &f.Properties, &f.MinLat, &f.MinLon, &f.MaxLat, &f.MaxLon, &f.SortOrder, &f.ExternalRef, &f.ImportSource, &f.CreatedBy, &f.UpdatedBy, &f.CreatedAt, &f.UpdatedAt)
 	return &f, err
+}
+
+func scanNotes(rows interface {
+	Next() bool
+	Err() error
+	Scan(dest ...interface{}) error
+}) ([]models.MoneyNote, error) {
+	var notes []models.MoneyNote
+	for rows.Next() {
+		n, err := scanNoteRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		notes = append(notes, *n)
+	}
+	return notes, rows.Err()
 }
 
 func scanNote(row scanner) (*models.MoneyNote, error) {
@@ -213,8 +236,24 @@ func scanNote(row scanner) (*models.MoneyNote, error) {
 }
 func scanNoteRows(row scanner) (*models.MoneyNote, error) {
 	var n models.MoneyNote
-	err := row.Scan(&n.ID, &n.ProjectID, &n.FeatureID, &n.Body, &n.Visibility, &n.CreatedBy, &n.UpdatedBy, &n.CreatedAt, &n.UpdatedAt)
+	err := row.Scan(&n.ID, &n.ProjectID, &n.FeatureID, &n.TargetType, &n.TargetRef, &n.Body, &n.Visibility, pq.Array(&n.Tags), &n.Blocks, &n.ExternalRef, &n.ImportSource, &n.CreatedBy, &n.UpdatedBy, &n.CreatedAt, &n.UpdatedAt)
 	return &n, err
+}
+
+func scanUploads(rows interface {
+	Next() bool
+	Err() error
+	Scan(dest ...interface{}) error
+}) ([]models.MoneyUpload, error) {
+	var uploads []models.MoneyUpload
+	for rows.Next() {
+		u, err := scanUploadRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		uploads = append(uploads, *u)
+	}
+	return uploads, rows.Err()
 }
 
 func scanUpload(row scanner) (*models.MoneyUpload, error) {
@@ -226,7 +265,7 @@ func scanUpload(row scanner) (*models.MoneyUpload, error) {
 }
 func scanUploadRows(row scanner) (*models.MoneyUpload, error) {
 	var u models.MoneyUpload
-	err := row.Scan(&u.ID, &u.ProjectID, &u.FeatureID, &u.NoteID, &u.OriginalFilename, &u.StorageKey, &u.ContentType, &u.ByteSize, &u.Width, &u.Height, &u.ChecksumSHA256, &u.UploadedBy, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.ProjectID, &u.FeatureID, &u.NoteID, &u.OriginalFilename, &u.StorageKey, &u.ContentType, &u.ByteSize, &u.Width, &u.Height, &u.ChecksumSHA256, &u.BlockKind, &u.Metadata, &u.UploadedBy, &u.CreatedAt)
 	return &u, err
 }
 

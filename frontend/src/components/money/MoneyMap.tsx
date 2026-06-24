@@ -32,6 +32,9 @@ const MONEY_CREEK_ZOOM = 14;
 const VIEW_STORAGE_KEY = 'money-creek-map-view-v2';
 
 const featureColor: Record<MoneyFeatureType, [number, number, number, number]> = {
+  area: [174, 185, 116, 100],
+  boulder: [211, 138, 82, 180],
+  problem: [134, 160, 182, 180],
   trail: [38, 112, 86, 230],
   topo: [38, 88, 87, 125],
   poi: [180, 129, 42, 230],

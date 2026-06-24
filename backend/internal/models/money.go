@@ -6,14 +6,23 @@ import (
 )
 
 const (
+	MoneyFeatureArea    = "area"
+	MoneyFeatureBoulder = "boulder"
+	MoneyFeatureProblem = "problem"
 	MoneyFeatureTrail   = "trail"
 	MoneyFeatureTopo    = "topo"
 	MoneyFeaturePOI     = "poi"
 	MoneyFeatureDrawing = "drawing"
 
-	MoneyStatusDraft    = "draft"
-	MoneyStatusActive   = "active"
-	MoneyStatusArchived = "archived"
+	MoneyStatusDraft       = "draft"
+	MoneyStatusActive      = "active"
+	MoneyStatusArchived    = "archived"
+	MoneyStatusScouted     = "scouted"
+	MoneyStatusNeedsWork   = "needs-work"
+	MoneyStatusCleaning    = "cleaning"
+	MoneyStatusEstablished = "established"
+	MoneyStatusProject     = "project"
+	MoneyStatusSent        = "sent"
 
 	MoneyNotePrivate = "private"
 	MoneyNoteTeam    = "team"
@@ -31,51 +40,71 @@ type MoneyProject struct {
 }
 
 type MoneyFeature struct {
-	ID          string          `json:"id"`
-	ProjectID   string          `json:"project_id"`
-	FeatureType string          `json:"feature_type"`
-	Title       string          `json:"title"`
-	Description *string         `json:"description,omitempty"`
-	Status      string          `json:"status"`
-	GeoJSON     json.RawMessage `json:"geojson"`
-	Style       json.RawMessage `json:"style"`
-	Properties  json.RawMessage `json:"properties"`
-	MinLat      *float64        `json:"min_lat,omitempty"`
-	MinLon      *float64        `json:"min_lon,omitempty"`
-	MaxLat      *float64        `json:"max_lat,omitempty"`
-	MaxLon      *float64        `json:"max_lon,omitempty"`
-	CreatedBy   string          `json:"created_by"`
-	UpdatedBy   string          `json:"updated_by"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID              string          `json:"id"`
+	ProjectID       string          `json:"project_id"`
+	ParentFeatureID *string         `json:"parent_feature_id,omitempty"`
+	FeatureType     string          `json:"feature_type"`
+	Title           string          `json:"title"`
+	Description     *string         `json:"description,omitempty"`
+	Status          string          `json:"status"`
+	GeoJSON         json.RawMessage `json:"geojson"`
+	Style           json.RawMessage `json:"style"`
+	Properties      json.RawMessage `json:"properties"`
+	MinLat          *float64        `json:"min_lat,omitempty"`
+	MinLon          *float64        `json:"min_lon,omitempty"`
+	MaxLat          *float64        `json:"max_lat,omitempty"`
+	MaxLon          *float64        `json:"max_lon,omitempty"`
+	SortOrder       int             `json:"sort_order"`
+	ExternalRef     *string         `json:"external_ref,omitempty"`
+	ImportSource    *string         `json:"import_source,omitempty"`
+	CreatedBy       string          `json:"created_by"`
+	UpdatedBy       string          `json:"updated_by"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+}
+
+type MoneyNoteBlock struct {
+	Kind     string          `json:"kind"`
+	UploadID *string         `json:"upload_id,omitempty"`
+	URL      *string         `json:"url,omitempty"`
+	Name     *string         `json:"name,omitempty"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
 }
 
 type MoneyNote struct {
-	ID         string    `json:"id"`
-	ProjectID  string    `json:"project_id"`
-	FeatureID  *string   `json:"feature_id,omitempty"`
-	Body       string    `json:"body"`
-	Visibility string    `json:"visibility"`
-	CreatedBy  string    `json:"created_by"`
-	UpdatedBy  string    `json:"updated_by"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID           string          `json:"id"`
+	ProjectID    string          `json:"project_id"`
+	FeatureID    *string         `json:"feature_id,omitempty"`
+	TargetType   string          `json:"target_type"`
+	TargetRef    *string         `json:"target_ref,omitempty"`
+	Body         string          `json:"body"`
+	Visibility   string          `json:"visibility"`
+	Tags         []string        `json:"tags"`
+	Blocks       json.RawMessage `json:"blocks"`
+	ExternalRef  *string         `json:"external_ref,omitempty"`
+	ImportSource *string         `json:"import_source,omitempty"`
+	CreatedBy    string          `json:"created_by"`
+	UpdatedBy    string          `json:"updated_by"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
 type MoneyUpload struct {
-	ID               string    `json:"id"`
-	ProjectID        string    `json:"project_id"`
-	FeatureID        *string   `json:"feature_id,omitempty"`
-	NoteID           *string   `json:"note_id,omitempty"`
-	OriginalFilename string    `json:"original_filename"`
-	StorageKey       string    `json:"-"`
-	ContentType      string    `json:"content_type"`
-	ByteSize         int64     `json:"byte_size"`
-	Width            *int      `json:"width,omitempty"`
-	Height           *int      `json:"height,omitempty"`
-	ChecksumSHA256   string    `json:"checksum_sha256"`
-	UploadedBy       string    `json:"uploaded_by"`
-	CreatedAt        time.Time `json:"created_at"`
+	ID               string          `json:"id"`
+	ProjectID        string          `json:"project_id"`
+	FeatureID        *string         `json:"feature_id,omitempty"`
+	NoteID           *string         `json:"note_id,omitempty"`
+	OriginalFilename string          `json:"original_filename"`
+	StorageKey       string          `json:"-"`
+	ContentType      string          `json:"content_type"`
+	ByteSize         int64           `json:"byte_size"`
+	Width            *int            `json:"width,omitempty"`
+	Height           *int            `json:"height,omitempty"`
+	ChecksumSHA256   string          `json:"checksum_sha256"`
+	BlockKind        string          `json:"block_kind"`
+	Metadata         json.RawMessage `json:"metadata"`
+	UploadedBy       string          `json:"uploaded_by"`
+	CreatedAt        time.Time       `json:"created_at"`
 }
 
 type MoneyPermissions struct {
@@ -97,6 +126,21 @@ type MoneySnapshot struct {
 	PrimaryUploads map[string]MoneyUpload `json:"primary_uploads"`
 }
 
+type MoneyCragSnapshot struct {
+	Project MoneyProject    `json:"project"`
+	Root    *MoneyCragNode  `json:"root"`
+	Trails  []MoneyCragNode `json:"trails"`
+	Notes   []MoneyNote     `json:"notes"`
+	Uploads []MoneyUpload   `json:"uploads"`
+}
+
+type MoneyCragNode struct {
+	Feature  MoneyFeature    `json:"feature"`
+	Children []MoneyCragNode `json:"children"`
+	Boulders []MoneyCragNode `json:"boulders"`
+	Problems []MoneyCragNode `json:"problems"`
+}
+
 type MoneyFeatureDetail struct {
 	Feature MoneyFeature  `json:"feature"`
 	Notes   []MoneyNote   `json:"notes"`
@@ -104,18 +148,59 @@ type MoneyFeatureDetail struct {
 }
 
 type MoneyFeatureRequest struct {
-	FeatureType string          `json:"feature_type"`
-	Title       string          `json:"title"`
-	Description *string         `json:"description"`
+	ParentFeatureID *string         `json:"parent_feature_id,omitempty"`
+	FeatureType     string          `json:"feature_type"`
+	Title           string          `json:"title"`
+	Description     *string         `json:"description"`
+	Status          string          `json:"status"`
+	GeoJSON         json.RawMessage `json:"geojson"`
+	Style           json.RawMessage `json:"style"`
+	Properties      json.RawMessage `json:"properties"`
+	SortOrder       int             `json:"sort_order"`
+	ExternalRef     *string         `json:"external_ref,omitempty"`
+	ImportSource    *string         `json:"import_source,omitempty"`
+}
+
+type MoneyCragAreaRequest struct {
+	ParentFeatureID *string         `json:"parent_feature_id,omitempty"`
+	Title           string          `json:"title"`
+	Description     *string         `json:"description"`
+	GeoJSON         json.RawMessage `json:"geojson"`
+	Properties      json.RawMessage `json:"properties"`
+}
+
+type MoneyCragBoulderRequest struct {
+	ParentFeatureID string          `json:"parent_feature_id"`
+	Title           string          `json:"title"`
+	Description     *string         `json:"description"`
+	DevStatus       string          `json:"dev_status"`
+	GeoJSON         json.RawMessage `json:"geojson"`
+	Properties      json.RawMessage `json:"properties"`
+}
+
+type MoneyCragProblemRequest struct {
+	BoulderID   string          `json:"boulder_id"`
+	Name        string          `json:"name"`
+	Grade       string          `json:"grade"`
 	Status      string          `json:"status"`
-	GeoJSON     json.RawMessage `json:"geojson"`
-	Style       json.RawMessage `json:"style"`
+	Stars       int             `json:"stars"`
+	FA          *string         `json:"fa,omitempty"`
+	Types       []string        `json:"types"`
+	Description *string         `json:"description"`
 	Properties  json.RawMessage `json:"properties"`
 }
 
+type MoneyBoulderStatusRequest struct {
+	DevStatus string `json:"dev_status"`
+}
+
 type MoneyNoteRequest struct {
-	Body       string `json:"body"`
-	Visibility string `json:"visibility"`
+	Body       string          `json:"body"`
+	Visibility string          `json:"visibility"`
+	TargetType string          `json:"target_type"`
+	TargetRef  *string         `json:"target_ref,omitempty"`
+	Tags       []string        `json:"tags"`
+	Blocks     json.RawMessage `json:"blocks"`
 }
 
 type BBox struct {

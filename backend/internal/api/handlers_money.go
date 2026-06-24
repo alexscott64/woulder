@@ -23,6 +23,11 @@ func (h *Handler) GetMoneySnapshot(c *gin.Context) {
 	respondMoney(c, resp, err)
 }
 
+func (h *Handler) GetMoneyCragSnapshot(c *gin.Context) {
+	resp, err := h.moneyService.CragSnapshot(c.Request.Context(), c.Param("project_id"))
+	respondMoney(c, resp, err)
+}
+
 func (h *Handler) ListMoneyFeatures(c *gin.Context) {
 	filter := models.MoneyFeatureFilter{FeatureType: c.Query("type"), Status: c.Query("status")}
 	if bbox := c.Query("bbox"); bbox != "" {
@@ -59,6 +64,48 @@ func (h *Handler) CreateMoneyFeature(c *gin.Context) {
 	c.JSON(http.StatusCreated, resp)
 }
 
+func (h *Handler) CreateMoneyArea(c *gin.Context) {
+	var req models.MoneyCragAreaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	resp, err := h.moneyService.CreateArea(c.Request.Context(), c.Param("project_id"), req, appmw.CurrentUser(c))
+	if err != nil {
+		respondMoney(c, nil, err)
+		return
+	}
+	c.JSON(http.StatusCreated, resp)
+}
+
+func (h *Handler) CreateMoneyBoulder(c *gin.Context) {
+	var req models.MoneyCragBoulderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	resp, err := h.moneyService.CreateBoulder(c.Request.Context(), c.Param("project_id"), req, appmw.CurrentUser(c))
+	if err != nil {
+		respondMoney(c, nil, err)
+		return
+	}
+	c.JSON(http.StatusCreated, resp)
+}
+
+func (h *Handler) CreateMoneyProblem(c *gin.Context) {
+	var req models.MoneyCragProblemRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	resp, err := h.moneyService.CreateProblem(c.Request.Context(), c.Param("project_id"), req, appmw.CurrentUser(c))
+	if err != nil {
+		respondMoney(c, nil, err)
+		return
+	}
+	c.JSON(http.StatusCreated, resp)
+}
+
 func (h *Handler) GetMoneyFeature(c *gin.Context) {
 	resp, err := h.moneyService.GetFeatureDetail(c.Request.Context(), c.Param("feature_id"))
 	respondMoney(c, resp, err)
@@ -74,6 +121,16 @@ func (h *Handler) UpdateMoneyFeature(c *gin.Context) {
 	respondMoney(c, resp, err)
 }
 
+func (h *Handler) UpdateMoneyBoulderStatus(c *gin.Context) {
+	var req models.MoneyBoulderStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	resp, err := h.moneyService.UpdateBoulderStatus(c.Request.Context(), c.Param("feature_id"), req, appmw.CurrentUser(c))
+	respondMoney(c, resp, err)
+}
+
 func (h *Handler) ArchiveMoneyFeature(c *gin.Context) {
 	err := h.moneyService.ArchiveFeature(c.Request.Context(), c.Param("feature_id"), appmw.CurrentUser(c))
 	respondMoney(c, gin.H{"status": "archived"}, err)
@@ -82,6 +139,25 @@ func (h *Handler) ArchiveMoneyFeature(c *gin.Context) {
 func (h *Handler) ListMoneyNotes(c *gin.Context) {
 	resp, err := h.moneyService.ListNotes(c.Request.Context(), c.Param("feature_id"))
 	respondMoney(c, gin.H{"notes": resp}, err)
+}
+
+func (h *Handler) ListMoneyProjectNotes(c *gin.Context) {
+	resp, err := h.moneyService.ListProjectNotes(c.Request.Context(), c.Param("project_id"))
+	respondMoney(c, gin.H{"notes": resp}, err)
+}
+
+func (h *Handler) CreateMoneyProjectNote(c *gin.Context) {
+	var req models.MoneyNoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	resp, err := h.moneyService.CreateProjectNote(c.Request.Context(), c.Param("project_id"), req, appmw.CurrentUser(c))
+	if err != nil {
+		respondMoney(c, nil, err)
+		return
+	}
+	c.JSON(http.StatusCreated, resp)
 }
 
 func (h *Handler) CreateMoneyNote(c *gin.Context) {
@@ -121,7 +197,8 @@ func (h *Handler) UploadMoneyImage(c *gin.Context) {
 	}
 	featureID := optionalForm(c, "feature_id")
 	noteID := optionalForm(c, "note_id")
-	resp, err := h.moneyService.StoreUpload(c.Request.Context(), c.Param("project_id"), featureID, noteID, file, appmw.CurrentUser(c))
+	blockKind := strings.TrimSpace(c.PostForm("block_kind"))
+	resp, err := h.moneyService.StoreUploadWithKind(c.Request.Context(), c.Param("project_id"), featureID, noteID, blockKind, []byte(c.PostForm("metadata")), file, appmw.CurrentUser(c))
 	if err != nil {
 		respondMoney(c, nil, err)
 		return

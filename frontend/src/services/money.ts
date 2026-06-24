@@ -1,25 +1,29 @@
 import { API_BASE_URL } from './api';
 import { authApiClient, authorizedFetch } from './auth';
 import {
+  MoneyAreaRequest,
   MoneyBBox,
+  MoneyBoulderRequest,
+  MoneyBoulderStatusRequest,
+  MoneyCragSnapshot,
   MoneyFeature,
   MoneyFeatureDetail,
   MoneyFeatureFilters,
   MoneyFeatureRequest,
   MoneyNote,
   MoneyNoteRequest,
+  MoneyProblemRequest,
   MoneyProjectResponse,
   MoneySnapshot,
   MoneyUpload,
+  MoneyUploadBlockKind,
 } from '../types/money';
 
 function cleanFilters(filters?: MoneyFeatureFilters & { bbox?: MoneyBBox; updatedAfter?: string }) {
   const params: Record<string, string> = {};
   if (filters?.type && filters.type !== 'all') params.type = filters.type;
   if (filters?.status && filters.status !== 'all') params.status = filters.status;
-  if (filters?.bbox) {
-    params.bbox = `${filters.bbox.minLon},${filters.bbox.minLat},${filters.bbox.maxLon},${filters.bbox.maxLat}`;
-  }
+  if (filters?.bbox) params.bbox = `${filters.bbox.minLon},${filters.bbox.minLat},${filters.bbox.maxLon},${filters.bbox.maxLat}`;
   if (filters?.updatedAfter) params.updated_after = filters.updatedAfter;
   return params;
 }
@@ -35,15 +39,38 @@ export const moneyApi = {
     return response.data;
   },
 
+  async getCragSnapshot(projectId: string): Promise<MoneyCragSnapshot> {
+    const response = await authApiClient.get<MoneyCragSnapshot>(`/money/projects/${projectId}/crag`);
+    return response.data;
+  },
+
   async listFeatures(projectId: string, filters?: MoneyFeatureFilters & { bbox?: MoneyBBox; updatedAfter?: string }): Promise<MoneyFeature[]> {
-    const response = await authApiClient.get<{ features: MoneyFeature[] }>(`/money/projects/${projectId}/features`, {
-      params: cleanFilters(filters),
-    });
+    const response = await authApiClient.get<{ features: MoneyFeature[] }>(`/money/projects/${projectId}/features`, { params: cleanFilters(filters) });
     return response.data.features;
   },
 
   async createFeature(projectId: string, payload: MoneyFeatureRequest): Promise<MoneyFeature> {
     const response = await authApiClient.post<MoneyFeature>(`/money/projects/${projectId}/features`, payload);
+    return response.data;
+  },
+
+  async createArea(projectId: string, payload: MoneyAreaRequest): Promise<MoneyFeature> {
+    const response = await authApiClient.post<MoneyFeature>(`/money/projects/${projectId}/areas`, payload);
+    return response.data;
+  },
+
+  async createBoulder(projectId: string, payload: MoneyBoulderRequest): Promise<MoneyFeature> {
+    const response = await authApiClient.post<MoneyFeature>(`/money/projects/${projectId}/boulders`, payload);
+    return response.data;
+  },
+
+  async createProblem(projectId: string, payload: MoneyProblemRequest): Promise<MoneyFeature> {
+    const response = await authApiClient.post<MoneyFeature>(`/money/projects/${projectId}/problems`, payload);
+    return response.data;
+  },
+
+  async updateBoulderStatus(featureId: string, payload: MoneyBoulderStatusRequest): Promise<MoneyFeature> {
+    const response = await authApiClient.patch<MoneyFeature>(`/money/features/${featureId}/boulder-status`, payload);
     return response.data;
   },
 
@@ -59,6 +86,16 @@ export const moneyApi = {
 
   async archiveFeature(featureId: string): Promise<void> {
     await authApiClient.delete(`/money/features/${featureId}`);
+  },
+
+  async listProjectNotes(projectId: string): Promise<MoneyNote[]> {
+    const response = await authApiClient.get<{ notes: MoneyNote[] }>(`/money/projects/${projectId}/notes`);
+    return response.data.notes;
+  },
+
+  async createProjectNote(projectId: string, payload: MoneyNoteRequest): Promise<MoneyNote> {
+    const response = await authApiClient.post<MoneyNote>(`/money/projects/${projectId}/notes`, payload);
+    return response.data;
   },
 
   async listNotes(featureId: string): Promise<MoneyNote[]> {
@@ -80,23 +117,20 @@ export const moneyApi = {
     await authApiClient.delete(`/money/notes/${noteId}`);
   },
 
-  async uploadImage(projectId: string, file: File, options: { featureId?: string; noteId?: string } = {}): Promise<MoneyUpload> {
+  async uploadImage(projectId: string, file: File, options: { featureId?: string; noteId?: string; blockKind?: MoneyUploadBlockKind; metadata?: Record<string, unknown> } = {}): Promise<MoneyUpload> {
     const form = new FormData();
     form.append('file', file);
     if (options.featureId) form.append('feature_id', options.featureId);
     if (options.noteId) form.append('note_id', options.noteId);
-    const response = await authApiClient.post<MoneyUpload>(`/money/projects/${projectId}/uploads`, form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 60000,
-    });
+    if (options.blockKind) form.append('block_kind', options.blockKind);
+    if (options.metadata) form.append('metadata', JSON.stringify(options.metadata));
+    const response = await authApiClient.post<MoneyUpload>(`/money/projects/${projectId}/uploads`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
     return response.data;
   },
 
   async getUploadBlobUrl(uploadId: string): Promise<string> {
     const response = await authorizedFetch(`${API_BASE_URL}/money/uploads/${uploadId}`);
-    if (!response.ok) {
-      throw new Error('Failed to load image');
-    }
+    if (!response.ok) throw new Error('Failed to load image');
     const blob = await response.blob();
     return URL.createObjectURL(blob);
   },

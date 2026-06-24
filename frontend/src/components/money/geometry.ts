@@ -42,6 +42,9 @@ export function minimumPointCount(type: MoneyFeatureType): number {
 
 export function featureTypeLabel(type: MoneyFeatureType): string {
   const labels: Record<MoneyFeatureType, string> = {
+    area: 'Area',
+    boulder: 'Boulder',
+    problem: 'Problem',
     trail: 'Trail',
     topo: 'Topo',
     poi: 'Map pin',

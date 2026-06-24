@@ -14,6 +14,9 @@ interface FeatureListProps {
 }
 
 const typeIcon: Record<MoneyFeatureType, typeof Route> = {
+  area: Layers,
+  boulder: Circle,
+  problem: FileText,
   trail: Route,
   topo: Layers,
   poi: MapPin,
