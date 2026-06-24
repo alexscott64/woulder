@@ -25,6 +25,7 @@ func main() {
 
 	// Command-line flags
 	incrementalFlag := flag.Bool("incremental", true, "Only sync new data since last sync")
+	forceFlag := flag.Bool("force", false, "Force a full sync even when --incremental is enabled")
 	testFlag := flag.Bool("test", false, "Test mode: only sync 3 destinations")
 	delayFlag := flag.Int("delay", 3, "Delay in seconds between destinations")
 	matchAfterSyncFlag := flag.Bool("match-after-sync", true, "Run Kaya↔MP matching after each successful location sync")
@@ -72,12 +73,13 @@ func main() {
 	// Start job run
 	jobName := "kaya_sync"
 	jobType := "full"
-	if *incrementalFlag {
+	if *incrementalFlag && !*forceFlag {
 		jobType = "incremental"
 	}
 
 	jobExec, err := jobMonitor.StartJob(context.Background(), jobName, jobType, len(destinations), map[string]interface{}{
 		"incremental":          *incrementalFlag,
+		"force":                *forceFlag,
 		"test_mode":            *testFlag,
 		"delay":                *delayFlag,
 		"match_after_sync":     *matchAfterSyncFlag,
@@ -97,7 +99,7 @@ func main() {
 		jobMonitor,
 		jobExec.ID,
 		destinations,
-		*incrementalFlag,
+		*incrementalFlag && !*forceFlag,
 		*delayFlag,
 		*matchAfterSyncFlag,
 		*matchMinConfidenceFlag,
@@ -319,11 +321,62 @@ func loadDestinations() ([]string, error) {
 	return destinations, nil
 }
 
+type kayaSyncStatus struct {
+	Status     sql.NullString
+	LastSyncAt sql.NullTime
+	NextSyncAt sql.NullTime
+}
+
 func shouldSyncLocation(ctx context.Context, db *database.Database, slug string) (bool, error) {
-	// Check last sync time from kaya_sync_progress
-	// For now, always sync (incremental logic can be added later)
-	// Full implementation would check: last_synced_at > NOW() - INTERVAL '24 hours'
-	return true, nil
+	progress, err := getKayaSyncStatusBySlug(ctx, db.Conn(), slug)
+	if err != nil {
+		return true, err
+	}
+	return shouldSyncKayaProgress(progress, time.Now()), nil
+}
+
+func getKayaSyncStatusBySlug(ctx context.Context, db *sql.DB, slug string) (*kayaSyncStatus, error) {
+	const query = `
+		SELECT p.status, p.last_sync_at, p.next_sync_at
+		FROM woulder.kaya_locations l
+		LEFT JOIN woulder.kaya_sync_progress p ON p.kaya_location_id = l.kaya_location_id
+		WHERE l.slug = $1
+		LIMIT 1
+	`
+
+	var progress kayaSyncStatus
+	err := db.QueryRowContext(ctx, query, slug).Scan(
+		&progress.Status,
+		&progress.LastSyncAt,
+		&progress.NextSyncAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &progress, nil
+}
+
+func shouldSyncKayaProgress(progress *kayaSyncStatus, now time.Time) bool {
+	if progress == nil || !progress.Status.Valid {
+		return true
+	}
+
+	if progress.Status.String != "completed" {
+		return true
+	}
+
+	if !progress.LastSyncAt.Valid {
+		return true
+	}
+
+	if progress.NextSyncAt.Valid {
+		return !progress.NextSyncAt.Time.After(now)
+	}
+
+	return !progress.LastSyncAt.Time.Add(24 * time.Hour).After(now)
 }
 
 type kayaClimbForMatching struct {

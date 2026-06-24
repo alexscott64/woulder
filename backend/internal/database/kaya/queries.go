@@ -120,6 +120,37 @@ const (
 			woulder_location_id = EXCLUDED.woulder_location_id,
 			last_synced_at = EXCLUDED.last_synced_at,
 			updated_at = NOW()
+		WHERE kaya_locations.slug                                  IS DISTINCT FROM EXCLUDED.slug
+		   OR kaya_locations.name                                  IS DISTINCT FROM EXCLUDED.name
+		   OR kaya_locations.latitude                              IS DISTINCT FROM EXCLUDED.latitude
+		   OR kaya_locations.longitude                             IS DISTINCT FROM EXCLUDED.longitude
+		   OR kaya_locations.photo_url                             IS DISTINCT FROM EXCLUDED.photo_url
+		   OR kaya_locations.description                           IS DISTINCT FROM EXCLUDED.description
+		   OR kaya_locations.location_type_id                      IS DISTINCT FROM EXCLUDED.location_type_id
+		   OR kaya_locations.location_type_name                    IS DISTINCT FROM EXCLUDED.location_type_name
+		   OR kaya_locations.parent_location_id                    IS DISTINCT FROM EXCLUDED.parent_location_id
+		   OR kaya_locations.parent_location_slug                  IS DISTINCT FROM EXCLUDED.parent_location_slug
+		   OR kaya_locations.parent_location_name                  IS DISTINCT FROM EXCLUDED.parent_location_name
+		   OR kaya_locations.climb_count                           IS DISTINCT FROM EXCLUDED.climb_count
+		   OR kaya_locations.boulder_count                         IS DISTINCT FROM EXCLUDED.boulder_count
+		   OR kaya_locations.route_count                           IS DISTINCT FROM EXCLUDED.route_count
+		   OR kaya_locations.ascent_count                          IS DISTINCT FROM EXCLUDED.ascent_count
+		   OR kaya_locations.is_gb_moderated_bouldering            IS DISTINCT FROM EXCLUDED.is_gb_moderated_bouldering
+		   OR kaya_locations.is_gb_moderated_routes                IS DISTINCT FROM EXCLUDED.is_gb_moderated_routes
+		   OR kaya_locations.is_access_sensitive                   IS DISTINCT FROM EXCLUDED.is_access_sensitive
+		   OR kaya_locations.is_closed                             IS DISTINCT FROM EXCLUDED.is_closed
+		   OR kaya_locations.has_maps_disabled                     IS DISTINCT FROM EXCLUDED.has_maps_disabled
+		   OR kaya_locations.closed_date                           IS DISTINCT FROM EXCLUDED.closed_date
+		   OR kaya_locations.description_bouldering                IS DISTINCT FROM EXCLUDED.description_bouldering
+		   OR kaya_locations.description_routes                    IS DISTINCT FROM EXCLUDED.description_routes
+		   OR kaya_locations.description_short_bouldering          IS DISTINCT FROM EXCLUDED.description_short_bouldering
+		   OR kaya_locations.description_short_routes              IS DISTINCT FROM EXCLUDED.description_short_routes
+		   OR kaya_locations.access_description_bouldering         IS DISTINCT FROM EXCLUDED.access_description_bouldering
+		   OR kaya_locations.access_description_routes             IS DISTINCT FROM EXCLUDED.access_description_routes
+		   OR kaya_locations.access_issues_description_bouldering  IS DISTINCT FROM EXCLUDED.access_issues_description_bouldering
+		   OR kaya_locations.access_issues_description_routes      IS DISTINCT FROM EXCLUDED.access_issues_description_routes
+		   OR kaya_locations.climb_type_id                         IS DISTINCT FROM EXCLUDED.climb_type_id
+		   OR kaya_locations.woulder_location_id                   IS DISTINCT FROM EXCLUDED.woulder_location_id
 	`
 
 	queryGetLocationByID = `
@@ -589,6 +620,14 @@ const (
 			ascents_synced = EXCLUDED.ascents_synced,
 			sub_locations_synced = EXCLUDED.sub_locations_synced,
 			updated_at = NOW()
+		WHERE kaya_sync_progress.location_name           IS DISTINCT FROM EXCLUDED.location_name
+		   OR kaya_sync_progress.status                  IS DISTINCT FROM EXCLUDED.status
+		   OR kaya_sync_progress.last_sync_at            IS DISTINCT FROM EXCLUDED.last_sync_at
+		   OR kaya_sync_progress.next_sync_at            IS DISTINCT FROM EXCLUDED.next_sync_at
+		   OR kaya_sync_progress.sync_error              IS DISTINCT FROM EXCLUDED.sync_error
+		   OR kaya_sync_progress.climbs_synced           IS DISTINCT FROM EXCLUDED.climbs_synced
+		   OR kaya_sync_progress.ascents_synced          IS DISTINCT FROM EXCLUDED.ascents_synced
+		   OR kaya_sync_progress.sub_locations_synced    IS DISTINCT FROM EXCLUDED.sub_locations_synced
 	`
 
 	queryGetSyncProgress = `

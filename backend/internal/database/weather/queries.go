@@ -33,6 +33,20 @@ const (
 			diffuse_radiation = EXCLUDED.diffuse_radiation,
 			dewpoint_f = EXCLUDED.dewpoint_f,
 			created_at = CURRENT_TIMESTAMP
+		WHERE weather_data.temperature         IS DISTINCT FROM EXCLUDED.temperature
+		   OR weather_data.feels_like          IS DISTINCT FROM EXCLUDED.feels_like
+		   OR weather_data.precipitation       IS DISTINCT FROM EXCLUDED.precipitation
+		   OR weather_data.humidity            IS DISTINCT FROM EXCLUDED.humidity
+		   OR weather_data.wind_speed          IS DISTINCT FROM EXCLUDED.wind_speed
+		   OR weather_data.wind_direction      IS DISTINCT FROM EXCLUDED.wind_direction
+		   OR weather_data.cloud_cover         IS DISTINCT FROM EXCLUDED.cloud_cover
+		   OR weather_data.pressure            IS DISTINCT FROM EXCLUDED.pressure
+		   OR weather_data.description         IS DISTINCT FROM EXCLUDED.description
+		   OR weather_data.icon                IS DISTINCT FROM EXCLUDED.icon
+		   OR weather_data.shortwave_radiation IS DISTINCT FROM EXCLUDED.shortwave_radiation
+		   OR weather_data.direct_radiation    IS DISTINCT FROM EXCLUDED.direct_radiation
+		   OR weather_data.diffuse_radiation   IS DISTINCT FROM EXCLUDED.diffuse_radiation
+		   OR weather_data.dewpoint_f          IS DISTINCT FROM EXCLUDED.dewpoint_f
 	`
 
 	// queryGetHistorical retrieves past weather data for a location.
@@ -163,6 +177,16 @@ const (
 			sunset_at = EXCLUDED.sunset_at,
 			source_hour_count = EXCLUDED.source_hour_count,
 			updated_at = CURRENT_TIMESTAMP
+		WHERE weather_daily_aggregates.min_temperature      IS DISTINCT FROM EXCLUDED.min_temperature
+		   OR weather_daily_aggregates.max_temperature      IS DISTINCT FROM EXCLUDED.max_temperature
+		   OR weather_daily_aggregates.avg_temperature      IS DISTINCT FROM EXCLUDED.avg_temperature
+		   OR weather_daily_aggregates.total_precipitation  IS DISTINCT FROM EXCLUDED.total_precipitation
+		   OR weather_daily_aggregates.avg_humidity         IS DISTINCT FROM EXCLUDED.avg_humidity
+		   OR weather_daily_aggregates.avg_wind_speed       IS DISTINCT FROM EXCLUDED.avg_wind_speed
+		   OR weather_daily_aggregates.snow_estimate_inches IS DISTINCT FROM EXCLUDED.snow_estimate_inches
+		   OR weather_daily_aggregates.sunrise_at           IS DISTINCT FROM EXCLUDED.sunrise_at
+		   OR weather_daily_aggregates.sunset_at            IS DISTINCT FROM EXCLUDED.sunset_at
+		   OR weather_daily_aggregates.source_hour_count    IS DISTINCT FROM EXCLUDED.source_hour_count
 	`
 
 	// queryGetDailyAggregates returns daily aggregate rows for a location and date range.

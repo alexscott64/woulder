@@ -294,7 +294,21 @@ func buildBulkInsertQuery(chunk []models.WeatherData) (string, []interface{}) {
 		direct_radiation = EXCLUDED.direct_radiation,
 		diffuse_radiation = EXCLUDED.diffuse_radiation,
 		dewpoint_f = EXCLUDED.dewpoint_f,
-		created_at = CURRENT_TIMESTAMP`)
+		created_at = CURRENT_TIMESTAMP
+	WHERE weather_data.temperature         IS DISTINCT FROM EXCLUDED.temperature
+	   OR weather_data.feels_like          IS DISTINCT FROM EXCLUDED.feels_like
+	   OR weather_data.precipitation       IS DISTINCT FROM EXCLUDED.precipitation
+	   OR weather_data.humidity            IS DISTINCT FROM EXCLUDED.humidity
+	   OR weather_data.wind_speed          IS DISTINCT FROM EXCLUDED.wind_speed
+	   OR weather_data.wind_direction      IS DISTINCT FROM EXCLUDED.wind_direction
+	   OR weather_data.cloud_cover         IS DISTINCT FROM EXCLUDED.cloud_cover
+	   OR weather_data.pressure            IS DISTINCT FROM EXCLUDED.pressure
+	   OR weather_data.description         IS DISTINCT FROM EXCLUDED.description
+	   OR weather_data.icon                IS DISTINCT FROM EXCLUDED.icon
+	   OR weather_data.shortwave_radiation IS DISTINCT FROM EXCLUDED.shortwave_radiation
+	   OR weather_data.direct_radiation    IS DISTINCT FROM EXCLUDED.direct_radiation
+	   OR weather_data.diffuse_radiation   IS DISTINCT FROM EXCLUDED.diffuse_radiation
+	   OR weather_data.dewpoint_f          IS DISTINCT FROM EXCLUDED.dewpoint_f`)
 
 	return b.String(), args
 }
