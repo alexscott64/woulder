@@ -42,18 +42,42 @@ jobs:
 
       - name: Deploy Kaya sync binaries
         run: |
-          # Stop timer (doesn't stop a running job, but prevents new ones)
-          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "systemctl stop kaya-sync.timer || true"
+          set -euo pipefail
 
-          # Upload binaries
-          scp -i ~/.ssh/id_ed25519 backend/kaya-sync-job root@${{ secrets.VPS_HOST }}:/opt/woulder/kaya-sync-job
-          scp -i ~/.ssh/id_ed25519 backend/kaya-match-routes root@${{ secrets.VPS_HOST }}:/opt/woulder/kaya-match-routes
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} 'bash -s' <<'REMOTE'
+          set -euo pipefail
 
-          # Make executable
-          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "chmod +x /opt/woulder/kaya-sync-job /opt/woulder/kaya-match-routes"
+          systemctl stop kaya-sync.timer || true
+          systemctl stop kaya-sync.service || true
 
-          # Create log directory if it doesn't exist
-          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "mkdir -p /var/log/kaya-sync"
+          for attempt in $(seq 1 30); do
+            if ! pgrep -x kaya-sync-job >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if pgrep -x kaya-sync-job >/dev/null; then
+            echo "kaya-sync-job is still running after waiting; refusing to replace live binaries" >&2
+            exit 1
+          fi
+
+          install -d -o root -g root -m 0755 /opt/woulder
+          install -d -o root -g root -m 0755 /var/log/kaya-sync
+          rm -f /opt/woulder/kaya-sync-job.new /opt/woulder/kaya-match-routes.new
+          REMOTE
+
+          scp -i ~/.ssh/id_ed25519 backend/kaya-sync-job root@${{ secrets.VPS_HOST }}:/opt/woulder/kaya-sync-job.new
+          scp -i ~/.ssh/id_ed25519 backend/kaya-match-routes root@${{ secrets.VPS_HOST }}:/opt/woulder/kaya-match-routes.new
+
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} 'bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          chown root:root /opt/woulder/kaya-sync-job.new /opt/woulder/kaya-match-routes.new
+          chmod 0755 /opt/woulder/kaya-sync-job.new /opt/woulder/kaya-match-routes.new
+          mv -f /opt/woulder/kaya-sync-job.new /opt/woulder/kaya-sync-job
+          mv -f /opt/woulder/kaya-match-routes.new /opt/woulder/kaya-match-routes
+          REMOTE
 
       - name: Deploy systemd files (optional)
         if: ${{ github.event.inputs.deploy_systemd == 'true' }}
@@ -73,8 +97,10 @@ jobs:
 
       - name: Start Kaya sync timer
         run: |
-          # Start the timer
-          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "systemctl start kaya-sync.timer"
+          set -euo pipefail
+
+          # Start the timer without starting the one-shot service immediately.
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "systemctl restart kaya-sync.timer"
 
           # Show status
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "systemctl status kaya-sync.timer --no-pager || true"
