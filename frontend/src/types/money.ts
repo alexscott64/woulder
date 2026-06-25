@@ -25,6 +25,7 @@ export type MoneyDevStatus = 'scouted' | 'needs-work' | 'cleaning' | 'establishe
 export type MoneyProblemStatus = 'project' | 'sent' | 'established';
 export type MoneyNoteTargetType = 'project' | 'feature' | 'area' | 'boulder' | 'trail' | 'point' | 'none';
 export type MoneyUploadBlockKind = 'photo' | 'sketch' | 'file' | 'topo';
+export type MoneyArchiveMode = 'subtree' | 'promote_children';
 
 export type MoneyPosition = [number, number];
 
@@ -121,6 +122,8 @@ export interface MoneySnapshot { project: MoneyProject; features: MoneyFeature[]
 export interface MoneyCragNode { feature: MoneyFeature; children?: MoneyCragNode[] | null; boulders?: MoneyCragNode[] | null; problems?: MoneyCragNode[] | null; }
 export interface MoneyCragSnapshot { project: MoneyProject; root: MoneyCragNode | null; trails?: MoneyCragNode[] | null; notes?: MoneyNote[] | null; uploads?: MoneyUpload[] | null; }
 export interface MoneyFeatureDetail { feature: MoneyFeature; notes: MoneyNote[] | null; uploads: MoneyUpload[] | null; }
+export interface MoneyTrashItem { id: string; title: string; feature_type: MoneyFeatureType; parent_feature_id?: string; path: string[]; deleted_at: string; updated_at: string; descendant_count: number; }
+export interface MoneyTrashResponse { items: MoneyTrashItem[]; }
 
 export interface MoneyFeatureRequest {
   parent_feature_id?: string | null;
@@ -135,6 +138,8 @@ export interface MoneyFeatureRequest {
 }
 
 export interface MoneyAreaRequest { parent_feature_id?: string | null; title: string; description?: string | null; geojson: MoneyGeoJSON; properties: Record<string, unknown>; }
+export interface MoneyAreaGeometryRequest { geojson: MoneyGeoJSON; }
+export interface MoneyMoveFeatureRequest { parent_feature_id: string | null; sort_order?: number; }
 export interface MoneyBoulderRequest { parent_feature_id: string; title: string; description?: string | null; dev_status: MoneyDevStatus; geojson: MoneyGeoJSON; properties: Record<string, unknown>; }
 export interface MoneyProblemRequest { boulder_id: string; name: string; grade: string; status: MoneyProblemStatus; stars: number; fa?: string | null; types: string[]; description?: string | null; properties?: Record<string, unknown>; }
 export interface MoneyBoulderStatusRequest { dev_status: MoneyDevStatus; }

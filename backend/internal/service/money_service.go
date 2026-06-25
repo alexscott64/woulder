@@ -52,10 +52,11 @@ func (s *MoneyService) Snapshot(ctx context.Context, projectID string) (*models.
 	if err != nil {
 		return nil, err
 	}
-	features, err := s.repo.ListFeatures(ctx, projectID, models.MoneyFeatureFilter{})
+	features, err := s.repo.ListFeatures(ctx, projectID, models.MoneyFeatureFilter{IncludeArchived: true})
 	if err != nil {
 		return nil, err
 	}
+	features = filterArchivedDescendants(features)
 	counts, err := s.repo.FeatureNoteCounts(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -64,7 +65,8 @@ func (s *MoneyService) Snapshot(ctx context.Context, projectID string) (*models.
 	if err != nil {
 		return nil, err
 	}
-	return &models.MoneySnapshot{Project: *p, Features: features, NoteCounts: counts, PrimaryUploads: uploads}, nil
+	visible := featureIDSet(features)
+	return &models.MoneySnapshot{Project: *p, Features: features, NoteCounts: filterNoteCountsByVisibleFeatures(counts, visible), PrimaryUploads: filterPrimaryUploadsByVisibleFeatures(uploads, visible)}, nil
 }
 
 func (s *MoneyService) CragSnapshot(ctx context.Context, projectID string) (*models.MoneyCragSnapshot, error) {
@@ -72,10 +74,11 @@ func (s *MoneyService) CragSnapshot(ctx context.Context, projectID string) (*mod
 	if err != nil {
 		return nil, err
 	}
-	features, err := s.repo.ListFeatures(ctx, projectID, models.MoneyFeatureFilter{})
+	features, err := s.repo.ListFeatures(ctx, projectID, models.MoneyFeatureFilter{IncludeArchived: true})
 	if err != nil {
 		return nil, err
 	}
+	features = filterArchivedDescendants(features)
 	notes, err := s.repo.ListNotesByProject(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -84,8 +87,9 @@ func (s *MoneyService) CragSnapshot(ctx context.Context, projectID string) (*mod
 	if err != nil {
 		return nil, err
 	}
+	visible := featureIDSet(features)
 	root, trails := BuildMoneyCragTree(features)
-	return &models.MoneyCragSnapshot{Project: *p, Root: root, Trails: trails, Notes: notes, Uploads: uploads}, nil
+	return &models.MoneyCragSnapshot{Project: *p, Root: root, Trails: trails, Notes: filterNotesByVisibleFeatures(notes, visible), Uploads: filterUploadsByVisibleFeatures(uploads, visible)}, nil
 }
 
 func BuildMoneyCragTree(features []models.MoneyFeature) (*models.MoneyCragNode, []models.MoneyCragNode) {
@@ -144,7 +148,15 @@ func BuildMoneyCragTree(features []models.MoneyFeature) (*models.MoneyCragNode, 
 }
 
 func (s *MoneyService) ListFeatures(ctx context.Context, projectID string, filter models.MoneyFeatureFilter) ([]models.MoneyFeature, error) {
-	return s.repo.ListFeatures(ctx, projectID, filter)
+	if filter.Status != "" || filter.IncludeArchived {
+		return s.repo.ListFeatures(ctx, projectID, filter)
+	}
+	filter.IncludeArchived = true
+	features, err := s.repo.ListFeatures(ctx, projectID, filter)
+	if err != nil {
+		return nil, err
+	}
+	return filterArchivedDescendants(features), nil
 }
 
 func (s *MoneyService) GetFeatureDetail(ctx context.Context, id string) (*models.MoneyFeatureDetail, error) {
@@ -238,11 +250,107 @@ func (s *MoneyService) UpdateFeature(ctx context.Context, id string, req models.
 	return s.repo.UpdateFeature(ctx, f)
 }
 
+func (s *MoneyService) UpdateAreaGeometry(ctx context.Context, id string, req models.MoneyAreaGeometryRequest, user models.CurrentUser) (*models.MoneyFeature, error) {
+	if !models.CanWriteMoney(user.Role) {
+		return nil, ErrMoneyForbidden
+	}
+	current, err := s.repo.GetFeature(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if current.FeatureType != models.MoneyFeatureArea || current.ParentFeatureID == nil || strings.TrimSpace(*current.ParentFeatureID) == "" {
+		return nil, ErrMoneyInvalidInput
+	}
+	bbox, normalized, err := ValidateAreaPolygonGeoJSON(req.GeoJSON)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.UpdateFeatureGeometry(ctx, id, normalized, *bbox, user.ID)
+}
+
 func (s *MoneyService) ArchiveFeature(ctx context.Context, id string, user models.CurrentUser) error {
+	return s.ArchiveFeatureWithMode(ctx, id, models.MoneyArchiveModeSubtree, user)
+}
+
+func (s *MoneyService) ArchiveFeatureWithMode(ctx context.Context, id string, mode models.MoneyArchiveMode, user models.CurrentUser) error {
 	if !models.CanWriteMoney(user.Role) {
 		return ErrMoneyForbidden
 	}
+	if mode == "" {
+		mode = models.MoneyArchiveModeSubtree
+	}
+	if mode != models.MoneyArchiveModeSubtree && mode != models.MoneyArchiveModePromoteChildren {
+		return ErrMoneyInvalidInput
+	}
+	features, target, err := s.featuresWithTarget(ctx, id)
+	if err != nil {
+		return err
+	}
+	if target.FeatureType != models.MoneyFeatureArea || isMoneyRootFeature(features, target.ID) || target.Status == models.MoneyStatusArchived {
+		return ErrMoneyInvalidInput
+	}
+	if mode == models.MoneyArchiveModePromoteChildren {
+		return s.repo.PromoteChildrenAndArchiveFeature(ctx, id, target.ParentFeatureID, user.ID)
+	}
+	_ = features
 	return s.repo.ArchiveFeature(ctx, id, user.ID)
+}
+
+func (s *MoneyService) MoveFeatureParent(ctx context.Context, id string, req models.MoneyMoveFeatureRequest, user models.CurrentUser) (*models.MoneyFeature, error) {
+	if !models.CanWriteMoney(user.Role) {
+		return nil, ErrMoneyForbidden
+	}
+	features, target, err := s.featuresWithTarget(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if target.FeatureType != models.MoneyFeatureArea || isMoneyRootFeature(features, target.ID) || target.Status == models.MoneyStatusArchived {
+		return nil, ErrMoneyInvalidInput
+	}
+	if req.ParentFeatureID != nil {
+		parentID := strings.TrimSpace(*req.ParentFeatureID)
+		if parentID == "" || parentID == id {
+			return nil, ErrMoneyInvalidInput
+		}
+		req.ParentFeatureID = &parentID
+		parent, ok := findFeature(features, parentID)
+		if !ok || parent.ProjectID != target.ProjectID || parent.FeatureType != models.MoneyFeatureArea || parent.Status == models.MoneyStatusArchived {
+			return nil, ErrMoneyInvalidInput
+		}
+		if isDescendant(features, parentID, id) || hasArchivedAncestor(features, parentID) {
+			return nil, ErrMoneyInvalidInput
+		}
+	}
+	sortOrder := target.SortOrder
+	if req.SortOrder != nil {
+		sortOrder = *req.SortOrder
+	}
+	return s.repo.MoveFeatureParent(ctx, id, req.ParentFeatureID, sortOrder, user.ID)
+}
+
+func (s *MoneyService) RestoreFeature(ctx context.Context, id string, user models.CurrentUser) error {
+	if !models.CanWriteMoney(user.Role) {
+		return ErrMoneyForbidden
+	}
+	features, target, err := s.featuresWithTarget(ctx, id)
+	if err != nil {
+		return err
+	}
+	if target.FeatureType != models.MoneyFeatureArea || target.ParentFeatureID == nil || strings.TrimSpace(*target.ParentFeatureID) == "" {
+		return ErrMoneyInvalidInput
+	}
+	if hasArchivedAncestor(features, *target.ParentFeatureID) {
+		return ErrMoneyInvalidInput
+	}
+	return s.repo.RestoreFeature(ctx, id, user.ID)
+}
+
+func (s *MoneyService) ListTrash(ctx context.Context, projectID string) (*models.MoneyTrashResponse, error) {
+	features, err := s.repo.ListFeatures(ctx, projectID, models.MoneyFeatureFilter{IncludeArchived: true})
+	if err != nil {
+		return nil, err
+	}
+	return &models.MoneyTrashResponse{Items: buildTrashItems(features)}, nil
 }
 
 func (s *MoneyService) ListNotes(ctx context.Context, featureID string) ([]models.MoneyNote, error) {
@@ -447,6 +555,63 @@ func ValidateGeoJSON(raw json.RawMessage) (*models.BBox, error) {
 	return bbox, nil
 }
 
+func ValidateAreaPolygonGeoJSON(raw json.RawMessage) (*models.BBox, json.RawMessage, error) {
+	if len(raw) == 0 || len(raw) > maxGeoJSONBytes {
+		return nil, nil, ErrMoneyInvalidInput
+	}
+	var obj moneyPolygonGeoJSON
+	if json.Unmarshal(raw, &obj) != nil {
+		return nil, nil, ErrMoneyInvalidInput
+	}
+	if obj.Type == "Feature" {
+		if obj.Geometry == nil {
+			return nil, nil, ErrMoneyInvalidInput
+		}
+		obj = *obj.Geometry
+	}
+	if obj.Type != "Polygon" || len(obj.Coordinates) != 1 {
+		return nil, nil, ErrMoneyInvalidInput
+	}
+	ring := obj.Coordinates[0]
+	if len(ring) > 0 && samePosition(ring[0], ring[len(ring)-1]) {
+		ring = ring[:len(ring)-1]
+	}
+	if len(ring) < 3 || len(ring) > 500 {
+		return nil, nil, ErrMoneyInvalidInput
+	}
+	seen := map[string]bool{}
+	bbox := &models.BBox{MinLat: 1e9, MinLon: 1e9, MaxLat: -1e9, MaxLon: -1e9}
+	for _, p := range ring {
+		if len(p) != 2 || p[0] < -180 || p[0] > 180 || p[1] < -90 || p[1] > 90 {
+			return nil, nil, ErrMoneyInvalidInput
+		}
+		seen[fmt.Sprintf("%.7f,%.7f", p[0], p[1])] = true
+		bbox.MinLon = minFloat(bbox.MinLon, p[0])
+		bbox.MaxLon = maxFloat(bbox.MaxLon, p[0])
+		bbox.MinLat = minFloat(bbox.MinLat, p[1])
+		bbox.MaxLat = maxFloat(bbox.MaxLat, p[1])
+	}
+	if len(seen) < 3 {
+		return nil, nil, ErrMoneyInvalidInput
+	}
+	closed := append(append([][]float64{}, ring...), ring[0])
+	normalized, err := json.Marshal(map[string]interface{}{"type": "Polygon", "coordinates": [][][]float64{closed}})
+	if err != nil {
+		return nil, nil, ErrMoneyInvalidInput
+	}
+	return bbox, normalized, nil
+}
+
+type moneyPolygonGeoJSON struct {
+	Type        string               `json:"type"`
+	Coordinates [][][]float64        `json:"coordinates,omitempty"`
+	Geometry    *moneyPolygonGeoJSON `json:"geometry,omitempty"`
+}
+
+func samePosition(a, b []float64) bool {
+	return len(a) == 2 && len(b) == 2 && a[0] == b[0] && a[1] == b[1]
+}
+
 func walkGeoJSON(obj map[string]interface{}, bbox *models.BBox) error {
 	t, _ := obj["type"].(string)
 	switch t {
@@ -505,6 +670,206 @@ func walkCoords(v interface{}, bbox *models.BBox) error {
 		}
 	}
 	return nil
+}
+
+func (s *MoneyService) featuresWithTarget(ctx context.Context, id string) ([]models.MoneyFeature, *models.MoneyFeature, error) {
+	target, err := s.repo.GetFeature(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	features, err := s.repo.ListFeatures(ctx, target.ProjectID, models.MoneyFeatureFilter{IncludeArchived: true})
+	if err != nil {
+		return nil, nil, err
+	}
+	return features, target, nil
+}
+
+func subtreeIDs(features []models.MoneyFeature, rootID string) []string {
+	children := map[string][]string{}
+	for _, f := range features {
+		if f.ParentFeatureID != nil {
+			children[*f.ParentFeatureID] = append(children[*f.ParentFeatureID], f.ID)
+		}
+	}
+	ids := []string{}
+	var walk func(string)
+	walk = func(id string) {
+		ids = append(ids, id)
+		for _, childID := range children[id] {
+			walk(childID)
+		}
+	}
+	walk(rootID)
+	return ids
+}
+
+func isMoneyRootFeature(features []models.MoneyFeature, id string) bool {
+	root, _ := BuildMoneyCragTree(features)
+	return root != nil && root.Feature.ID == id
+}
+
+func findFeature(features []models.MoneyFeature, id string) (models.MoneyFeature, bool) {
+	for _, f := range features {
+		if f.ID == id {
+			return f, true
+		}
+	}
+	return models.MoneyFeature{}, false
+}
+
+func isDescendant(features []models.MoneyFeature, id, ancestorID string) bool {
+	byID := make(map[string]models.MoneyFeature, len(features))
+	for _, f := range features {
+		byID[f.ID] = f
+	}
+	for id != "" {
+		f, ok := byID[id]
+		if !ok || f.ParentFeatureID == nil {
+			return false
+		}
+		if *f.ParentFeatureID == ancestorID {
+			return true
+		}
+		id = *f.ParentFeatureID
+	}
+	return false
+}
+
+func hasArchivedAncestor(features []models.MoneyFeature, parentID string) bool {
+	byID := make(map[string]models.MoneyFeature, len(features))
+	for _, f := range features {
+		byID[f.ID] = f
+	}
+	for parentID != "" {
+		parent, ok := byID[parentID]
+		if !ok {
+			return false
+		}
+		if parent.Status == models.MoneyStatusArchived {
+			return true
+		}
+		if parent.ParentFeatureID == nil {
+			return false
+		}
+		parentID = *parent.ParentFeatureID
+	}
+	return false
+}
+
+func buildTrashItems(features []models.MoneyFeature) []models.MoneyTrashItem {
+	byID := make(map[string]models.MoneyFeature, len(features))
+	archived := map[string]bool{}
+	for _, f := range features {
+		byID[f.ID] = f
+		if f.Status == models.MoneyStatusArchived {
+			archived[f.ID] = true
+		}
+	}
+	items := []models.MoneyTrashItem{}
+	for _, f := range features {
+		if !archived[f.ID] || f.FeatureType != models.MoneyFeatureArea {
+			continue
+		}
+		if f.ParentFeatureID != nil && archived[*f.ParentFeatureID] {
+			continue
+		}
+		ids := subtreeIDs(features, f.ID)
+		desc := len(ids) - 1
+		items = append(items, models.MoneyTrashItem{ID: f.ID, Title: f.Title, FeatureType: f.FeatureType, ParentFeatureID: f.ParentFeatureID, Path: featurePath(byID, f.ID), DeletedAt: f.UpdatedAt, UpdatedAt: f.UpdatedAt, DescendantCount: desc})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].DeletedAt.After(items[j].DeletedAt) })
+	return items
+}
+
+func featurePath(byID map[string]models.MoneyFeature, id string) []string {
+	var reversed []string
+	for id != "" {
+		f, ok := byID[id]
+		if !ok {
+			break
+		}
+		reversed = append(reversed, f.Title)
+		if f.ParentFeatureID == nil {
+			break
+		}
+		id = *f.ParentFeatureID
+	}
+	path := make([]string, len(reversed))
+	for i := range reversed {
+		path[i] = reversed[len(reversed)-1-i]
+	}
+	return path
+}
+
+func filterArchivedDescendants(features []models.MoneyFeature) []models.MoneyFeature {
+	visible := make([]models.MoneyFeature, 0, len(features))
+	for _, f := range features {
+		if f.Status == models.MoneyStatusArchived {
+			continue
+		}
+		if f.ParentFeatureID != nil && hasArchivedAncestor(features, *f.ParentFeatureID) {
+			continue
+		}
+		visible = append(visible, f)
+	}
+	return visible
+}
+
+func featureIDSet(features []models.MoneyFeature) map[string]bool {
+	out := make(map[string]bool, len(features))
+	for _, f := range features {
+		out[f.ID] = true
+	}
+	return out
+}
+
+func filterNotesByVisibleFeatures(notes []models.MoneyNote, visible map[string]bool) []models.MoneyNote {
+	out := make([]models.MoneyNote, 0, len(notes))
+	for _, n := range notes {
+		if n.FeatureID != nil && !visible[*n.FeatureID] {
+			continue
+		}
+		if n.TargetRef != nil && isFeatureTarget(n.TargetType) && !visible[*n.TargetRef] {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+func filterUploadsByVisibleFeatures(uploads []models.MoneyUpload, visible map[string]bool) []models.MoneyUpload {
+	out := make([]models.MoneyUpload, 0, len(uploads))
+	for _, u := range uploads {
+		if u.FeatureID != nil && !visible[*u.FeatureID] {
+			continue
+		}
+		out = append(out, u)
+	}
+	return out
+}
+
+func filterNoteCountsByVisibleFeatures(counts map[string]int, visible map[string]bool) map[string]int {
+	out := make(map[string]int, len(counts))
+	for id, count := range counts {
+		if visible[id] {
+			out[id] = count
+		}
+	}
+	return out
+}
+
+func filterPrimaryUploadsByVisibleFeatures(uploads map[string]models.MoneyUpload, visible map[string]bool) map[string]models.MoneyUpload {
+	out := make(map[string]models.MoneyUpload, len(uploads))
+	for id, upload := range uploads {
+		if visible[id] {
+			out[id] = upload
+		}
+	}
+	return out
+}
+
+func isFeatureTarget(targetType string) bool {
+	return targetType == "feature" || targetType == "area" || targetType == "boulder" || targetType == "trail"
 }
 
 func permissions(role string) models.MoneyPermissions {

@@ -28,6 +28,11 @@ func (h *Handler) GetMoneyCragSnapshot(c *gin.Context) {
 	respondMoney(c, resp, err)
 }
 
+func (h *Handler) ListMoneyTrash(c *gin.Context) {
+	resp, err := h.moneyService.ListTrash(c.Request.Context(), c.Param("project_id"))
+	respondMoney(c, resp, err)
+}
+
 func (h *Handler) ListMoneyFeatures(c *gin.Context) {
 	filter := models.MoneyFeatureFilter{FeatureType: c.Query("type"), Status: c.Query("status")}
 	if bbox := c.Query("bbox"); bbox != "" {
@@ -131,9 +136,45 @@ func (h *Handler) UpdateMoneyBoulderStatus(c *gin.Context) {
 	respondMoney(c, resp, err)
 }
 
+func (h *Handler) UpdateMoneyAreaGeometry(c *gin.Context) {
+	var req models.MoneyAreaGeometryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	resp, err := h.moneyService.UpdateAreaGeometry(c.Request.Context(), c.Param("feature_id"), req, appmw.CurrentUser(c))
+	respondMoney(c, resp, err)
+}
+
 func (h *Handler) ArchiveMoneyFeature(c *gin.Context) {
-	err := h.moneyService.ArchiveFeature(c.Request.Context(), c.Param("feature_id"), appmw.CurrentUser(c))
-	respondMoney(c, gin.H{"status": "archived"}, err)
+	mode := models.MoneyArchiveMode(strings.TrimSpace(c.Query("mode")))
+	if c.Request.Body != nil && c.Request.ContentLength != 0 {
+		var req models.MoneyArchiveFeatureRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+		if req.Mode != "" {
+			mode = req.Mode
+		}
+	}
+	err := h.moneyService.ArchiveFeatureWithMode(c.Request.Context(), c.Param("feature_id"), mode, appmw.CurrentUser(c))
+	respondMoney(c, gin.H{"status": "archived", "mode": mode}, err)
+}
+
+func (h *Handler) MoveMoneyFeatureParent(c *gin.Context) {
+	var req models.MoneyMoveFeatureRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	resp, err := h.moneyService.MoveFeatureParent(c.Request.Context(), c.Param("feature_id"), req, appmw.CurrentUser(c))
+	respondMoney(c, resp, err)
+}
+
+func (h *Handler) RestoreMoneyFeature(c *gin.Context) {
+	err := h.moneyService.RestoreFeature(c.Request.Context(), c.Param("feature_id"), appmw.CurrentUser(c))
+	respondMoney(c, gin.H{"status": "restored"}, err)
 }
 
 func (h *Handler) ListMoneyNotes(c *gin.Context) {

@@ -2,6 +2,7 @@ package money
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -34,7 +35,7 @@ func (r *PostgresRepository) ListFeatures(ctx context.Context, projectID string,
 	if filter.Status != "" {
 		args = append(args, filter.Status)
 		query += fmt.Sprintf(" AND status = $%d", len(args))
-	} else {
+	} else if !filter.IncludeArchived {
 		query += " AND status <> 'archived'"
 	}
 	if filter.BBox != nil {
@@ -85,6 +86,51 @@ func (r *PostgresRepository) UpsertFeatureByExternalRef(ctx context.Context, f m
 func (r *PostgresRepository) ArchiveFeature(ctx context.Context, id, userID string) error {
 	_, err := r.db.ExecContext(ctx, queryArchiveFeature, id, userID)
 	return err
+}
+
+func (r *PostgresRepository) PromoteChildrenAndArchiveFeature(ctx context.Context, id string, parentID *string, userID string) error {
+	tx, err := beginTx(ctx, r.db)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, queryPromoteChildren, id, parentID, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, queryArchiveFeature, id, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *PostgresRepository) RestoreFeature(ctx context.Context, id, userID string) error {
+	feature, err := r.GetFeature(ctx, id)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, queryRestoreFeature, id, userID, defaultRestoredStatus(feature.FeatureType))
+	return err
+}
+
+func (r *PostgresRepository) MoveFeatureParent(ctx context.Context, id string, parentID *string, sortOrder int, userID string) (*models.MoneyFeature, error) {
+	return scanFeature(r.db.QueryRowContext(ctx, queryMoveFeatureParent, id, parentID, sortOrder, userID))
+}
+
+func (r *PostgresRepository) ListTrash(ctx context.Context, projectID string) ([]models.MoneyFeature, error) {
+	rows, err := r.db.QueryContext(ctx, queryListTrash, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var features []models.MoneyFeature
+	for rows.Next() {
+		f, err := scanFeatureRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		features = append(features, *f)
+	}
+	return features, rows.Err()
 }
 
 func (r *PostgresRepository) ListNotes(ctx context.Context, featureID string) ([]models.MoneyNote, error) {
@@ -186,6 +232,18 @@ func (r *PostgresRepository) PrimaryUploads(ctx context.Context, projectID strin
 	return out, rows.Err()
 }
 
+type txBeginner interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+func beginTx(ctx context.Context, db DBConn) (*sql.Tx, error) {
+	beginner, ok := db.(txBeginner)
+	if !ok {
+		return nil, fmt.Errorf("money repository connection does not support transactions")
+	}
+	return beginner.BeginTx(ctx, nil)
+}
+
 type scanner interface {
 	Scan(dest ...interface{}) error
 }
@@ -274,3 +332,14 @@ func scanUploadRows(row scanner) (*models.MoneyUpload, error) {
 }
 
 func normalizeSpace(s string) string { return strings.TrimSpace(s) }
+
+func defaultRestoredStatus(featureType string) string {
+	switch featureType {
+	case models.MoneyFeatureBoulder:
+		return models.MoneyStatusScouted
+	case models.MoneyFeatureProblem:
+		return models.MoneyStatusProject
+	default:
+		return models.MoneyStatusActive
+	}
+}

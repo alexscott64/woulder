@@ -19,9 +19,44 @@ export function geometryPoints(geojson: MoneyGeoJSON): MoneyPosition[] {
 }
 
 export function polygonGeoJSON(points: MoneyPosition[]): MoneyGeoJSON {
-  const closed = points.length && (points[0][0] !== points[points.length - 1][0] || points[0][1] !== points[points.length - 1][1]) ? [...points, points[0]] : points;
-  return { type: 'Polygon', coordinates: [closed] };
+  return { type: 'Polygon', coordinates: [closedPolygonPoints(points)] };
 }
+
+export function openPolygonPoints(points: MoneyPosition[]): MoneyPosition[] {
+  if (points.length > 1 && samePosition(points[0], points[points.length - 1])) return points.slice(0, -1);
+  return [...points];
+}
+
+export function closedPolygonPoints(points: MoneyPosition[]): MoneyPosition[] {
+  const open = openPolygonPoints(points);
+  return open.length ? [...open, open[0]] : open;
+}
+
+export function replacePolygonVertex(points: MoneyPosition[], index: number, position: MoneyPosition): MoneyPosition[] {
+  const open = openPolygonPoints(points);
+  if (index < 0 || index >= open.length) return open;
+  return open.map((point, i) => i === index ? position : point);
+}
+
+export function insertPolygonVertexAfter(points: MoneyPosition[], index: number, position: MoneyPosition): MoneyPosition[] {
+  const open = openPolygonPoints(points);
+  const insertAt = Math.min(Math.max(index + 1, 0), open.length);
+  return [...open.slice(0, insertAt), position, ...open.slice(insertAt)];
+}
+
+export function deletePolygonVertex(points: MoneyPosition[], index: number, minVertices = 3): MoneyPosition[] {
+  const open = openPolygonPoints(points);
+  if (open.length <= minVertices || index < 0 || index >= open.length) return open;
+  return open.filter((_point, i) => i !== index);
+}
+
+export function isValidAreaEditRing(points: MoneyPosition[]): boolean {
+  const open = openPolygonPoints(points);
+  const distinct = new Set(open.map(point => `${point[0].toFixed(7)},${point[1].toFixed(7)}`));
+  return open.length >= 3 && open.length <= 500 && distinct.size >= 3 && open.every(([lon, lat]) => lon >= -180 && lon <= 180 && lat >= -90 && lat <= 90);
+}
+
+function samePosition(a: MoneyPosition, b: MoneyPosition): boolean { return a[0] === b[0] && a[1] === b[1]; }
 
 export function lineGeoJSON(points: MoneyPosition[]): MoneyGeoJSON { return { type: 'LineString', coordinates: points }; }
 export function pointGeoJSON(point: MoneyPosition): MoneyGeoJSON { return { type: 'Point', coordinates: point }; }

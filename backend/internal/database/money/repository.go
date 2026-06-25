@@ -16,6 +16,10 @@ type Repository interface {
 	UpdateFeatureGeometry(ctx context.Context, id string, geojson []byte, bbox models.BBox, updatedBy string) (*models.MoneyFeature, error)
 	UpsertFeatureByExternalRef(ctx context.Context, feature models.MoneyFeature) (*models.MoneyFeature, error)
 	ArchiveFeature(ctx context.Context, id, userID string) error
+	PromoteChildrenAndArchiveFeature(ctx context.Context, id string, parentID *string, userID string) error
+	RestoreFeature(ctx context.Context, id, userID string) error
+	MoveFeatureParent(ctx context.Context, id string, parentID *string, sortOrder int, userID string) (*models.MoneyFeature, error)
+	ListTrash(ctx context.Context, projectID string) ([]models.MoneyFeature, error)
 	ListNotes(ctx context.Context, featureID string) ([]models.MoneyNote, error)
 	ListNotesByProject(ctx context.Context, projectID string) ([]models.MoneyNote, error)
 	CreateNote(ctx context.Context, note models.MoneyNote) (*models.MoneyNote, error)

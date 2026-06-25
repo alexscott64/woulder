@@ -147,6 +147,21 @@ type MoneyFeatureDetail struct {
 	Uploads []MoneyUpload `json:"uploads"`
 }
 
+type MoneyTrashItem struct {
+	ID              string    `json:"id"`
+	Title           string    `json:"title"`
+	FeatureType     string    `json:"feature_type"`
+	ParentFeatureID *string   `json:"parent_feature_id,omitempty"`
+	Path            []string  `json:"path"`
+	DeletedAt       time.Time `json:"deleted_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	DescendantCount int       `json:"descendant_count"`
+}
+
+type MoneyTrashResponse struct {
+	Items []MoneyTrashItem `json:"items"`
+}
+
 type MoneyFeatureRequest struct {
 	ParentFeatureID *string         `json:"parent_feature_id,omitempty"`
 	FeatureType     string          `json:"feature_type"`
@@ -171,6 +186,22 @@ type MoneyCragAreaRequest struct {
 
 type MoneyAreaGeometryRequest struct {
 	GeoJSON json.RawMessage `json:"geojson"`
+}
+
+type MoneyArchiveMode string
+
+const (
+	MoneyArchiveModeSubtree         MoneyArchiveMode = "subtree"
+	MoneyArchiveModePromoteChildren MoneyArchiveMode = "promote_children"
+)
+
+type MoneyArchiveFeatureRequest struct {
+	Mode MoneyArchiveMode `json:"mode"`
+}
+
+type MoneyMoveFeatureRequest struct {
+	ParentFeatureID *string `json:"parent_feature_id"`
+	SortOrder       *int    `json:"sort_order,omitempty"`
 }
 
 type MoneyCragBoulderRequest struct {
@@ -215,8 +246,9 @@ type BBox struct {
 }
 
 type MoneyFeatureFilter struct {
-	FeatureType  string
-	Status       string
-	BBox         *BBox
-	UpdatedAfter *time.Time
+	FeatureType     string
+	Status          string
+	BBox            *BBox
+	UpdatedAfter    *time.Time
+	IncludeArchived bool
 }

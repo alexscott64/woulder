@@ -1,6 +1,8 @@
 import { API_BASE_URL } from './api';
 import { authApiClient, authorizedFetch } from './auth';
 import {
+  MoneyArchiveMode,
+  MoneyAreaGeometryRequest,
   MoneyAreaRequest,
   MoneyBBox,
   MoneyBoulderRequest,
@@ -10,11 +12,13 @@ import {
   MoneyFeatureDetail,
   MoneyFeatureFilters,
   MoneyFeatureRequest,
+  MoneyMoveFeatureRequest,
   MoneyNote,
   MoneyNoteRequest,
   MoneyProblemRequest,
   MoneyProjectResponse,
   MoneySnapshot,
+  MoneyTrashResponse,
   MoneyUpload,
   MoneyUploadBlockKind,
 } from '../types/money';
@@ -41,6 +45,11 @@ export const moneyApi = {
 
   async getCragSnapshot(projectId: string): Promise<MoneyCragSnapshot> {
     const response = await authApiClient.get<MoneyCragSnapshot>(`/money/projects/${projectId}/crag`);
+    return response.data;
+  },
+
+  async listTrash(projectId: string): Promise<MoneyTrashResponse> {
+    const response = await authApiClient.get<MoneyTrashResponse>(`/money/projects/${projectId}/trash`);
     return response.data;
   },
 
@@ -74,6 +83,11 @@ export const moneyApi = {
     return response.data;
   },
 
+  async updateAreaGeometry(featureId: string, payload: MoneyAreaGeometryRequest): Promise<MoneyFeature> {
+    const response = await authApiClient.patch<MoneyFeature>(`/money/features/${featureId}/geometry`, payload);
+    return response.data;
+  },
+
   async getFeature(featureId: string): Promise<MoneyFeatureDetail> {
     const response = await authApiClient.get<MoneyFeatureDetail>(`/money/features/${featureId}`);
     return response.data;
@@ -84,8 +98,17 @@ export const moneyApi = {
     return response.data;
   },
 
-  async archiveFeature(featureId: string): Promise<void> {
-    await authApiClient.delete(`/money/features/${featureId}`);
+  async archiveFeature(featureId: string, mode: MoneyArchiveMode = 'subtree'): Promise<void> {
+    await authApiClient.delete(`/money/features/${featureId}`, { data: { mode } });
+  },
+
+  async moveFeatureParent(featureId: string, payload: MoneyMoveFeatureRequest): Promise<MoneyFeature> {
+    const response = await authApiClient.patch<MoneyFeature>(`/money/features/${featureId}/parent`, payload);
+    return response.data;
+  },
+
+  async restoreFeature(featureId: string): Promise<void> {
+    await authApiClient.post(`/money/features/${featureId}/restore`);
   },
 
   async listProjectNotes(projectId: string): Promise<MoneyNote[]> {

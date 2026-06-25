@@ -62,8 +62,20 @@ const (
 		RETURNING id, project_id, parent_feature_id, feature_type, title, description, status, geojson, style, properties,
 		       min_lat, min_lon, max_lat, max_lon, sort_order, external_ref, import_source, created_by, updated_by, created_at, updated_at
 	`
-	queryArchiveFeature = `UPDATE woulder.money_features SET status='archived', updated_by=$2, updated_at=now() WHERE id=$1`
-	queryNoteSelect     = `
+	queryArchiveFeature  = `UPDATE woulder.money_features SET status='archived', updated_by=$2, updated_at=now() WHERE id=$1`
+	queryPromoteChildren = `
+		UPDATE woulder.money_features SET parent_feature_id=$2, updated_by=$3, updated_at=now()
+		WHERE parent_feature_id=$1 AND status <> 'archived'
+	`
+	queryRestoreFeature    = `UPDATE woulder.money_features SET status=$3, updated_by=$2, updated_at=now() WHERE id=$1`
+	queryMoveFeatureParent = `
+		UPDATE woulder.money_features SET parent_feature_id=$2, sort_order=$3, updated_by=$4, updated_at=now()
+		WHERE id=$1
+		RETURNING id, project_id, parent_feature_id, feature_type, title, description, status, geojson, style, properties,
+		       min_lat, min_lon, max_lat, max_lon, sort_order, external_ref, import_source, created_by, updated_by, created_at, updated_at
+	`
+	queryListTrash  = queryFeatureSelect + ` WHERE project_id=$1 AND status='archived' ORDER BY updated_at DESC, title ASC`
+	queryNoteSelect = `
 		SELECT id, project_id, feature_id, target_type, target_ref, body, visibility, tags, blocks, external_ref, import_source, created_by, updated_by, created_at, updated_at
 		FROM woulder.money_notes
 	`
