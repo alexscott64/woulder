@@ -14,9 +14,10 @@ import type { StyleSpecification } from 'maplibre-gl';
 type LayerState = { base: string; roads: boolean; water: boolean; contours: boolean; trails: boolean; areas: Record<string, boolean>; dev: Record<string, boolean> };
 type ViewState = { longitude: number; latitude: number; zoom: number; pitch: number; bearing: number };
 type Rgba = [number, number, number, number];
-type AreaDatum = { node: MoneyCragNode; polygon: MoneyPosition[]; center: MoneyPosition; focused: boolean };
-type BoulderDatum = { node: MoneyCragNode; polygon: MoneyPosition[]; center: MoneyPosition; color: Rgba; line: Rgba; rank: number; focused: boolean };
+type AreaDatum = { node: MoneyCragNode; polygon: MoneyPosition[]; center: MoneyPosition };
+type BoulderDatum = { node: MoneyCragNode; polygon: MoneyPosition[]; center: MoneyPosition; color: Rgba; line: Rgba; rank: number };
 type TrailDatum = { node: MoneyCragNode; path: MoneyPosition[] };
+type TrailFineDatum = TrailDatum & { finePath: MoneyPosition[] };
 
 interface Props {
   root: MoneyCragNode;
@@ -66,30 +67,41 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
   const creating = mode === 'create-area' || mode === 'create-boulder';
   const editing = mode === 'edit-area';
 
-  useEffect(() => { if (!editing) setViewState(viewForBBox(bbox(area))); }, [area.feature.id, area, editing]);
+  const focusBBox = useMemo(() => bbox(area), [area]);
+
+  useEffect(() => { if (!editing) setViewState(viewForBBox(focusBBox)); }, [focusBBox, editing]);
   useEffect(() => { if (creating) { setDraft([]); setDraftHistory([]); setSelectedDraftVertex(null); setVertexMessage('Tap the map to add vertices.'); } }, [creating]);
   useEffect(() => { if (editing) { setEditDraft(openPolygonPoints(geometryPoints(area.feature.geojson))); setEditHistory([]); setSelectedEditVertex(null); setVertexMessage('Select a white vertex to delete it, or tap green midpoint dots to add vertices.'); } }, [editing, area.feature.geojson]);
 
   const focusedAreaIds = useMemo(() => new Set(flattenAreas(area).map(node => node.feature.id)), [area]);
   const focusedBoulderIds = useMemo(() => new Set(flattenBoulders(area).map(node => node.feature.id)), [area]);
+  const isFocusedArea = useCallback((id: string) => focusedAreaIds.has(id), [focusedAreaIds]);
+  const isFocusedBoulder = useCallback((id: string) => focusedBoulderIds.has(id), [focusedBoulderIds]);
 
-  const areaData = useMemo<AreaDatum[]>(() => flattenAreas(root)
-    .filter(node => node.feature.id !== root.feature.id && layers.areas[node.feature.id] !== false)
-    .map(node => ({ node, polygon: geometryPoints(node.feature.geojson), center: featureCenter(node.feature), focused: focusedAreaIds.has(node.feature.id) }))
-    .filter(d => usablePolygon(d.polygon)), [root, layers.areas, focusedAreaIds]);
+  const allAreaData = useMemo<AreaDatum[]>(() => flattenAreas(root)
+    .filter(node => node.feature.id !== root.feature.id)
+    .map(node => ({ node, polygon: geometryPoints(node.feature.geojson), center: featureCenter(node.feature) }))
+    .filter(d => usablePolygon(d.polygon)), [root]);
+  const areaData = useMemo(() => allAreaData.filter(d => layers.areas[d.node.feature.id] !== false), [allAreaData, layers.areas]);
 
-  const boulderData = useMemo<BoulderDatum[]>(() => flattenBoulders(root).flatMap((node, index) => {
+  const allBoulderData = useMemo<BoulderDatum[]>(() => flattenBoulders(root).flatMap((node, index) => {
     const dev = String(node.feature.status);
-    if (layers.dev[dev] === false) return [];
     const meta = DEV.meta[(dev in DEV.meta ? dev : 'scouted') as keyof typeof DEV.meta];
     const center = featureCenter(node.feature);
     if (!isLonLatPosition(center)) return [];
-    return [{ node, polygon: boulderFootprint(geometryPoints(node.feature.geojson), center, node.feature.id), center, color: hexToRgba(meta.bg, 86), line: hexToRgba(meta.c, 235), rank: stableHash(node.feature.id || String(index)) % 5, focused: focusedBoulderIds.has(node.feature.id) }];
-  }), [root, layers.dev, focusedBoulderIds]);
+    return [{ node, polygon: boulderFootprint(geometryPoints(node.feature.geojson), center, node.feature.id), center, color: hexToRgba(meta.bg, 86), line: hexToRgba(meta.c, 235), rank: stableHash(node.feature.id || String(index)) % 5 }];
+  }), [root]);
+  const boulderData = useMemo(() => allBoulderData.filter(d => layers.dev[String(d.node.feature.status)] !== false), [allBoulderData, layers.dev]);
 
   const trailData = useMemo<TrailDatum[]>(() => layers.trails ? trails.map(node => ({ node, path: geometryPoints(node.feature.geojson) })).filter(d => usablePath(d.path)) : [], [layers.trails, trails]);
-  const boulderLabelData = useMemo(() => boulderData.filter(d => d.node.feature.id === selectedBoulderId || d.focused && (viewState.zoom >= FINE_DETAIL_ZOOM || viewState.zoom >= DETAIL_ZOOM && d.rank === 0)), [boulderData, selectedBoulderId, viewState.zoom]);
+  const trailFineData = useMemo<TrailFineDatum[]>(() => trailData.map(d => ({ ...d, finePath: densifyPath(d.path, 12) })), [trailData]);
+  const areaLabelData = useMemo(() => areaData.filter(d => isFocusedArea(d.node.feature.id) || viewState.zoom < DETAIL_ZOOM), [areaData, isFocusedArea, viewState.zoom]);
+  const boulderLabelData = useMemo(() => boulderData.filter(d => d.node.feature.id === selectedBoulderId || isFocusedBoulder(d.node.feature.id) && (viewState.zoom >= FINE_DETAIL_ZOOM || viewState.zoom >= DETAIL_ZOOM && d.rank === 0)), [boulderData, isFocusedBoulder, selectedBoulderId, viewState.zoom]);
   const lineLabelData = useMemo(() => moneyCreekLineMapLabels.filter(label => lineLabelVisible(label, viewState.zoom, layers)), [layers, viewState.zoom]);
+  const roadData = useMemo(() => moneyCreekLineMapByCategory.road.filter(path => path.visible !== false), []);
+  const waterData = useMemo(() => [...moneyCreekLineMapByCategory.creek, ...moneyCreekLineMapByCategory.reservoir], []);
+  const contourData = useMemo(() => visibleContours(moneyCreekLineMapByCategory.contour, viewState.zoom), [viewState.zoom]);
+  const indexContourData = useMemo(() => visibleContours(moneyCreekLineMapByCategory['index-contour'], viewState.zoom), [viewState.zoom]);
 
   const addDraftVertex = useCallback((position: MoneyPosition) => {
     setDraft(points => { setDraftHistory(history => [...history, points].slice(-50)); return [...points, position]; });
@@ -173,14 +185,12 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
     const editPolygon = editing ? closedPolygonPoints(editDraft) : [];
     const editHandles = editing ? editDraft.map((position, index) => ({ position, index })) : [];
     const editEdgeHandles = editing ? editDraft.map((position, index) => ({ position: midpoint(position, editDraft[(index + 1) % editDraft.length]), index })) : [];
-    const roadData = moneyCreekLineMapByCategory.road.filter(path => path.visible !== false);
-    const waterData = [...moneyCreekLineMapByCategory.creek, ...moneyCreekLineMapByCategory.reservoir];
     const stylized = layers.base === 'stylized' ? [
       layers.contours && new PathLayer<LineMapPath>({
-        id: 'money-reference-line-map-contours', data: moneyCreekLineMapByCategory.contour, pickable: false, getPath: contourPath, getColor: d => contourColor(d, viewState.zoom), getWidth: contourWidth, widthMinPixels: 0.28, widthMaxPixels: 0.9, jointRounded: true, capRounded: true,
+        id: 'money-reference-line-map-contours', data: contourData, pickable: false, getPath: contourPath, getColor: d => contourColor(d, viewState.zoom), getWidth: contourWidth, widthMinPixels: 0.28, widthMaxPixels: 0.9, jointRounded: true, capRounded: true,
       }),
       layers.contours && new PathLayer<LineMapPath>({
-        id: 'money-reference-line-map-index-contours', data: moneyCreekLineMapByCategory['index-contour'], pickable: false, getPath: contourPath, getColor: d => indexContourColor(d, viewState.zoom), getWidth: d => contourWidth(d) + 0.2, widthMinPixels: 0.48, widthMaxPixels: 1.25, jointRounded: true, capRounded: true,
+        id: 'money-reference-line-map-index-contours', data: indexContourData, pickable: false, getPath: contourPath, getColor: d => indexContourColor(d, viewState.zoom), getWidth: d => contourWidth(d) + 0.2, widthMinPixels: 0.48, widthMaxPixels: 1.25, jointRounded: true, capRounded: true,
       }),
       layers.roads && new PathLayer<LineMapPath>({
         id: 'money-reference-line-map-roads-halo', data: roadData, pickable: false, getPath: d => d.path, getColor: [31, 24, 18, 70], getWidth: d => roadWidth(d) + 2.1, widthMinPixels: 1.8, widthMaxPixels: 6.2, jointRounded: true, capRounded: true,
@@ -203,12 +213,12 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
       ...stylized,
       new PolygonLayer<AreaDatum>({
         id: 'money-reference-areas', data: areaData, pickable: !creating && !editing, stroked: true, filled: true, lineWidthMinPixels: 0.65, lineWidthMaxPixels: 2.4,
-        getPolygon: d => editing && d.node.feature.id === area.feature.id ? editPolygon : d.polygon, getFillColor: d => editing && d.node.feature.id === area.feature.id ? [174, 185, 116, 82] : areaFill(d, layers.base), getLineColor: d => editing && d.node.feature.id === area.feature.id ? [255, 245, 220, 255] : d.focused ? [174, 185, 116, 205] : [174, 185, 116, 82], getLineWidth: d => editing && d.node.feature.id === area.feature.id ? 2 : d.focused ? 1.35 : 0.65,
+        getPolygon: d => editing && d.node.feature.id === area.feature.id ? editPolygon : d.polygon, getFillColor: d => editing && d.node.feature.id === area.feature.id ? [174, 185, 116, 82] : areaFill(d, layers.base, isFocusedArea(d.node.feature.id)), getLineColor: d => editing && d.node.feature.id === area.feature.id ? [255, 245, 220, 255] : isFocusedArea(d.node.feature.id) ? [174, 185, 116, 205] : [174, 185, 116, 82], getLineWidth: d => editing && d.node.feature.id === area.feature.id ? 2 : isFocusedArea(d.node.feature.id) ? 1.35 : 0.65,
         onClick: info => { if (info.object) onEnter(info.object.node.feature.id); return true; },
       }),
       new ScatterplotLayer<BoulderDatum>({
         id: 'money-reference-boulder-markers', data: boulderData, pickable: !creating && !editing, stroked: true, filled: true, radiusMinPixels: 4, radiusMaxPixels: 16, lineWidthMinPixels: 1, lineWidthMaxPixels: 3,
-        getPosition: d => d.center, getRadius: d => d.node.feature.id === selectedBoulderId ? 3.5 : d.focused ? 2.25 : 1.55, getFillColor: d => d.node.feature.id === selectedBoulderId ? withAlpha(d.line, 245) : d.focused ? withAlpha(d.line, 210) : withAlpha(d.line, 118), getLineColor: d => d.node.feature.id === selectedBoulderId ? [255, 245, 220, 255] : d.focused ? [28, 24, 18, 230] : [28, 24, 18, 120], getLineWidth: d => d.node.feature.id === selectedBoulderId ? 1.5 : 0.85,
+        getPosition: d => d.center, getRadius: d => d.node.feature.id === selectedBoulderId ? 3.5 : isFocusedBoulder(d.node.feature.id) ? 2.25 : 1.55, getFillColor: d => d.node.feature.id === selectedBoulderId ? withAlpha(d.line, 245) : isFocusedBoulder(d.node.feature.id) ? withAlpha(d.line, 210) : withAlpha(d.line, 118), getLineColor: d => d.node.feature.id === selectedBoulderId ? [255, 245, 220, 255] : isFocusedBoulder(d.node.feature.id) ? [28, 24, 18, 230] : [28, 24, 18, 120], getLineWidth: d => d.node.feature.id === selectedBoulderId ? 1.5 : 0.85,
         onClick: info => { if (info.object) onSelectBoulder(info.object.node.feature.id); return true; },
       }),
       new PathLayer<TrailDatum>({ id: 'money-reference-trails-halo', data: trailData, getPath: d => d.path, getColor: [17, 24, 20, layers.base === 'stylized' ? 92 : 130], getWidth: d => d.node.feature.id === selectedTrailId ? 4.2 : 3, widthMinPixels: 2, widthMaxPixels: 5.5, jointRounded: true, capRounded: true }),
@@ -216,10 +226,10 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
         id: 'money-reference-trails', data: trailData, pickable: !creating && !editing, getPath: d => d.path, getColor: d => d.node.feature.id === selectedTrailId ? [174, 185, 116, 255] : [185, 128, 80, 225], getWidth: d => d.node.feature.id === selectedTrailId ? 2.6 : 1.45, widthMinPixels: 1.2, widthMaxPixels: 3.8, jointRounded: true, capRounded: true,
         onClick: info => { if (info.object) onSelectTrail(info.object.node.feature.id); return true; },
       }),
-      viewState.zoom >= DETAIL_ZOOM && new PathLayer<TrailDatum>({
-        id: 'money-reference-trails-fine-detail', data: trailData, pickable: false, getPath: d => densifyPath(d.path, 12), getColor: [238, 225, 211, 95], getWidth: 0.45, widthMinPixels: 0.6, widthMaxPixels: 1.5, jointRounded: true, capRounded: true,
+      viewState.zoom >= DETAIL_ZOOM && new PathLayer<TrailFineDatum>({
+        id: 'money-reference-trails-fine-detail', data: trailFineData, pickable: false, getPath: d => d.finePath, getColor: [238, 225, 211, 95], getWidth: 0.45, widthMinPixels: 0.6, widthMaxPixels: 1.5, jointRounded: true, capRounded: true,
       }),
-      new TextLayer<AreaDatum>({ id: 'money-reference-area-labels', data: areaData.filter(d => d.focused || viewState.zoom < DETAIL_ZOOM), getPosition: d => d.center, getText: d => d.node.feature.title, getSize: d => d.focused && viewState.zoom >= DETAIL_ZOOM ? 12 : 10.5, getColor: d => d.focused ? [238, 225, 211, 255] : [238, 225, 211, 155], getBackgroundColor: d => d.focused ? [42, 36, 29, layers.base === 'stylized' ? 196 : 220] : [42, 36, 29, 128], background: true, backgroundPadding: [7, 4], fontWeight: 700, pickable: false }),
+      new TextLayer<AreaDatum>({ id: 'money-reference-area-labels', data: areaLabelData, getPosition: d => d.center, getText: d => d.node.feature.title, getSize: d => isFocusedArea(d.node.feature.id) && viewState.zoom >= DETAIL_ZOOM ? 12 : 10.5, getColor: d => isFocusedArea(d.node.feature.id) ? [238, 225, 211, 255] : [238, 225, 211, 155], getBackgroundColor: d => isFocusedArea(d.node.feature.id) ? [42, 36, 29, layers.base === 'stylized' ? 196 : 220] : [42, 36, 29, 128], background: true, backgroundPadding: [7, 4], fontWeight: 700, pickable: false }),
       new TextLayer<BoulderDatum>({ id: 'money-reference-boulder-labels', data: boulderLabelData, getPosition: d => d.center, getText: d => d.node.feature.title, getSize: d => d.node.feature.id === selectedBoulderId ? 11 : viewState.zoom >= FINE_DETAIL_ZOOM ? 9.5 : 8.5, getColor: d => d.line, getBackgroundColor: [42, 36, 29, 205], background: true, backgroundPadding: [5, 2], fontWeight: 700, pickable: false, getPixelOffset: [0, -12] }),
       draftGeo && new PolygonLayer({ id: 'money-reference-draft', data: [{ polygon: geometryPoints(draftGeo) }], getPolygon: (d: { polygon: MoneyPosition[] }) => d.polygon, getFillColor: [174, 185, 116, 70], getLineColor: [174, 185, 116, 255], getLineWidth: 1.8, lineWidthMinPixels: 1.2, lineWidthMaxPixels: 4 }),
       creating && draft.length >= 2 && new PathLayer({ id: 'money-reference-draft-outline', data: [{ path: draftPolygon }], getPath: (d: { path: MoneyPosition[] }) => d.path, getColor: [174, 185, 116, 255], getWidth: 2, widthMinPixels: 2, widthMaxPixels: 5, jointRounded: true, capRounded: true }),
@@ -229,15 +239,15 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
       editing && new ScatterplotLayer({ id: 'money-reference-edit-edge-handles', data: editEdgeHandles, pickable: true, getPosition: (d: { position: MoneyPosition }) => d.position, getFillColor: [174, 185, 116, 150], getLineColor: [255, 245, 220, 235], getRadius: 1, radiusMinPixels: 5, radiusMaxPixels: 9, stroked: true, onClick: info => { if (info.object) insertEditVertex(info.object.index, info.object.position); return true; } }),
       editing && new ScatterplotLayer({ id: 'money-reference-edit-handles', data: editHandles, pickable: true, getPosition: (d: { position: MoneyPosition }) => d.position, getFillColor: (d: { index: number }) => d.index === selectedEditVertex ? [255, 210, 115, 255] : [255, 245, 220, 255], getLineColor: [42, 36, 29, 255], getRadius: (d: { index: number }) => d.index === selectedEditVertex ? 1.7 : 1.35, radiusMinPixels: 7, radiusMaxPixels: 14, lineWidthMinPixels: 1.5, stroked: true, onClick: info => { if (info.object) { setSelectedEditVertex(info.object.index); setVertexMessage(`Vertex ${info.object.index + 1} selected.`); } return true; }, onDrag: info => { const coordinate = info.coordinate; if (info.object && coordinate && coordinate.length >= 2) moveEditVertex(info.object.index, [coordinate[0], coordinate[1]]); return true; } }),
     ].filter(Boolean);
-  }, [area.feature.id, areaData, boulderData, boulderLabelData, creating, draft, editDraft, editing, insertDraftVertex, insertEditVertex, layers.base, layers.contours, layers.roads, layers.water, lineLabelData, moveDraftVertex, moveEditVertex, onEnter, onSelectBoulder, onSelectTrail, selectedBoulderId, selectedDraftVertex, selectedEditVertex, selectedTrailId, trailData, viewState.zoom]);
+  }, [area.feature.id, areaData, areaLabelData, boulderData, boulderLabelData, contourData, creating, draft, editDraft, editing, indexContourData, insertDraftVertex, insertEditVertex, isFocusedArea, isFocusedBoulder, layers.base, layers.contours, layers.roads, layers.water, lineLabelData, moveDraftVertex, moveEditVertex, onEnter, onSelectBoulder, onSelectTrail, roadData, selectedBoulderId, selectedDraftVertex, selectedEditVertex, selectedTrailId, trailData, trailFineData, viewState.zoom, waterData]);
 
   const finish = () => { if (draft.length >= 3) onCreateDone(draft); };
   const saveEdit = () => { if (isValidAreaEditRing(editDraft)) onEditSave(editDraft); };
-  const focus = () => setViewState(viewForBBox(bbox(area)));
+  const focus = () => setViewState(viewForBBox(focusBBox));
   const zoomBy = (delta: number) => setViewState(current => ({ ...current, zoom: clamp(current.zoom + delta, MIN_ZOOM, MAX_ZOOM) }));
 
   return <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: layers.base === 'stylized' ? 'transparent' : T.map.bg2 }}>
-    <DeckGL key={`${area.feature.id}:${layers.base}`} controller={{ dragPan: !creating && !editing, scrollZoom: true, doubleClickZoom: !creating && !editing, touchZoom: true, keyboard: true }} layers={deckLayers} viewState={viewState} onViewStateChange={(event: { viewState: unknown }) => {
+    <DeckGL controller={{ dragPan: !creating && !editing, scrollZoom: true, doubleClickZoom: !creating && !editing, touchZoom: true, keyboard: true }} layers={deckLayers} viewState={viewState} onViewStateChange={(event: { viewState: unknown }) => {
       const next = event.viewState as Partial<ViewState>;
       setViewState(current => ({ longitude: next.longitude ?? current.longitude, latitude: next.latitude ?? current.latitude, zoom: clamp(next.zoom ?? current.zoom, MIN_ZOOM, MAX_ZOOM), pitch: next.pitch ?? current.pitch, bearing: next.bearing ?? current.bearing }));
     }} onClick={(info: { coordinate?: number[]; picked?: boolean }) => {
@@ -381,7 +391,19 @@ function offsetMeters(origin: MoneyPosition, east: number, north: number): Money
   return [origin[0] + east / (111320 * cosLat), origin[1] + north / 111320];
 }
 
-function contourPath(d: LineMapPath): MoneyPosition[] { return d.path.length > 24 ? d.path : smoothPath(d.path); }
+const smoothedContourPathCache = new WeakMap<LineMapPath, MoneyPosition[]>();
+function contourPath(d: LineMapPath): MoneyPosition[] {
+  if (d.path.length > 24) return d.path;
+  const cached = smoothedContourPathCache.get(d);
+  if (cached) return cached;
+  const smoothed = smoothPath(d.path);
+  smoothedContourPathCache.set(d, smoothed);
+  return smoothed;
+}
+function visibleContours(paths: LineMapPath[], zoom: number): LineMapPath[] {
+  if (zoom >= DETAIL_ZOOM) return paths;
+  return paths.filter((path, index) => path.category === 'index-contour' || (path.elevationM ?? index) % 30 === 0);
+}
 function contourColor(d: LineMapPath, zoom: number): Rgba {
   const high = (d.elevationM ?? 0) >= 1200;
   return high ? [214, 187, 154, zoom >= DETAIL_ZOOM ? 38 : 27] : [152, 122, 91, zoom >= DETAIL_ZOOM ? 32 : 22];
@@ -409,7 +431,7 @@ function lineLabelColor(d: LineMapLabel): Rgba { return d.kind === 'road' ? [218
 function lineLabelBackground(d: LineMapLabel): Rgba { return d.kind === 'context' ? [42, 36, 29, 118] : d.priority === 'high' ? [27, 33, 31, 118] : [36, 30, 24, 86]; }
 function lineLabelOffset(d: LineMapLabel): [number, number] { return d.kind === 'road' ? [0, -10] : d.kind === 'creek' ? [0, 12] : [0, 0]; }
 function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number): number { const t2 = t * t, t3 = t2 * t; return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3); }
-function areaFill(d: AreaDatum, base: string): Rgba { return d.focused ? base === 'stylized' ? [174, 185, 116, 30] : [174, 185, 116, 44] : base === 'stylized' ? [174, 185, 116, 8] : [174, 185, 116, 14]; }
+function areaFill(_d: AreaDatum, base: string, focused: boolean): Rgba { return focused ? base === 'stylized' ? [174, 185, 116, 30] : [174, 185, 116, 44] : base === 'stylized' ? [174, 185, 116, 8] : [174, 185, 116, 14]; }
 function isLonLatPosition(p: MoneyPosition): boolean { return Number.isFinite(p[0]) && Number.isFinite(p[1]) && Math.abs(p[0]) <= 180 && Math.abs(p[1]) <= 90; }
 function usablePath(path: MoneyPosition[]): boolean { return path.length >= 2 && path.every(isLonLatPosition); }
 function usablePolygon(points: MoneyPosition[]): boolean { return points.length >= 3 && points.every(isLonLatPosition); }
@@ -434,6 +456,6 @@ function hexToRgba(hexOrRgba: string, fallbackAlpha: number): Rgba {
 const mapButton: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 7, border: `1px solid ${T.line2}`, borderRadius: 10, padding: '9px 12px', background: T.surf, color: T.ink, fontFamily: T.font, fontWeight: 700, cursor: 'pointer', boxShadow: T.shadow };
 const smallButton: React.CSSProperties = { width: 40, height: 38, border: 'none', borderRight: `1px solid ${T.line}`, background: 'transparent', color: T.ink, cursor: 'pointer', fontSize: 18 };
 function ctrl(accent: boolean, disabled = false): React.CSSProperties { return { display: 'flex', alignItems: 'center', gap: 7, border: accent ? 'none' : `1px solid ${T.line2}`, borderRadius: 9, padding: '11px 18px', background: disabled ? T.line : accent ? T.accent : 'transparent', color: disabled ? T.faint : accent ? T.onAccent : T.ink, fontFamily: T.font, fontWeight: 700, cursor: disabled ? 'default' : 'pointer' }; }
-function LayersPanel({ layers, setLayers, onClose, root }: { layers: LayerState; setLayers: (l: LayerState) => void; onClose: () => void; root: MoneyCragNode }) { const bases = ['stylized', 'topo', 'satellite', 'slope']; const areaRows = flattenAreas(root).filter(a => a.feature.id !== root.feature.id); return <div style={{ position: 'absolute', top: 14, right: 14, zIndex: 10, width: 224, background: T.surf, border: `1px solid ${T.line2}`, borderRadius: 12, boxShadow: T.shadow, overflow: 'hidden' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 13px', borderBottom: `1px solid ${T.line}`, color: T.ink }}><Layers size={16} /><b style={{ fontSize: 13.5 }}>Layers</b><button onClick={onClose} style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: T.mut, cursor: 'pointer' }}>×</button></div><div style={{ padding: '11px 13px', maxHeight: 380, overflowY: 'auto' }}><Label>Base map</Label>{bases.map(base => <Row key={base} onClick={() => setLayers({ ...layers, base })} on={layers.base === base} label={base} />)}<Label>Areas</Label>{areaRows.map(c => <Row key={c.feature.id} onClick={() => setLayers({ ...layers, areas: { ...layers.areas, [c.feature.id]: layers.areas[c.feature.id] === false } })} on={layers.areas[c.feature.id] !== false} label={c.feature.title} />)}<Label>Development</Label>{DEV.order.map(k => <Row key={k} onClick={() => setLayers({ ...layers, dev: { ...layers.dev, [k]: layers.dev[k] === false } })} on={layers.dev[k] !== false} label={DEV.meta[k].short} color={DEV.meta[k].c} />)}<div style={{ borderTop: `1px solid ${T.line}`, margin: '10px 0 8px' }} /><Label>Line map</Label>{(['roads', 'water', 'contours', 'trails'] as const).map(k => <Row key={k} onClick={() => setLayers({ ...layers, [k]: !layers[k] })} on={layers[k]} label={k === 'contours' ? 'contours' : k} />)}</div></div>; }
+function LayersPanel({ layers, setLayers, onClose, root }: { layers: LayerState; setLayers: (l: LayerState) => void; onClose: () => void; root: MoneyCragNode }) { const bases = ['stylized', 'topo', 'satellite', 'slope']; const areaRows = useMemo(() => flattenAreas(root).filter(a => a.feature.id !== root.feature.id), [root]); return <div style={{ position: 'absolute', top: 14, right: 14, zIndex: 10, width: 224, background: T.surf, border: `1px solid ${T.line2}`, borderRadius: 12, boxShadow: T.shadow, overflow: 'hidden' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 13px', borderBottom: `1px solid ${T.line}`, color: T.ink }}><Layers size={16} /><b style={{ fontSize: 13.5 }}>Layers</b><button onClick={onClose} style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: T.mut, cursor: 'pointer' }}>×</button></div><div style={{ padding: '11px 13px', maxHeight: 380, overflowY: 'auto' }}><Label>Base map</Label>{bases.map(base => <Row key={base} onClick={() => setLayers({ ...layers, base })} on={layers.base === base} label={base} />)}<Label>Areas</Label>{areaRows.map(c => <Row key={c.feature.id} onClick={() => setLayers({ ...layers, areas: { ...layers.areas, [c.feature.id]: layers.areas[c.feature.id] === false } })} on={layers.areas[c.feature.id] !== false} label={c.feature.title} />)}<Label>Development</Label>{DEV.order.map(k => <Row key={k} onClick={() => setLayers({ ...layers, dev: { ...layers.dev, [k]: layers.dev[k] === false } })} on={layers.dev[k] !== false} label={DEV.meta[k].short} color={DEV.meta[k].c} />)}<div style={{ borderTop: `1px solid ${T.line}`, margin: '10px 0 8px' }} /><Label>Line map</Label>{(['roads', 'water', 'contours', 'trails'] as const).map(k => <Row key={k} onClick={() => setLayers({ ...layers, [k]: !layers[k] })} on={layers[k]} label={k === 'contours' ? 'contours' : k} />)}</div></div>; }
 function Label({ children }: { children: React.ReactNode }) { return <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 0.6, color: T.faint, textTransform: 'uppercase', margin: '14px 0 7px' }}>{children}</div>; }
 function Row({ on, label, onClick, color }: { on: boolean; label: string; onClick: () => void; color?: string }) { return <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '5px 0', cursor: 'pointer' }}><span style={{ width: 9, height: 9, borderRadius: color ? '50%' : 2, background: color ?? T.accent, transform: color ? 'none' : 'rotate(45deg)' }} /><span style={{ flex: 1, fontSize: 12.5, color: on ? T.ink : T.mut, textTransform: label.length < 9 ? 'capitalize' : undefined }}>{label}</span><span style={{ width: 28, height: 16, borderRadius: 9, background: on ? (color ?? T.accent) : T.line2, position: 'relative' }}><span style={{ position: 'absolute', top: 2, left: on ? 14 : 2, width: 12, height: 12, borderRadius: '50%', background: '#fff' }} /></span></div>; }
