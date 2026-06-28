@@ -21,6 +21,7 @@ import {
   MoneyTrashResponse,
   MoneyUpload,
   MoneyUploadBlockKind,
+  MoneyUploadDownloadURL,
 } from '../types/money';
 
 function cleanFilters(filters?: MoneyFeatureFilters & { bbox?: MoneyBBox; updatedAfter?: string }) {
@@ -30,6 +31,10 @@ function cleanFilters(filters?: MoneyFeatureFilters & { bbox?: MoneyBBox; update
   if (filters?.bbox) params.bbox = `${filters.bbox.minLon},${filters.bbox.minLat},${filters.bbox.maxLon},${filters.bbox.maxLat}`;
   if (filters?.updatedAfter) params.updated_after = filters.updatedAfter;
   return params;
+}
+
+function apiProxyURL(path: string): string {
+  return new URL(path, API_BASE_URL.replace(/\/api\/?$/, '/')).toString();
 }
 
 export const moneyApi = {
@@ -151,8 +156,17 @@ export const moneyApi = {
     return response.data;
   },
 
+  async getUploadDownloadURL(uploadId: string): Promise<MoneyUploadDownloadURL> {
+    const response = await authApiClient.get<MoneyUploadDownloadURL>(`/money/uploads/${uploadId}/download-url`);
+    return response.data;
+  },
+
   async getUploadBlobUrl(uploadId: string): Promise<string> {
-    const response = await authorizedFetch(`${API_BASE_URL}/money/uploads/${uploadId}`);
+    const download = await this.getUploadDownloadURL(uploadId);
+    if (download.url !== download.proxy_url) {
+      return download.url;
+    }
+    const response = await authorizedFetch(apiProxyURL(download.proxy_url));
     if (!response.ok) throw new Error('Failed to load image');
     const blob = await response.blob();
     return URL.createObjectURL(blob);

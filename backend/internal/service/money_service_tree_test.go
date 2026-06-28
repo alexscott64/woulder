@@ -102,6 +102,9 @@ func (r *moneyTreeRepo) ListUploadsByProject(ctx context.Context, projectID stri
 func (r *moneyTreeRepo) DeleteUpload(ctx context.Context, uploadID, userID, role string) error {
 	return nil
 }
+func (r *moneyTreeRepo) MarkUploadPhysicallyDeleted(ctx context.Context, uploadID string) error {
+	return nil
+}
 func (r *moneyTreeRepo) FeatureNoteCounts(ctx context.Context, projectID string) (map[string]int, error) {
 	return nil, nil
 }

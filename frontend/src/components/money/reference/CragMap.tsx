@@ -6,7 +6,7 @@ import { PathStyleExtension } from '@deck.gl/extensions';
 import { Layers, LocateFixed, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react';
 import { MoneyCragNode, MoneyFeature, MoneyPosition } from '../../../types/money';
 import { bbox, bboxCenter, closedPolygonPoints, centroid, deletePolygonVertex, flattenAreas, flattenBoulders, geometryPoints, insertPolygonVertexAfter, isValidAreaEditRing, MONEY_CREEK_CENTER, openPolygonPoints, polygonGeoJSON, replacePolygonVertex } from './model';
-import { type LineMapLabel, type LineMapPath, moneyCreekLineMapByCategory, moneyCreekLineMapLabels } from './lineMap';
+import { loadMoneyCreekLineMap, type LineMapLabel, type LineMapPath, type MoneyCreekLineMapData } from './lineMap';
 import { DEV, T } from './theme';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { StyleSpecification } from 'maplibre-gl';
@@ -18,6 +18,14 @@ type AreaDatum = { node: MoneyCragNode; polygon: MoneyPosition[]; center: MoneyP
 type BoulderDatum = { node: MoneyCragNode; polygon: MoneyPosition[]; center: MoneyPosition; color: Rgba; line: Rgba; rank: number };
 type TrailDatum = { node: MoneyCragNode; path: MoneyPosition[] };
 type TrailFineDatum = TrailDatum & { finePath: MoneyPosition[] };
+type LineMapLoadState =
+  | { status: 'idle' | 'loading'; data: null; error?: undefined }
+  | { status: 'ready'; data: MoneyCreekLineMapData; error?: undefined }
+  | { status: 'error'; data: null; error: unknown };
+type IdleWindow = Window & typeof globalThis & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
 
 interface Props {
   root: MoneyCragNode;
@@ -64,6 +72,8 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
   const [selectedEditVertex, setSelectedEditVertex] = useState<number | null>(null);
   const [vertexMessage, setVertexMessage] = useState('');
   const [layersOpen, setLayersOpen] = useState(!mobile);
+  const [lineMapState, setLineMapState] = useState<LineMapLoadState>({ status: 'idle', data: null });
+  const lineMapStartedRef = useRef(false);
   const creating = mode === 'create-area' || mode === 'create-boulder';
   const editing = mode === 'edit-area';
 
@@ -72,6 +82,31 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
   useEffect(() => { if (!editing) setViewState(viewForBBox(focusBBox)); }, [focusBBox, editing]);
   useEffect(() => { if (creating) { setDraft([]); setDraftHistory([]); setSelectedDraftVertex(null); setVertexMessage('Tap the map to add vertices.'); } }, [creating]);
   useEffect(() => { if (editing) { setEditDraft(openPolygonPoints(geometryPoints(area.feature.geojson))); setEditHistory([]); setSelectedEditVertex(null); setVertexMessage('Select a white vertex to delete it, or tap green midpoint dots to add vertices.'); } }, [editing, area.feature.geojson]);
+  useEffect(() => {
+    if (layers.base !== 'stylized' || lineMapStartedRef.current) return;
+    lineMapStartedRef.current = true;
+    let loadStarted = false;
+    let timeoutId: number | undefined;
+    let idleId: number | undefined;
+    const idleWindow = window as IdleWindow;
+    const startLoad = () => {
+      loadStarted = true;
+      setLineMapState({ status: 'loading', data: null });
+      loadMoneyCreekLineMap()
+        .then(data => setLineMapState({ status: 'ready', data }))
+        .catch(error => setLineMapState({ status: 'error', data: null, error }));
+    };
+
+    if (idleWindow.requestIdleCallback) idleId = idleWindow.requestIdleCallback(startLoad, { timeout: 1200 });
+    else timeoutId = window.setTimeout(startLoad, 0);
+
+    return () => {
+      if (loadStarted) return;
+      lineMapStartedRef.current = false;
+      if (idleId !== undefined && idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(idleId);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [layers.base]);
 
   const focusedAreaIds = useMemo(() => new Set(flattenAreas(area).map(node => node.feature.id)), [area]);
   const focusedBoulderIds = useMemo(() => new Set(flattenBoulders(area).map(node => node.feature.id)), [area]);
@@ -97,11 +132,12 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
   const trailFineData = useMemo<TrailFineDatum[]>(() => trailData.map(d => ({ ...d, finePath: densifyPath(d.path, 12) })), [trailData]);
   const areaLabelData = useMemo(() => areaData.filter(d => isFocusedArea(d.node.feature.id) || viewState.zoom < DETAIL_ZOOM), [areaData, isFocusedArea, viewState.zoom]);
   const boulderLabelData = useMemo(() => boulderData.filter(d => d.node.feature.id === selectedBoulderId || isFocusedBoulder(d.node.feature.id) && (viewState.zoom >= FINE_DETAIL_ZOOM || viewState.zoom >= DETAIL_ZOOM && d.rank === 0)), [boulderData, isFocusedBoulder, selectedBoulderId, viewState.zoom]);
-  const lineLabelData = useMemo(() => moneyCreekLineMapLabels.filter(label => lineLabelVisible(label, viewState.zoom, layers)), [layers, viewState.zoom]);
-  const roadData = useMemo(() => moneyCreekLineMapByCategory.road.filter(path => path.visible !== false), []);
-  const waterData = useMemo(() => [...moneyCreekLineMapByCategory.creek, ...moneyCreekLineMapByCategory.reservoir], []);
-  const contourData = useMemo(() => visibleContours(moneyCreekLineMapByCategory.contour, viewState.zoom), [viewState.zoom]);
-  const indexContourData = useMemo(() => visibleContours(moneyCreekLineMapByCategory['index-contour'], viewState.zoom), [viewState.zoom]);
+  const lineMapData = lineMapState.status === 'ready' ? lineMapState.data : null;
+  const lineLabelData = useMemo(() => (lineMapData?.labels ?? []).filter(label => lineLabelVisible(label, viewState.zoom, layers)), [layers, lineMapData, viewState.zoom]);
+  const roadData = useMemo(() => lineMapData?.byCategory.road.filter(path => path.visible !== false) ?? [], [lineMapData]);
+  const waterData = useMemo(() => lineMapData ? [...lineMapData.byCategory.creek, ...lineMapData.byCategory.reservoir] : [], [lineMapData]);
+  const contourData = useMemo(() => visibleContours(lineMapData?.byCategory.contour ?? [], viewState.zoom), [lineMapData, viewState.zoom]);
+  const indexContourData = useMemo(() => visibleContours(lineMapData?.byCategory['index-contour'] ?? [], viewState.zoom), [lineMapData, viewState.zoom]);
 
   const addDraftVertex = useCallback((position: MoneyPosition) => {
     setDraft(points => { setDraftHistory(history => [...history, points].slice(-50)); return [...points, position]; });
@@ -259,6 +295,7 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
     </DeckGL>
     {layers.base === 'slope' && <div className="pointer-events-none absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(62,122,78,0.23), rgba(201,184,74,0.18) 45%, rgba(200,87,47,0.20))' }} />}
 
+    {layers.base === 'stylized' && lineMapState.status !== 'ready' && <div style={{ position: 'absolute', left: 14, bottom: 14, zIndex: 10, background: 'rgba(42, 36, 29, 0.82)', border: `1px solid ${T.line2}`, borderRadius: 10, padding: '7px 10px', color: lineMapState.status === 'error' ? '#f0b4a8' : T.mut, fontSize: 11.5, boxShadow: T.shadow, pointerEvents: 'none' }}>{lineMapState.status === 'error' ? 'Static line map unavailable' : 'Loading static line map…'}</div>}
     {!creating && !editing && <div style={{ position: 'absolute', left: 14, top: 14, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 10 }}>
       <button onClick={focus} style={mapButton}><LocateFixed size={16} />Focus</button>
       <div style={{ display: 'flex', background: T.surf, border: `1px solid ${T.line2}`, borderRadius: 10, overflow: 'hidden', boxShadow: T.shadow }}>

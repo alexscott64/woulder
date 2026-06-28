@@ -155,17 +155,23 @@ func (r *PostgresRepository) CreateNote(ctx context.Context, n models.MoneyNote)
 	return scanNote(r.db.QueryRowContext(ctx, queryCreateNote, n.ProjectID, n.FeatureID, n.TargetType, n.TargetRef, n.Body, n.Visibility, pq.Array(n.Tags), n.Blocks, n.ExternalRef, n.ImportSource, n.CreatedBy, n.UpdatedBy))
 }
 
-func (r *PostgresRepository) UpdateNote(ctx context.Context, noteID, body, visibility, userID, role string) (*models.MoneyNote, error) {
-	return scanNote(r.db.QueryRowContext(ctx, queryUpdateNote, noteID, body, visibility, userID, role))
+func (r *PostgresRepository) UpdateNote(ctx context.Context, noteID, body, visibility string, tags []string, blocks []byte, userID, role string) (*models.MoneyNote, error) {
+	return scanNote(r.db.QueryRowContext(ctx, queryUpdateNote, noteID, body, visibility, pq.Array(tags), blocks, userID, role))
 }
 
 func (r *PostgresRepository) DeleteNote(ctx context.Context, noteID, userID, role string) error {
-	_, err := r.db.ExecContext(ctx, queryDeleteNote, noteID, userID, role)
-	return err
+	res, err := r.db.ExecContext(ctx, queryDeleteNote, noteID, userID, role)
+	if err != nil {
+		return err
+	}
+	if rows, err := res.RowsAffected(); err == nil && rows == 0 {
+		return dberrors.ErrNotFound
+	}
+	return nil
 }
 
 func (r *PostgresRepository) CreateUpload(ctx context.Context, u models.MoneyUpload) (*models.MoneyUpload, error) {
-	return scanUpload(r.db.QueryRowContext(ctx, queryCreateUpload, u.ID, u.ProjectID, u.FeatureID, u.NoteID, u.OriginalFilename, u.StorageKey, u.ContentType, u.ByteSize, u.Width, u.Height, u.ChecksumSHA256, u.BlockKind, u.Metadata, u.UploadedBy))
+	return scanUpload(r.db.QueryRowContext(ctx, queryCreateUpload, u.ID, u.ProjectID, u.FeatureID, u.NoteID, u.OriginalFilename, u.StorageKey, u.ContentType, u.ByteSize, u.Width, u.Height, u.ChecksumSHA256, u.BlockKind, u.Metadata, u.AssetKind, u.StorageBackend, u.StorageBucket, u.StorageRegion, u.StorageETag, u.StorageVersionID, u.Visibility, u.SyncStatus, u.UploadedBy))
 }
 
 func (r *PostgresRepository) GetUpload(ctx context.Context, id string) (*models.MoneyUpload, error) {
@@ -191,7 +197,13 @@ func (r *PostgresRepository) ListUploadsByProject(ctx context.Context, projectID
 }
 
 func (r *PostgresRepository) DeleteUpload(ctx context.Context, uploadID, userID, role string) error {
-	_, err := r.db.ExecContext(ctx, queryDeleteUpload, uploadID, userID, role)
+	var storageKey string
+	err := r.db.QueryRowContext(ctx, querySoftDeleteUpload, uploadID, userID, role).Scan(&storageKey)
+	return dberrors.WrapNotFound(err)
+}
+
+func (r *PostgresRepository) MarkUploadPhysicallyDeleted(ctx context.Context, uploadID string) error {
+	_, err := r.db.ExecContext(ctx, queryMarkUploadPhysicallyDeleted, uploadID)
 	return err
 }
 
@@ -327,7 +339,7 @@ func scanUpload(row scanner) (*models.MoneyUpload, error) {
 }
 func scanUploadRows(row scanner) (*models.MoneyUpload, error) {
 	var u models.MoneyUpload
-	err := row.Scan(&u.ID, &u.ProjectID, &u.FeatureID, &u.NoteID, &u.OriginalFilename, &u.StorageKey, &u.ContentType, &u.ByteSize, &u.Width, &u.Height, &u.ChecksumSHA256, &u.BlockKind, &u.Metadata, &u.UploadedBy, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.ProjectID, &u.FeatureID, &u.NoteID, &u.OriginalFilename, &u.StorageKey, &u.ContentType, &u.ByteSize, &u.Width, &u.Height, &u.ChecksumSHA256, &u.BlockKind, &u.Metadata, &u.AssetKind, &u.StorageBackend, &u.StorageBucket, &u.StorageRegion, &u.StorageETag, &u.StorageVersionID, &u.Visibility, &u.SyncStatus, &u.DeletedAt, &u.DeletedBy, &u.DeleteRequestedAt, &u.PhysicallyDeletedAt, &u.UploadedBy, &u.CreatedAt, &u.UpdatedAt)
 	return &u, err
 }
 

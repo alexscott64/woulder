@@ -112,8 +112,20 @@ export interface MoneyUpload {
   checksum_sha256: string;
   block_kind: MoneyUploadBlockKind;
   metadata: Record<string, unknown>;
+  asset_kind: string;
+  storage_backend: 'local' | 'r2';
+  storage_bucket?: string;
+  storage_region?: string;
+  visibility: 'private';
+  sync_status: 'available' | 'pending_upload' | 'deleted';
   uploaded_by: string;
   created_at: string;
+}
+
+export interface MoneyUploadDownloadURL {
+  url: string;
+  expires_at: string;
+  proxy_url: string;
 }
 
 export interface MoneyPermissions { can_read: boolean; can_write: boolean; is_admin: boolean; }

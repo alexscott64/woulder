@@ -258,6 +258,11 @@ func (h *Handler) StreamMoneyUpload(c *gin.Context) {
 	c.DataFromReader(http.StatusOK, u.ByteSize, u.ContentType, r, nil)
 }
 
+func (h *Handler) GetMoneyUploadDownloadURL(c *gin.Context) {
+	resp, err := h.moneyService.SignedUploadDownloadURL(c.Request.Context(), c.Param("upload_id"))
+	respondMoney(c, resp, err)
+}
+
 func (h *Handler) DeleteMoneyUpload(c *gin.Context) {
 	err := h.moneyService.DeleteUpload(c.Request.Context(), c.Param("upload_id"), appmw.CurrentUser(c))
 	respondMoney(c, gin.H{"status": "deleted"}, err)

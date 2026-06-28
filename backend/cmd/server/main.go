@@ -64,14 +64,23 @@ func main() {
 	if err := authService.BootstrapAdmin(context.Background()); err != nil {
 		log.Printf("Warning: failed to bootstrap app admin: %v", err)
 	}
-	if cfg.Upload.StorageDriver != "local" {
-		log.Printf("Warning: unsupported upload storage driver %q; falling back to local storage", cfg.Upload.StorageDriver)
+	var uploadStorage storage.Storage
+	switch cfg.Upload.StorageDriver {
+	case "r2":
+		r2Store, err := storage.NewR2Storage(context.Background(), storage.R2Config{AccountID: cfg.Upload.R2AccountID, AccessKeyID: cfg.Upload.R2AccessKeyID, SecretAccessKey: cfg.Upload.R2SecretAccessKey, Bucket: cfg.Upload.R2Bucket, Endpoint: cfg.Upload.R2Endpoint, Region: cfg.Upload.R2Region, PublicBaseURL: cfg.Upload.R2PublicBaseURL})
+		if err != nil {
+			log.Fatalf("Failed to initialize R2 asset storage: %v", err)
+		}
+		uploadStorage = r2Store
+	case "local", "":
+		if err := os.MkdirAll(cfg.Upload.Dir, 0755); err != nil {
+			log.Fatalf("Failed to create upload directory %s: %v", cfg.Upload.Dir, err)
+		}
+		uploadStorage = storage.NewLocalStorage(cfg.Upload.Dir)
+	default:
+		log.Fatalf("Unsupported asset storage backend %q", cfg.Upload.StorageDriver)
 	}
-	if err := os.MkdirAll(cfg.Upload.Dir, 0755); err != nil {
-		log.Fatalf("Failed to create upload directory %s: %v", cfg.Upload.Dir, err)
-	}
-	uploadStorage := storage.NewLocalStorage(cfg.Upload.Dir)
-	moneyService := service.NewMoneyService(db.Money(), uploadStorage, cfg.Upload.MaxBytes)
+	moneyService := service.NewMoneyServiceWithOptions(db.Money(), uploadStorage, cfg.Upload.MaxBytes, service.MoneyServiceOptions{StorageBackend: cfg.Upload.StorageDriver, StorageBucket: cfg.Upload.R2Bucket, StorageRegion: cfg.Upload.R2Region, KeyPrefix: cfg.Upload.AssetKeyPrefix, SignedURLTTL: cfg.Upload.R2SignedURLTTL})
 
 	// Initialize API handler with services
 	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService, analyticsService, authService, moneyService, db.Kaya(), jobMonitor)
@@ -209,6 +218,7 @@ func main() {
 			moneyGroup.PATCH("/notes/:note_id", middleware.RequireMoneyWrite(), handler.UpdateMoneyNote)
 			moneyGroup.DELETE("/notes/:note_id", middleware.RequireMoneyWrite(), handler.DeleteMoneyNote)
 			moneyGroup.GET("/uploads/:upload_id", handler.StreamMoneyUpload)
+			moneyGroup.GET("/uploads/:upload_id/download-url", handler.GetMoneyUploadDownloadURL)
 			moneyGroup.DELETE("/uploads/:upload_id", middleware.RequireMoneyWrite(), handler.DeleteMoneyUpload)
 		}
 	}

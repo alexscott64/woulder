@@ -79,8 +79,8 @@ const (
 		SELECT id, project_id, feature_id, target_type, target_ref, body, visibility, tags, blocks, external_ref, import_source, created_by, updated_by, created_at, updated_at
 		FROM woulder.money_notes
 	`
-	queryListNotes          = queryNoteSelect + ` WHERE feature_id=$1 OR target_ref=$1 ORDER BY created_at DESC`
-	queryListNotesByProject = queryNoteSelect + ` WHERE project_id=$1 ORDER BY created_at DESC`
+	queryListNotes          = queryNoteSelect + ` WHERE deleted_at IS NULL AND (feature_id=$1 OR target_ref=$1) ORDER BY created_at DESC`
+	queryListNotesByProject = queryNoteSelect + ` WHERE project_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC`
 	queryCreateNote         = `
 		INSERT INTO woulder.money_notes (project_id, feature_id, target_type, target_ref, body, visibility, tags, blocks, external_ref, import_source, created_by, updated_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
@@ -98,28 +98,37 @@ const (
 		RETURNING id, project_id, feature_id, target_type, target_ref, body, visibility, tags, blocks, external_ref, import_source, created_by, updated_by, created_at, updated_at
 	`
 	queryUpdateNote = `
-		UPDATE woulder.money_notes SET body=$2, visibility=$3, updated_by=$4, updated_at=now()
-		WHERE id=$1 AND (created_by=$4 OR $5='admin')
+		UPDATE woulder.money_notes SET body=$2, visibility=$3, tags=$4, blocks=$5, updated_by=$6, updated_at=now()
+		WHERE id=$1 AND deleted_at IS NULL AND (created_by=$6 OR $7='admin')
 		RETURNING id, project_id, feature_id, target_type, target_ref, body, visibility, tags, blocks, external_ref, import_source, created_by, updated_by, created_at, updated_at
 	`
-	queryDeleteNote   = `DELETE FROM woulder.money_notes WHERE id=$1 AND (created_by=$2 OR $3='admin')`
+	queryDeleteNote = `
+		UPDATE woulder.money_notes SET deleted_at=COALESCE(deleted_at, now()), deleted_by=COALESCE(deleted_by, $2), updated_by=$2, updated_at=now()
+		WHERE id=$1 AND deleted_at IS NULL AND (created_by=$2 OR $3='admin')
+	`
 	queryCreateUpload = `
 		INSERT INTO woulder.money_uploads
-		(id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, uploaded_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-		RETURNING id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, uploaded_by, created_at
+		(id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, uploaded_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+		RETURNING id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, deleted_at, deleted_by, delete_requested_at, physically_deleted_at, uploaded_by, created_at, updated_at
 	`
 	queryUploadSelect = `
-		SELECT id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, uploaded_by, created_at
+		SELECT id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, deleted_at, deleted_by, delete_requested_at, physically_deleted_at, uploaded_by, created_at, updated_at
 		FROM woulder.money_uploads
 	`
-	queryGetUpload            = queryUploadSelect + ` WHERE id=$1`
-	queryListUploadsByFeature = queryUploadSelect + ` WHERE feature_id=$1 ORDER BY created_at DESC`
-	queryListUploadsByProject = queryUploadSelect + ` WHERE project_id=$1 ORDER BY created_at DESC`
-	queryDeleteUpload         = `DELETE FROM woulder.money_uploads WHERE id=$1 AND (uploaded_by=$2 OR $3='admin')`
-	queryFeatureNoteCounts    = `SELECT COALESCE(feature_id::text, target_ref), count(*) FROM woulder.money_notes WHERE project_id=$1 AND COALESCE(feature_id::text, target_ref) IS NOT NULL GROUP BY COALESCE(feature_id::text, target_ref)`
-	queryPrimaryUploads       = `
-		SELECT DISTINCT ON (feature_id) id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, uploaded_by, created_at
-		FROM woulder.money_uploads WHERE project_id=$1 AND feature_id IS NOT NULL ORDER BY feature_id, created_at DESC
+	queryGetUpload            = queryUploadSelect + ` WHERE id=$1 AND deleted_at IS NULL`
+	queryListUploadsByFeature = queryUploadSelect + ` WHERE feature_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC`
+	queryListUploadsByProject = queryUploadSelect + ` WHERE project_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC`
+	querySoftDeleteUpload     = `
+		UPDATE woulder.money_uploads
+		SET deleted_at=COALESCE(deleted_at, now()), deleted_by=COALESCE(deleted_by, $2), delete_requested_at=COALESCE(delete_requested_at, now()), sync_status='deleted', updated_at=now()
+		WHERE id=$1 AND (uploaded_by=$2 OR $3='admin' OR deleted_at IS NOT NULL)
+		RETURNING storage_key
+	`
+	queryMarkUploadPhysicallyDeleted = `UPDATE woulder.money_uploads SET physically_deleted_at=COALESCE(physically_deleted_at, now()), updated_at=now() WHERE id=$1`
+	queryFeatureNoteCounts           = `SELECT COALESCE(feature_id::text, target_ref), count(*) FROM woulder.money_notes WHERE project_id=$1 AND deleted_at IS NULL AND COALESCE(feature_id::text, target_ref) IS NOT NULL GROUP BY COALESCE(feature_id::text, target_ref)`
+	queryPrimaryUploads              = `
+		SELECT DISTINCT ON (feature_id) id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, deleted_at, deleted_by, delete_requested_at, physically_deleted_at, uploaded_by, created_at, updated_at
+		FROM woulder.money_uploads WHERE project_id=$1 AND feature_id IS NOT NULL AND deleted_at IS NULL ORDER BY feature_id, created_at DESC
 	`
 )

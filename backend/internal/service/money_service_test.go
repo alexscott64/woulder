@@ -1,12 +1,18 @@
 package service
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"io"
+	"mime/multipart"
+	"net/textproto"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/models"
+	"github.com/alexscott64/woulder/backend/internal/storage"
 )
 
 func TestValidateGeoJSONDerivesBBox(t *testing.T) {
@@ -112,4 +118,230 @@ func TestValidateGeoJSONRejectsOutOfRangeCoordinates(t *testing.T) {
 	if _, err := ValidateGeoJSON(raw); err == nil {
 		t.Fatal("expected coordinate range error")
 	}
+}
+
+func TestMoneyServiceAssetOriginalKeyUsesMoneyCreekPrefix(t *testing.T) {
+	svc := NewMoneyServiceWithOptions(nil, nil, 0, MoneyServiceOptions{KeyPrefix: "money-creek"})
+	got := svc.assetOriginalKey("asset-id", "photo.jpg")
+	want := "money-creek/assets/asset-id/original/photo.jpg"
+	if got != want {
+		t.Fatalf("unexpected asset key: got %q want %q", got, want)
+	}
+}
+
+func TestMoneyServiceAssetKeyPrefixIsNormalized(t *testing.T) {
+	svc := NewMoneyServiceWithOptions(nil, nil, 0, MoneyServiceOptions{KeyPrefix: "/money-creek/../tmp//"})
+	got := svc.assetOriginalKey("asset-id", "photo.jpg")
+	want := "money-creek/tmp/assets/asset-id/original/photo.jpg"
+	if got != want {
+		t.Fatalf("unexpected normalized asset key: got %q want %q", got, want)
+	}
+}
+
+func TestStoreUploadStoresChecksumAndPrivateMetadata(t *testing.T) {
+	repo := &moneyUploadRepo{}
+	store := &captureStorage{}
+	svc := NewMoneyServiceWithOptions(repo, store, 1024, MoneyServiceOptions{StorageBackend: "r2", StorageBucket: "woulder", StorageRegion: "auto", KeyPrefix: "money-creek"})
+	jpeg := []byte{0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00, 0xff, 0xd9}
+	fh := multipartFileHeader(t, jpeg, "photo.jpg")
+
+	upload, err := svc.StoreUploadWithKind(context.Background(), "project-1", moneyStrPtr("feature-1"), nil, "photo", json.RawMessage(`{"camera":"phone"}`), fh, models.CurrentUser{ID: "user-1", Role: models.RoleDeveloper})
+	if err != nil {
+		t.Fatalf("StoreUploadWithKind returned error: %v", err)
+	}
+	if upload.StorageBackend != "r2" || upload.StorageBucket == nil || *upload.StorageBucket != "woulder" || upload.Visibility != "private" || upload.SyncStatus != "available" {
+		t.Fatalf("unexpected storage metadata: %+v", upload)
+	}
+	if upload.ChecksumSHA256 != "b94d27b9934d3e08a52e52d7da7dabfadeb4c484efe37a5380ee9088f7ace2ef" {
+		t.Fatalf("unexpected checksum: %s", upload.ChecksumSHA256)
+	}
+	if upload.ByteSize != int64(len(jpeg)) || store.savedKey != upload.StorageKey {
+		t.Fatalf("unexpected stored file metadata: upload=%+v key=%q", upload, store.savedKey)
+	}
+}
+
+func TestSignedUploadDownloadURLUsesPresignerWhenAvailable(t *testing.T) {
+	repo := &moneyUploadRepo{upload: &models.MoneyUpload{ID: "upload-1", StorageKey: "money-creek/assets/upload-1/original/photo.jpg", OriginalFilename: "photo.jpg", ContentType: "image/jpeg"}}
+	store := &captureStorage{signedURL: "https://example.invalid/signed"}
+	svc := NewMoneyServiceWithOptions(repo, store, 1024, MoneyServiceOptions{SignedURLTTL: time.Minute})
+
+	resp, err := svc.SignedUploadDownloadURL(context.Background(), "upload-1")
+	if err != nil {
+		t.Fatalf("SignedUploadDownloadURL returned error: %v", err)
+	}
+	if resp.URL != store.signedURL || resp.ProxyURL != "/api/money/uploads/upload-1" {
+		t.Fatalf("unexpected download response: %+v", resp)
+	}
+	if store.presignedKey != repo.upload.StorageKey || store.presignedFilename != "photo.jpg" || store.presignedContentType != "image/jpeg" {
+		t.Fatalf("unexpected presign inputs: %+v", store)
+	}
+}
+
+func TestDeleteUploadSoftDeletesThenMarksPhysicalDelete(t *testing.T) {
+	repo := &moneyUploadRepo{upload: &models.MoneyUpload{ID: "upload-1", StorageKey: "money-creek/assets/upload-1/original/photo.jpg", UploadedBy: "user-1"}}
+	store := &captureStorage{}
+	svc := NewMoneyService(repo, store, 1024)
+
+	if err := svc.DeleteUpload(context.Background(), "upload-1", models.CurrentUser{ID: "user-1", Role: models.RoleDeveloper}); err != nil {
+		t.Fatalf("DeleteUpload returned error: %v", err)
+	}
+	if !repo.deleted || !repo.markedPhysical || store.deletedKey != repo.upload.StorageKey {
+		t.Fatalf("expected soft and physical delete markers, repo=%+v store=%+v", repo, store)
+	}
+}
+
+func TestAllowedUploadContentType(t *testing.T) {
+	if !allowedUploadContentType("photo", "image/jpeg") {
+		t.Fatal("expected jpeg photo to be allowed")
+	}
+	if allowedUploadContentType("photo", "application/pdf") {
+		t.Fatal("expected pdf photo to be rejected")
+	}
+	if !allowedUploadContentType("file", "application/pdf") {
+		t.Fatal("expected pdf file to be allowed")
+	}
+}
+
+func moneyStrPtr(v string) *string { return &v }
+
+type moneyUploadRepo struct {
+	upload         *models.MoneyUpload
+	created        *models.MoneyUpload
+	deleted        bool
+	markedPhysical bool
+}
+
+func (r *moneyUploadRepo) GetProjectBySlug(ctx context.Context, slug string) (*models.MoneyProject, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) GetProjectByID(ctx context.Context, id string) (*models.MoneyProject, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) ListFeatures(ctx context.Context, projectID string, filter models.MoneyFeatureFilter) ([]models.MoneyFeature, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) GetFeature(ctx context.Context, id string) (*models.MoneyFeature, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) CreateFeature(ctx context.Context, feature models.MoneyFeature) (*models.MoneyFeature, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) UpdateFeature(ctx context.Context, feature models.MoneyFeature) (*models.MoneyFeature, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) UpdateFeatureGeometry(ctx context.Context, id string, geojson []byte, bbox models.BBox, updatedBy string) (*models.MoneyFeature, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) UpsertFeatureByExternalRef(ctx context.Context, feature models.MoneyFeature) (*models.MoneyFeature, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) ArchiveFeature(ctx context.Context, id, userID string) error { return nil }
+func (r *moneyUploadRepo) PromoteChildrenAndArchiveFeature(ctx context.Context, id string, parentID *string, userID string) error {
+	return nil
+}
+func (r *moneyUploadRepo) RestoreFeature(ctx context.Context, id, userID string) error { return nil }
+func (r *moneyUploadRepo) MoveFeatureParent(ctx context.Context, id string, parentID *string, sortOrder int, userID string) (*models.MoneyFeature, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) ListTrash(ctx context.Context, projectID string) ([]models.MoneyFeature, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) ListNotes(ctx context.Context, featureID string) ([]models.MoneyNote, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) ListNotesByProject(ctx context.Context, projectID string) ([]models.MoneyNote, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) CreateNote(ctx context.Context, note models.MoneyNote) (*models.MoneyNote, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) UpdateNote(ctx context.Context, noteID, body, visibility string, tags []string, blocks []byte, userID, role string) (*models.MoneyNote, error) {
+	return &models.MoneyNote{ID: noteID, Body: body, Visibility: visibility, Tags: tags, Blocks: blocks, UpdatedBy: userID}, nil
+}
+func (r *moneyUploadRepo) DeleteNote(ctx context.Context, noteID, userID, role string) error {
+	return nil
+}
+func (r *moneyUploadRepo) CreateUpload(ctx context.Context, upload models.MoneyUpload) (*models.MoneyUpload, error) {
+	r.created = &upload
+	return &upload, nil
+}
+func (r *moneyUploadRepo) GetUpload(ctx context.Context, id string) (*models.MoneyUpload, error) {
+	return r.upload, nil
+}
+func (r *moneyUploadRepo) ListUploadsByFeature(ctx context.Context, featureID string) ([]models.MoneyUpload, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) ListUploadsByProject(ctx context.Context, projectID string) ([]models.MoneyUpload, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) DeleteUpload(ctx context.Context, uploadID, userID, role string) error {
+	r.deleted = true
+	return nil
+}
+func (r *moneyUploadRepo) MarkUploadPhysicallyDeleted(ctx context.Context, uploadID string) error {
+	r.markedPhysical = true
+	return nil
+}
+func (r *moneyUploadRepo) FeatureNoteCounts(ctx context.Context, projectID string) (map[string]int, error) {
+	return nil, nil
+}
+func (r *moneyUploadRepo) PrimaryUploads(ctx context.Context, projectID string) (map[string]models.MoneyUpload, error) {
+	return nil, nil
+}
+
+type captureStorage struct {
+	savedKey             string
+	deletedKey           string
+	signedURL            string
+	presignedKey         string
+	presignedFilename    string
+	presignedContentType string
+	presignedTTL         time.Duration
+}
+
+func (s *captureStorage) Save(ctx context.Context, key string, r io.Reader) (storage.StoredFile, error) {
+	s.savedKey = key
+	b, _ := io.ReadAll(r)
+	return storage.StoredFile{StorageKey: key, ByteSize: int64(len(b)), Checksum: "b94d27b9934d3e08a52e52d7da7dabfadeb4c484efe37a5380ee9088f7ace2ef", ETag: "etag", VersionID: "version"}, nil
+}
+func (s *captureStorage) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("")), nil
+}
+func (s *captureStorage) Delete(ctx context.Context, key string) error {
+	s.deletedKey = key
+	return nil
+}
+func (s *captureStorage) SignedGetURL(ctx context.Context, key, filename, contentType string, ttl time.Duration) (string, error) {
+	s.presignedKey = key
+	s.presignedFilename = filename
+	s.presignedContentType = contentType
+	s.presignedTTL = ttl
+	return s.signedURL, nil
+}
+
+func multipartFileHeader(t *testing.T, content []byte, filename string) *multipart.FileHeader {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", `form-data; name="file"; filename="`+filename+`"`)
+	h.Set("Content-Type", "image/jpeg")
+	part, err := writer.CreatePart(h)
+	if err != nil {
+		t.Fatalf("CreatePart returned error: %v", err)
+	}
+	_, _ = part.Write(content)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart writer close returned error: %v", err)
+	}
+	reader := multipart.NewReader(&body, writer.Boundary())
+	form, err := reader.ReadForm(int64(body.Len()))
+	if err != nil {
+		t.Fatalf("ReadForm returned error: %v", err)
+	}
+	files := form.File["file"]
+	if len(files) != 1 {
+		t.Fatalf("expected one file, got %d", len(files))
+	}
+	return files[0]
 }

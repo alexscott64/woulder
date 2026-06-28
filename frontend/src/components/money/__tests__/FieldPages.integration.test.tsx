@@ -14,6 +14,7 @@ vi.mock('../../../services/money', () => ({
     updateFeature: vi.fn(),
     deleteNote: vi.fn(),
     deleteUpload: vi.fn(),
+    getUploadDownloadURL: vi.fn(),
     getUploadBlobUrl: vi.fn(),
   },
 }));

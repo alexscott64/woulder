@@ -90,21 +90,40 @@ type MoneyNote struct {
 }
 
 type MoneyUpload struct {
-	ID               string          `json:"id"`
-	ProjectID        string          `json:"project_id"`
-	FeatureID        *string         `json:"feature_id,omitempty"`
-	NoteID           *string         `json:"note_id,omitempty"`
-	OriginalFilename string          `json:"original_filename"`
-	StorageKey       string          `json:"-"`
-	ContentType      string          `json:"content_type"`
-	ByteSize         int64           `json:"byte_size"`
-	Width            *int            `json:"width,omitempty"`
-	Height           *int            `json:"height,omitempty"`
-	ChecksumSHA256   string          `json:"checksum_sha256"`
-	BlockKind        string          `json:"block_kind"`
-	Metadata         json.RawMessage `json:"metadata"`
-	UploadedBy       string          `json:"uploaded_by"`
-	CreatedAt        time.Time       `json:"created_at"`
+	ID                  string          `json:"id"`
+	ProjectID           string          `json:"project_id"`
+	FeatureID           *string         `json:"feature_id,omitempty"`
+	NoteID              *string         `json:"note_id,omitempty"`
+	OriginalFilename    string          `json:"original_filename"`
+	StorageKey          string          `json:"-"`
+	ContentType         string          `json:"content_type"`
+	ByteSize            int64           `json:"byte_size"`
+	Width               *int            `json:"width,omitempty"`
+	Height              *int            `json:"height,omitempty"`
+	ChecksumSHA256      string          `json:"checksum_sha256"`
+	BlockKind           string          `json:"block_kind"`
+	Metadata            json.RawMessage `json:"metadata"`
+	AssetKind           string          `json:"asset_kind"`
+	StorageBackend      string          `json:"storage_backend"`
+	StorageBucket       *string         `json:"storage_bucket,omitempty"`
+	StorageRegion       *string         `json:"storage_region,omitempty"`
+	StorageETag         *string         `json:"storage_etag,omitempty"`
+	StorageVersionID    *string         `json:"storage_version_id,omitempty"`
+	Visibility          string          `json:"visibility"`
+	SyncStatus          string          `json:"sync_status"`
+	DeletedAt           *time.Time      `json:"deleted_at,omitempty"`
+	DeletedBy           *string         `json:"deleted_by,omitempty"`
+	DeleteRequestedAt   *time.Time      `json:"delete_requested_at,omitempty"`
+	PhysicallyDeletedAt *time.Time      `json:"physically_deleted_at,omitempty"`
+	UploadedBy          string          `json:"uploaded_by"`
+	CreatedAt           time.Time       `json:"created_at"`
+	UpdatedAt           time.Time       `json:"updated_at"`
+}
+
+type MoneyUploadDownloadURL struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expires_at"`
+	ProxyURL  string    `json:"proxy_url"`
 }
 
 type MoneyPermissions struct {

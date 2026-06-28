@@ -80,11 +80,20 @@ type AuthConfig struct {
 	AdminDisplayName   string
 }
 
-// UploadConfig holds local upload storage configuration.
+// UploadConfig holds private Money Creek asset storage configuration.
 type UploadConfig struct {
-	StorageDriver string
-	Dir           string
-	MaxBytes      int64
+	StorageDriver     string
+	Dir               string
+	MaxBytes          int64
+	AssetKeyPrefix    string
+	R2AccountID       string
+	R2AccessKeyID     string
+	R2SecretAccessKey string
+	R2Bucket          string
+	R2Endpoint        string
+	R2PublicBaseURL   string
+	R2Region          string
+	R2SignedURLTTL    time.Duration
 }
 
 // Load reads configuration from environment variables
@@ -138,9 +147,18 @@ func Load() (*Config, error) {
 			AdminDisplayName:   getEnv("APP_ADMIN_DISPLAY_NAME", "Money Creek Admin"),
 		},
 		Upload: UploadConfig{
-			StorageDriver: getEnv("UPLOAD_STORAGE_DRIVER", "local"),
-			Dir:           getEnv("UPLOAD_DIR", "./uploads"),
-			MaxBytes:      int64(getEnvAsInt("UPLOAD_MAX_BYTES", 10*1024*1024)),
+			StorageDriver:     getEnv("ASSET_STORAGE_BACKEND", getEnv("UPLOAD_STORAGE_DRIVER", "local")),
+			Dir:               getEnv("UPLOAD_DIR", "./uploads"),
+			MaxBytes:          int64(getEnvAsInt("R2_UPLOAD_MAX_BYTES", getEnvAsInt("UPLOAD_MAX_BYTES", 15*1024*1024))),
+			AssetKeyPrefix:    getEnv("ASSET_KEY_PREFIX", "money-creek"),
+			R2AccountID:       getEnv("R2_ACCOUNT_ID", ""),
+			R2AccessKeyID:     getEnv("R2_ACCESS_KEY_ID", ""),
+			R2SecretAccessKey: getEnv("R2_SECRET_ACCESS_KEY", ""),
+			R2Bucket:          getEnv("R2_BUCKET", "woulder"),
+			R2Endpoint:        getEnv("R2_ENDPOINT", ""),
+			R2PublicBaseURL:   getEnv("R2_PUBLIC_BASE_URL", ""),
+			R2Region:          getEnv("R2_REGION", "auto"),
+			R2SignedURLTTL:    time.Duration(getEnvAsInt("R2_SIGNED_URL_TTL_SECONDS", 300)) * time.Second,
 		},
 	}
 

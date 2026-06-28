@@ -1,4 +1,3 @@
-import rawLineMap from './fixtures/money-creek-line-map.geojson?raw';
 import type { MoneyPosition } from '../../../types/money';
 
 export const LINE_MAP_BOUNDS = [-121.66, 47.63, -121.36, 47.815] as const;
@@ -55,13 +54,32 @@ type RawFeature = {
   } | null;
 };
 
+export type MoneyCreekLineMapData = {
+  paths: LineMapPath[];
+  byCategory: Record<LineMapCategory, LineMapPath[]>;
+  labels: LineMapLabel[];
+};
+
+type RawLineMapModule = { default: string };
+
 const categorySet = new Set<string>(LINE_MAP_CATEGORIES);
+let lineMapLoadPromise: Promise<MoneyCreekLineMapData> | null = null;
 
-const lineMapFixture = JSON.parse(rawLineMap) as RawFeatureCollection;
+export function loadMoneyCreekLineMap(): Promise<MoneyCreekLineMapData> {
+  lineMapLoadPromise ??= import('./fixtures/money-creek-line-map.geojson?raw')
+    .then((module: RawLineMapModule) => {
+      const fixture = JSON.parse(module.default) as RawFeatureCollection;
+      const paths = normalizeLineMap(fixture);
+      const byCategory = groupLineMapByCategory(paths);
+      const labels = normalizeLineMapLabels(fixture, paths);
+      return { paths, byCategory, labels };
+    });
+  return lineMapLoadPromise;
+}
 
-export const moneyCreekLineMapPaths: LineMapPath[] = normalizeLineMap(lineMapFixture);
-export const moneyCreekLineMapByCategory: Record<LineMapCategory, LineMapPath[]> = groupLineMapByCategory(moneyCreekLineMapPaths);
-export const moneyCreekLineMapLabels: LineMapLabel[] = normalizeLineMapLabels(lineMapFixture, moneyCreekLineMapPaths);
+export function __resetMoneyCreekLineMapCacheForTests(): void {
+  lineMapLoadPromise = null;
+}
 
 export function normalizeLineMap(collection: RawFeatureCollection): LineMapPath[] {
   if (collection.type !== 'FeatureCollection' || !Array.isArray(collection.features)) return [];

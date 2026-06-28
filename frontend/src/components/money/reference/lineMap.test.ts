@@ -1,16 +1,24 @@
-import { describe, expect, it } from 'vitest';
-import { LINE_MAP_CATEGORIES, LINE_MAP_BOUNDS, isBoundedLonLat, moneyCreekLineMapByCategory, moneyCreekLineMapLabels, moneyCreekLineMapPaths } from './lineMap';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { LINE_MAP_CATEGORIES, LINE_MAP_BOUNDS, __resetMoneyCreekLineMapCacheForTests, isBoundedLonLat, loadMoneyCreekLineMap, type MoneyCreekLineMapData } from './lineMap';
 
 describe('Money Creek line map fixture', () => {
+  let lineMapData: MoneyCreekLineMapData;
+
+  beforeAll(async () => {
+    lineMapData = await loadMoneyCreekLineMap();
+  }, 120000);
+
   it('loads every supported line category needed by the stylized map', () => {
+    const { byCategory } = lineMapData;
     for (const category of LINE_MAP_CATEGORIES) {
-      expect(moneyCreekLineMapByCategory[category].length, category).toBeGreaterThan(0);
+      expect(byCategory[category].length, category).toBeGreaterThan(0);
     }
   });
 
   it('normalizes regenerated source features into DeckGL path data with valid lon/lat positions', () => {
-    expect(moneyCreekLineMapPaths.length).toBeGreaterThan(3000);
-    const sampledPaths = moneyCreekLineMapPaths.filter((_, index) => index % 50 === 0);
+    const { paths } = lineMapData;
+    expect(paths.length).toBeGreaterThan(3000);
+    const sampledPaths = paths.filter((_, index) => index % 50 === 0);
     for (const feature of sampledPaths) {
       expect(feature.path.length, feature.id).toBeGreaterThanOrEqual(2);
       for (const position of feature.path.slice(0, 8)) {
@@ -20,7 +28,8 @@ describe('Money Creek line map fixture', () => {
   });
 
   it('covers the crag-to-reservoir corridor without out-of-bounds coordinates', () => {
-    const extent = moneyCreekLineMapPaths.reduce((box, feature) => {
+    const { paths } = lineMapData;
+    const extent = paths.reduce((box, feature) => {
       for (const [lon, lat] of feature.path) {
         box[0] = Math.min(box[0], lon);
         box[1] = Math.min(box[1], lat);
@@ -41,17 +50,19 @@ describe('Money Creek line map fixture', () => {
   });
 
   it('preserves regenerated source categories and useful road/hydro metadata', () => {
-    expect(moneyCreekLineMapByCategory.road.length).toBeGreaterThan(50);
-    expect(moneyCreekLineMapByCategory.creek.length).toBeGreaterThan(150);
-    expect(moneyCreekLineMapByCategory.reservoir.length).toBeGreaterThan(20);
-    expect(moneyCreekLineMapByCategory.road.some(path => path.sourceKind === 'trail' && path.importance === 'minor' && path.surface === 'dirt')).toBe(true);
-    expect(moneyCreekLineMapByCategory.creek.some(path => path.source?.endsWith('hydro.geojson') && path.seasonal === false)).toBe(true);
-    expect(moneyCreekLineMapByCategory.reservoir.every(path => path.category === 'reservoir')).toBe(true);
+    const { byCategory } = lineMapData;
+    expect(byCategory.road.length).toBeGreaterThan(50);
+    expect(byCategory.creek.length).toBeGreaterThan(150);
+    expect(byCategory.reservoir.length).toBeGreaterThan(20);
+    expect(byCategory.road.some(path => path.sourceKind === 'trail' && path.importance === 'minor' && path.surface === 'dirt')).toBe(true);
+    expect(byCategory.creek.some(path => path.source?.endsWith('hydro.geojson') && path.seasonal === false)).toBe(true);
+    expect(byCategory.reservoir.every(path => path.category === 'reservoir')).toBe(true);
   });
 
   it('provides visible label metadata for stylized roads, water, and crag context', () => {
-    expect(moneyCreekLineMapLabels.length).toBeGreaterThanOrEqual(30);
-    expect(moneyCreekLineMapLabels.map(label => label.name)).toEqual(expect.arrayContaining([
+    const { labels } = lineMapData;
+    expect(labels.length).toBeGreaterThanOrEqual(30);
+    expect(labels.map(label => label.name)).toEqual(expect.arrayContaining([
       'Money Creek',
       'Money Creek Road',
       'South Fork Tolt River',
@@ -59,14 +70,14 @@ describe('Money Creek line map fixture', () => {
       'Lake Elizabeth',
     ]));
 
-    const kinds = new Set(moneyCreekLineMapLabels.map(label => label.kind));
+    const kinds = new Set(labels.map(label => label.kind));
     expect(kinds.has('road')).toBe(true);
     expect(kinds.has('creek')).toBe(true);
     expect(kinds.has('reservoir')).toBe(true);
     expect(kinds.has('context')).toBe(true);
-    expect(moneyCreekLineMapLabels.some(label => label.priority === 'high' && label.minZoom === 11)).toBe(true);
-    expect(moneyCreekLineMapLabels.some(label => label.labelType === 'reservoir' && label.kind === 'reservoir')).toBe(true);
-    for (const label of moneyCreekLineMapLabels) {
+    expect(labels.some(label => label.priority === 'high' && label.minZoom === 11)).toBe(true);
+    expect(labels.some(label => label.labelType === 'reservoir' && label.kind === 'reservoir')).toBe(true);
+    for (const label of labels) {
       expect(label.name.trim().length, label.id).toBeGreaterThan(0);
       expect(label.minZoom, label.id).toBeGreaterThanOrEqual(11);
       expect(isBoundedLonLat(label.position), `${label.id} ${label.position.join(',')}`).toBe(true);
@@ -74,13 +85,24 @@ describe('Money Creek line map fixture', () => {
   });
 
   it('keeps contours unobtrusive but mountain-like with real elevations, intervals, and index flags', () => {
-    const allContours = [...moneyCreekLineMapByCategory.contour, ...moneyCreekLineMapByCategory['index-contour']];
+    const { byCategory } = lineMapData;
+    const allContours = [...byCategory.contour, ...byCategory['index-contour']];
     expect(allContours.length).toBeGreaterThan(2500);
-    expect(moneyCreekLineMapByCategory['index-contour'].length).toBeGreaterThan(400);
-    expect(moneyCreekLineMapByCategory['index-contour'].every(path => typeof path.elevationM === 'number')).toBe(true);
+    expect(byCategory['index-contour'].length).toBeGreaterThan(400);
+    expect(byCategory['index-contour'].every(path => typeof path.elevationM === 'number')).toBe(true);
     expect(allContours.every(path => path.intervalM === 10)).toBe(true);
     expect(Math.min(...allContours.map(path => path.elevationM ?? Number.POSITIVE_INFINITY))).toBeLessThanOrEqual(240);
     expect(Math.max(...allContours.map(path => path.elevationM ?? Number.NEGATIVE_INFINITY))).toBeGreaterThanOrEqual(1700);
-    expect(moneyCreekLineMapByCategory.contour.some(path => path.path.length >= 13 && path.path[0][0] === path.path[path.path.length - 1][0] && path.path[0][1] === path.path[path.path.length - 1][1])).toBe(true);
+    expect(byCategory.contour.some(path => path.path.length >= 13 && path.path[0][0] === path.path[path.path.length - 1][0] && path.path[0][1] === path.path[path.path.length - 1][1])).toBe(true);
   });
+
+  it('caches parsed and normalized line map data between loader calls', async () => {
+    __resetMoneyCreekLineMapCacheForTests();
+    const first = await loadMoneyCreekLineMap();
+    const second = await loadMoneyCreekLineMap();
+    expect(second).toBe(first);
+    expect(second.paths).toBe(first.paths);
+    expect(second.byCategory).toBe(first.byCategory);
+    expect(second.labels).toBe(first.labels);
+  }, 120000);
 });

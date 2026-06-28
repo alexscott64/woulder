@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/alexscott64/woulder/backend/internal/database/money"
 	"github.com/alexscott64/woulder/backend/internal/models"
@@ -30,13 +31,40 @@ const maxGeoJSONBytes = 512 * 1024
 const moneyReferenceImportSource = "money_reference"
 
 type MoneyService struct {
-	repo      money.Repository
-	storage   storage.Storage
-	maxUpload int64
+	repo           money.Repository
+	storage        storage.Storage
+	maxUpload      int64
+	storageBackend string
+	storageBucket  string
+	storageRegion  string
+	keyPrefix      string
+	signedURLTTL   time.Duration
+}
+
+type MoneyServiceOptions struct {
+	StorageBackend string
+	StorageBucket  string
+	StorageRegion  string
+	KeyPrefix      string
+	SignedURLTTL   time.Duration
 }
 
 func NewMoneyService(repo money.Repository, store storage.Storage, maxUploadBytes int64) *MoneyService {
-	return &MoneyService{repo: repo, storage: store, maxUpload: maxUploadBytes}
+	return NewMoneyServiceWithOptions(repo, store, maxUploadBytes, MoneyServiceOptions{StorageBackend: "local", KeyPrefix: "money-creek", SignedURLTTL: 5 * time.Minute})
+}
+
+func NewMoneyServiceWithOptions(repo money.Repository, store storage.Storage, maxUploadBytes int64, opts MoneyServiceOptions) *MoneyService {
+	if opts.StorageBackend == "" {
+		opts.StorageBackend = "local"
+	}
+	if opts.KeyPrefix == "" {
+		opts.KeyPrefix = "money-creek"
+	}
+	opts.KeyPrefix = normalizeAssetKeyPrefix(opts.KeyPrefix)
+	if opts.SignedURLTTL <= 0 {
+		opts.SignedURLTTL = 5 * time.Minute
+	}
+	return &MoneyService{repo: repo, storage: store, maxUpload: maxUploadBytes, storageBackend: opts.StorageBackend, storageBucket: opts.StorageBucket, storageRegion: opts.StorageRegion, keyPrefix: opts.KeyPrefix, signedURLTTL: opts.SignedURLTTL}
 }
 
 func (s *MoneyService) GetProjectBySlug(ctx context.Context, slug string, user models.CurrentUser) (*models.MoneyProjectResponse, error) {
@@ -413,14 +441,27 @@ func (s *MoneyService) UpdateNote(ctx context.Context, noteID string, req models
 		return nil, ErrMoneyForbidden
 	}
 	body := strings.TrimSpace(req.Body)
-	if body == "" || len(body) > 5000 {
+	if body == "" && len(req.Blocks) <= 2 {
+		return nil, ErrMoneyInvalidInput
+	}
+	if len(body) > 5000 {
 		return nil, ErrMoneyInvalidInput
 	}
 	visibility := req.Visibility
 	if visibility == "" {
 		visibility = models.MoneyNoteTeam
 	}
-	return s.repo.UpdateNote(ctx, noteID, body, visibility, user.ID, user.Role)
+	if visibility != models.MoneyNoteTeam && visibility != models.MoneyNotePrivate {
+		return nil, ErrMoneyInvalidInput
+	}
+	blocks := req.Blocks
+	if len(blocks) == 0 {
+		blocks = json.RawMessage(`[]`)
+	}
+	if !json.Valid(blocks) || len(blocks) > 128*1024 {
+		return nil, ErrMoneyInvalidInput
+	}
+	return s.repo.UpdateNote(ctx, noteID, body, visibility, cleanTags(req.Tags), blocks, user.ID, user.Role)
 }
 
 func (s *MoneyService) DeleteNote(ctx context.Context, noteID string, user models.CurrentUser) error {
@@ -467,18 +508,22 @@ func (s *MoneyService) StoreUploadWithKind(ctx context.Context, projectID string
 		return nil, ErrMoneyInvalidInput
 	}
 	contentType := http.DetectContentType(buf[:min(len(buf), 512)])
-	if blockKind != "file" && !allowedImage(contentType) {
+	if !allowedUploadContentType(blockKind, contentType) {
 		return nil, ErrMoneyInvalidInput
 	}
 	width, height := imageDimensions(buf)
 	uploadID := uuid.NewString()
 	safe := safeFilename(fh.Filename, contentType)
-	key := filepath.ToSlash(filepath.Join("money", projectID, uploadID, safe))
+	key := s.assetOriginalKey(uploadID, safe)
 	stored, err := s.storage.Save(ctx, key, bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.CreateUpload(ctx, models.MoneyUpload{ID: uploadID, ProjectID: projectID, FeatureID: featureID, NoteID: noteID, OriginalFilename: safe, StorageKey: stored.StorageKey, ContentType: contentType, ByteSize: stored.ByteSize, Width: width, Height: height, ChecksumSHA256: stored.Checksum, BlockKind: blockKind, Metadata: metadata, UploadedBy: user.ID})
+	bucket := optionalString(s.storageBucket)
+	region := optionalString(s.storageRegion)
+	etag := optionalString(stored.ETag)
+	versionID := optionalString(stored.VersionID)
+	return s.repo.CreateUpload(ctx, models.MoneyUpload{ID: uploadID, ProjectID: projectID, FeatureID: featureID, NoteID: noteID, OriginalFilename: safe, StorageKey: stored.StorageKey, ContentType: contentType, ByteSize: stored.ByteSize, Width: width, Height: height, ChecksumSHA256: stored.Checksum, BlockKind: blockKind, Metadata: metadata, AssetKind: "original", StorageBackend: s.storageBackend, StorageBucket: bucket, StorageRegion: region, StorageETag: etag, StorageVersionID: versionID, Visibility: "private", SyncStatus: "available", UploadedBy: user.ID})
 }
 
 func (s *MoneyService) OpenUpload(ctx context.Context, uploadID string) (*models.MoneyUpload, io.ReadCloser, error) {
@@ -493,6 +538,23 @@ func (s *MoneyService) OpenUpload(ctx context.Context, uploadID string) (*models
 	return u, r, nil
 }
 
+func (s *MoneyService) SignedUploadDownloadURL(ctx context.Context, uploadID string) (*models.MoneyUploadDownloadURL, error) {
+	u, err := s.repo.GetUpload(ctx, uploadID)
+	if err != nil {
+		return nil, err
+	}
+	proxyURL := "/api/money/uploads/" + uploadID
+	presigner, ok := s.storage.(storage.DownloadPresigner)
+	if !ok {
+		return &models.MoneyUploadDownloadURL{URL: proxyURL, ExpiresAt: time.Now().Add(s.signedURLTTL), ProxyURL: proxyURL}, nil
+	}
+	url, err := presigner.SignedGetURL(ctx, u.StorageKey, u.OriginalFilename, u.ContentType, s.signedURLTTL)
+	if err != nil {
+		return nil, err
+	}
+	return &models.MoneyUploadDownloadURL{URL: url, ExpiresAt: time.Now().Add(s.signedURLTTL), ProxyURL: proxyURL}, nil
+}
+
 func (s *MoneyService) DeleteUpload(ctx context.Context, uploadID string, user models.CurrentUser) error {
 	if !models.CanWriteMoney(user.Role) {
 		return ErrMoneyForbidden
@@ -504,7 +566,9 @@ func (s *MoneyService) DeleteUpload(ctx context.Context, uploadID string, user m
 	if err := s.repo.DeleteUpload(ctx, uploadID, user.ID, user.Role); err != nil {
 		return err
 	}
-	_ = s.storage.Delete(ctx, u.StorageKey)
+	if err := s.storage.Delete(ctx, u.StorageKey); err == nil {
+		_ = s.repo.MarkUploadPhysicallyDeleted(ctx, uploadID)
+	}
 	return nil
 }
 
@@ -939,6 +1003,12 @@ func cleanOptional(s *string, max int) *string {
 func allowedImage(ct string) bool {
 	return ct == "image/jpeg" || ct == "image/png" || ct == "image/webp"
 }
+func allowedUploadContentType(blockKind, ct string) bool {
+	if blockKind != "file" {
+		return allowedImage(ct)
+	}
+	return allowedImage(ct) || ct == "application/pdf" || ct == "text/plain"
+}
 func imageDimensions(buf []byte) (*int, *int) {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(buf))
 	if err != nil {
@@ -966,6 +1036,35 @@ func extForContentType(ct string) string {
 	}
 	return ".jpg"
 }
+func (s *MoneyService) assetOriginalKey(uploadID, filename string) string {
+	return filepath.ToSlash(filepath.Join(s.keyPrefix, "assets", uploadID, "original", filename))
+}
+
+func normalizeAssetKeyPrefix(prefix string) string {
+	prefix = filepath.ToSlash(strings.TrimSpace(prefix))
+	parts := strings.Split(prefix, "/")
+	clean := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "." || part == ".." {
+			continue
+		}
+		clean = append(clean, part)
+	}
+	if len(clean) == 0 {
+		return "money-creek"
+	}
+	return strings.Join(clean, "/")
+}
+
+func optionalString(v string) *string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
 func ParseBBox(s string) (*models.BBox, error) {
 	var b models.BBox
 	if _, err := fmt.Sscanf(s, "%f,%f,%f,%f", &b.MinLon, &b.MinLat, &b.MaxLon, &b.MaxLat); err != nil {
