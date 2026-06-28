@@ -74,7 +74,7 @@ describe('DetailPanel uploaded photos', () => {
   });
 
   it('renders boulder uploads instead of default photo placeholders', async () => {
-    render(<DetailPanel area={area} selectedBoulder={boulder} selectedTrail={null} notes={[note]} uploads={[upload]} tab="overview" mobile={false} expanded canWrite canEditArea={false} setExpanded={vi.fn()} setTab={vi.fn()} onEnter={vi.fn()} onSelectBoulder={vi.fn()} onNewArea={vi.fn()} onNewBoulder={vi.fn()} onEditArea={vi.fn()} onDeleteArea={vi.fn()} onSetDev={vi.fn()} onAddProblem={vi.fn()} onOpenComposer={vi.fn()} />);
+    render(<DetailPanel area={area} selectedBoulder={boulder} selectedTrail={null} notes={[note]} uploads={[upload]} tab="overview" mobile={false} expanded canWrite canEditArea={false} setExpanded={vi.fn()} setTab={vi.fn()} onEnter={vi.fn()} onSelectBoulder={vi.fn()} onNewArea={vi.fn()} onNewBoulder={vi.fn()} onEditArea={vi.fn()} onDeleteArea={vi.fn()} onSetDev={vi.fn()} onAddProblem={vi.fn()} onOpenComposer={vi.fn()} onEditNote={vi.fn()} onDeleteNote={vi.fn()} onDeleteUpload={vi.fn()} />);
 
     const images = await screen.findAllByAltText('tiny-boulder.jpg');
     await waitFor(() => expect(images[0].getAttribute('src')).toBe('https://example.invalid/photo.jpg'));
@@ -82,7 +82,7 @@ describe('DetailPanel uploaded photos', () => {
   });
 
   it('opens a lightbox when a detail photo is clicked', async () => {
-    render(<DetailPanel area={area} selectedBoulder={boulder} selectedTrail={null} notes={[note]} uploads={[upload]} tab="overview" mobile={false} expanded canWrite canEditArea={false} setExpanded={vi.fn()} setTab={vi.fn()} onEnter={vi.fn()} onSelectBoulder={vi.fn()} onNewArea={vi.fn()} onNewBoulder={vi.fn()} onEditArea={vi.fn()} onDeleteArea={vi.fn()} onSetDev={vi.fn()} onAddProblem={vi.fn()} onOpenComposer={vi.fn()} />);
+    render(<DetailPanel area={area} selectedBoulder={boulder} selectedTrail={null} notes={[note]} uploads={[upload]} tab="overview" mobile={false} expanded canWrite canEditArea={false} setExpanded={vi.fn()} setTab={vi.fn()} onEnter={vi.fn()} onSelectBoulder={vi.fn()} onNewArea={vi.fn()} onNewBoulder={vi.fn()} onEditArea={vi.fn()} onDeleteArea={vi.fn()} onSetDev={vi.fn()} onAddProblem={vi.fn()} onOpenComposer={vi.fn()} onEditNote={vi.fn()} onDeleteNote={vi.fn()} onDeleteUpload={vi.fn()} />);
 
     const photoButtons = await screen.findAllByRole('button', { name: 'Open photo tiny-boulder.jpg' });
     fireEvent.click(photoButtons[0]);
@@ -91,3 +91,4 @@ describe('DetailPanel uploaded photos', () => {
     expect(screen.getAllByText('Money Creek / tiny boulder').length).toBeGreaterThan(0);
   });
 });
+

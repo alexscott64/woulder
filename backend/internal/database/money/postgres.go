@@ -3,6 +3,7 @@ package money
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -134,7 +135,7 @@ func (r *PostgresRepository) ListTrash(ctx context.Context, projectID string) ([
 }
 
 func (r *PostgresRepository) ListNotes(ctx context.Context, featureID string) ([]models.MoneyNote, error) {
-	rows, err := r.db.QueryContext(ctx, queryListNotes, featureID)
+	rows, err := queryWithLegacy(ctx, r.db, queryListNotes, queryListNotesLegacy, featureID)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +144,7 @@ func (r *PostgresRepository) ListNotes(ctx context.Context, featureID string) ([
 }
 
 func (r *PostgresRepository) ListNotesByProject(ctx context.Context, projectID string) ([]models.MoneyNote, error) {
-	rows, err := r.db.QueryContext(ctx, queryListNotesByProject, projectID)
+	rows, err := queryWithLegacy(ctx, r.db, queryListNotesByProject, queryListNotesByProjectLegacy, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +180,7 @@ func (r *PostgresRepository) GetUpload(ctx context.Context, id string) (*models.
 }
 
 func (r *PostgresRepository) ListUploadsByFeature(ctx context.Context, featureID string) ([]models.MoneyUpload, error) {
-	rows, err := r.db.QueryContext(ctx, queryListUploadsByFeature, featureID)
+	rows, err := queryWithLegacy(ctx, r.db, queryListUploadsByFeature, queryListUploadsByFeatureLegacy, featureID)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +189,7 @@ func (r *PostgresRepository) ListUploadsByFeature(ctx context.Context, featureID
 }
 
 func (r *PostgresRepository) ListUploadsByProject(ctx context.Context, projectID string) ([]models.MoneyUpload, error) {
-	rows, err := r.db.QueryContext(ctx, queryListUploadsByProject, projectID)
+	rows, err := queryWithLegacy(ctx, r.db, queryListUploadsByProject, queryListUploadsByProjectLegacy, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +209,7 @@ func (r *PostgresRepository) MarkUploadPhysicallyDeleted(ctx context.Context, up
 }
 
 func (r *PostgresRepository) FeatureNoteCounts(ctx context.Context, projectID string) (map[string]int, error) {
-	rows, err := r.db.QueryContext(ctx, queryFeatureNoteCounts, projectID)
+	rows, err := queryWithLegacy(ctx, r.db, queryFeatureNoteCounts, queryFeatureNoteCountsLegacy, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +247,26 @@ func (r *PostgresRepository) PrimaryUploads(ctx context.Context, projectID strin
 
 type txBeginner interface {
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+type queryRows interface {
+	Next() bool
+	Close() error
+	Err() error
+	Scan(dest ...interface{}) error
+}
+
+func queryWithLegacy(ctx context.Context, db DBConn, primary, legacy string, args ...interface{}) (queryRows, error) {
+	rows, err := db.QueryContext(ctx, primary, args...)
+	if !isUndefinedColumn(err) {
+		return rows, err
+	}
+	return db.QueryContext(ctx, legacy, args...)
+}
+
+func isUndefinedColumn(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "42703"
 }
 
 func beginTx(ctx context.Context, db DBConn) (*sql.Tx, error) {

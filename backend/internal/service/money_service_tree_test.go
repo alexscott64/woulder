@@ -9,13 +9,15 @@ import (
 
 type moneyTreeRepo struct {
 	features []models.MoneyFeature
+	notes    []models.MoneyNote
+	uploads  []models.MoneyUpload
 }
 
 func (r *moneyTreeRepo) GetProjectBySlug(ctx context.Context, slug string) (*models.MoneyProject, error) {
 	return nil, nil
 }
 func (r *moneyTreeRepo) GetProjectByID(ctx context.Context, id string) (*models.MoneyProject, error) {
-	return nil, nil
+	return &models.MoneyProject{ID: id, Slug: "money", Name: "Money Creek"}, nil
 }
 func (r *moneyTreeRepo) ListFeatures(ctx context.Context, projectID string, filter models.MoneyFeatureFilter) ([]models.MoneyFeature, error) {
 	out := make([]models.MoneyFeature, len(r.features))
@@ -76,12 +78,14 @@ func (r *moneyTreeRepo) ListNotes(ctx context.Context, featureID string) ([]mode
 	return nil, nil
 }
 func (r *moneyTreeRepo) ListNotesByProject(ctx context.Context, projectID string) ([]models.MoneyNote, error) {
-	return nil, nil
+	out := make([]models.MoneyNote, len(r.notes))
+	copy(out, r.notes)
+	return out, nil
 }
 func (r *moneyTreeRepo) CreateNote(ctx context.Context, note models.MoneyNote) (*models.MoneyNote, error) {
 	return nil, nil
 }
-func (r *moneyTreeRepo) UpdateNote(ctx context.Context, noteID, body, visibility, userID, role string) (*models.MoneyNote, error) {
+func (r *moneyTreeRepo) UpdateNote(ctx context.Context, noteID, body, visibility string, tags []string, blocks []byte, userID, role string) (*models.MoneyNote, error) {
 	return nil, nil
 }
 func (r *moneyTreeRepo) DeleteNote(ctx context.Context, noteID, userID, role string) error {
@@ -97,7 +101,9 @@ func (r *moneyTreeRepo) ListUploadsByFeature(ctx context.Context, featureID stri
 	return nil, nil
 }
 func (r *moneyTreeRepo) ListUploadsByProject(ctx context.Context, projectID string) ([]models.MoneyUpload, error) {
-	return nil, nil
+	out := make([]models.MoneyUpload, len(r.uploads))
+	copy(out, r.uploads)
+	return out, nil
 }
 func (r *moneyTreeRepo) DeleteUpload(ctx context.Context, uploadID, userID, role string) error {
 	return nil
@@ -110,6 +116,41 @@ func (r *moneyTreeRepo) FeatureNoteCounts(ctx context.Context, projectID string)
 }
 func (r *moneyTreeRepo) PrimaryUploads(ctx context.Context, projectID string) (map[string]models.MoneyUpload, error) {
 	return nil, nil
+}
+
+func TestCragSnapshotLoadsVisibleNotesAndUploads(t *testing.T) {
+	root := moneyProjectFeature("root", "", models.MoneyFeatureArea, models.MoneyStatusActive, "p1")
+	boulder := moneyProjectFeature("boulder", "root", models.MoneyFeatureBoulder, models.MoneyStatusScouted, "p1")
+	archived := moneyProjectFeature("archived", "root", models.MoneyFeatureBoulder, models.MoneyStatusArchived, "p1")
+	visibleNoteID := "visible-note"
+	archivedNoteID := "archived-note"
+	repo := &moneyTreeRepo{
+		features: []models.MoneyFeature{root, boulder, archived},
+		notes: []models.MoneyNote{
+			{ID: visibleNoteID, ProjectID: "p1", FeatureID: &boulder.ID, TargetType: models.MoneyFeatureBoulder, Body: "visible"},
+			{ID: archivedNoteID, ProjectID: "p1", FeatureID: &archived.ID, TargetType: models.MoneyFeatureBoulder, Body: "archived"},
+			{ID: "project-note", ProjectID: "p1", TargetType: "project", Body: "project"},
+		},
+		uploads: []models.MoneyUpload{
+			{ID: "visible-upload", ProjectID: "p1", FeatureID: &boulder.ID, NoteID: &visibleNoteID, OriginalFilename: "visible.jpg"},
+			{ID: "archived-upload", ProjectID: "p1", FeatureID: &archived.ID, NoteID: &archivedNoteID, OriginalFilename: "archived.jpg"},
+		},
+	}
+	svc := NewMoneyService(repo, nil, 0)
+
+	snapshot, err := svc.CragSnapshot(context.Background(), "p1")
+	if err != nil {
+		t.Fatalf("CragSnapshot returned error: %v", err)
+	}
+	if snapshot.Project.ID != "p1" || snapshot.Root == nil || snapshot.Root.Feature.ID != "root" {
+		t.Fatalf("unexpected crag root: %+v", snapshot)
+	}
+	if len(snapshot.Notes) != 2 || snapshot.Notes[0].ID != visibleNoteID || snapshot.Notes[1].ID != "project-note" {
+		t.Fatalf("expected visible feature note and project note, got %+v", snapshot.Notes)
+	}
+	if len(snapshot.Uploads) != 1 || snapshot.Uploads[0].ID != "visible-upload" {
+		t.Fatalf("expected only visible upload, got %+v", snapshot.Uploads)
+	}
 }
 
 func TestArchiveFeaturePromoteChildrenReparentsDirectChildrenOnly(t *testing.T) {

@@ -65,7 +65,7 @@ export function UploadPhotoButton({ upload, ratio = '1 / 1', title, onOpen, canD
   </div>;
 }
 
-function useUploadImageUrl(uploadId: string) {
+export function useUploadImageUrl(uploadId: string) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 

@@ -74,7 +74,7 @@ describe('ContentView photos', () => {
   });
 
   it('opens Photos view uploads with associated note and area/boulder context', async () => {
-    render(<ContentView view="photos" root={area} trails={[]} notes={[note]} uploads={[upload]} trash={[]} canWrite mobile={false} openBoulder={vi.fn()} selectTrail={vi.fn()} onOpenComposer={vi.fn()} onRestore={vi.fn()} />);
+    render(<ContentView view="photos" root={area} trails={[]} notes={[note]} uploads={[upload]} trash={[]} canWrite mobile={false} openBoulder={vi.fn()} selectTrail={vi.fn()} onOpenComposer={vi.fn()} onEditNote={vi.fn()} onDeleteNote={vi.fn()} onDeleteUpload={vi.fn()} onRestore={vi.fn()} />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open photo tiny-boulder.jpg' }));
 
@@ -83,3 +83,4 @@ describe('ContentView photos', () => {
     expect(screen.getAllByText('Money Creek / tiny boulder').length).toBeGreaterThan(0);
   });
 });
+
