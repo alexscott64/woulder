@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DetailPanel } from './DetailPanel';
-import { MoneyCragNode, MoneyFeature, MoneyGeoJSON, MoneyNote, MoneyUpload } from '../../../types/money';
+import { MoneyCragNode, MoneyFeature, MoneyGeoJSON, MoneyNote, MoneyTrailCategory, MoneyUpload } from '../../../types/money';
 
 vi.mock('../../../services/money', () => ({
   moneyApi: {
@@ -32,6 +32,13 @@ const area: MoneyCragNode = {
   feature: { ...featureBase, id: 'area-1', feature_type: 'area', title: 'Money Creek', description: 'Reference crag', status: 'active', properties: { kind: 'Crag', aspect: 'forest' } } as MoneyFeature,
   children: null,
   boulders: [boulder],
+  problems: null,
+};
+
+const trail: MoneyCragNode = {
+  feature: { ...featureBase, id: 'trail-1', feature_type: 'trail', title: 'old trail', status: 'active', geojson: { type: 'LineString', coordinates: [[0, 0], [1, 1]] }, properties: { trail_category: 'connector' } } as MoneyFeature,
+  children: null,
+  boulders: null,
   problems: null,
 };
 
@@ -68,13 +75,17 @@ const note: MoneyNote = {
   updated_at: '2026-01-02T00:00:00Z',
 };
 
+function renderDetailPanel(overrides: Partial<React.ComponentProps<typeof DetailPanel>> = {}) {
+  return render(<DetailPanel root={area} area={area} selectedBoulder={boulder} selectedTrail={null} notes={[note]} uploads={[upload]} tab="overview" mobile={false} expanded canWrite canEditArea={false} setExpanded={vi.fn()} setTab={vi.fn()} onEnter={vi.fn()} onSelectBoulder={vi.fn()} onNewArea={vi.fn()} onNewBoulder={vi.fn()} onEditArea={vi.fn()} onDeleteArea={vi.fn()} onSetDev={vi.fn()} onAddProblem={vi.fn()} onOpenComposer={vi.fn()} onEditNote={vi.fn()} onDeleteNote={vi.fn()} onDeleteUpload={vi.fn()} onUpdateTrail={vi.fn()} onDeleteTrail={vi.fn()} {...overrides} />);
+}
+
 describe('DetailPanel uploaded photos', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('renders boulder uploads instead of default photo placeholders', async () => {
-    render(<DetailPanel area={area} selectedBoulder={boulder} selectedTrail={null} notes={[note]} uploads={[upload]} tab="overview" mobile={false} expanded canWrite canEditArea={false} setExpanded={vi.fn()} setTab={vi.fn()} onEnter={vi.fn()} onSelectBoulder={vi.fn()} onNewArea={vi.fn()} onNewBoulder={vi.fn()} onEditArea={vi.fn()} onDeleteArea={vi.fn()} onSetDev={vi.fn()} onAddProblem={vi.fn()} onOpenComposer={vi.fn()} onEditNote={vi.fn()} onDeleteNote={vi.fn()} onDeleteUpload={vi.fn()} />);
+    renderDetailPanel();
 
     const images = await screen.findAllByAltText('tiny-boulder.jpg');
     await waitFor(() => expect(images[0].getAttribute('src')).toBe('https://example.invalid/photo.jpg'));
@@ -82,13 +93,42 @@ describe('DetailPanel uploaded photos', () => {
   });
 
   it('opens a lightbox when a detail photo is clicked', async () => {
-    render(<DetailPanel area={area} selectedBoulder={boulder} selectedTrail={null} notes={[note]} uploads={[upload]} tab="overview" mobile={false} expanded canWrite canEditArea={false} setExpanded={vi.fn()} setTab={vi.fn()} onEnter={vi.fn()} onSelectBoulder={vi.fn()} onNewArea={vi.fn()} onNewBoulder={vi.fn()} onEditArea={vi.fn()} onDeleteArea={vi.fn()} onSetDev={vi.fn()} onAddProblem={vi.fn()} onOpenComposer={vi.fn()} onEditNote={vi.fn()} onDeleteNote={vi.fn()} onDeleteUpload={vi.fn()} />);
+    renderDetailPanel();
 
     const photoButtons = await screen.findAllByRole('button', { name: 'Open photo tiny-boulder.jpg' });
     fireEvent.click(photoButtons[0]);
 
     expect(await screen.findByRole('dialog', { name: 'tiny-boulder.jpg' })).toBeTruthy();
     expect(screen.getAllByText('Money Creek / tiny boulder').length).toBeGreaterThan(0);
+  });
+});
+
+describe('DetailPanel trail management', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('saves trail label and destination metadata', () => {
+    const onUpdateTrail = vi.fn();
+    renderDetailPanel({ selectedBoulder: null, selectedTrail: trail, onUpdateTrail });
+
+    fireEvent.change(screen.getByLabelText('Trail label'), { target: { value: 'Trail to Main Wall' } });
+    fireEvent.change(screen.getByLabelText('Trail category'), { target: { value: 'trail_to_area' satisfies MoneyTrailCategory } });
+    fireEvent.change(screen.getByLabelText('Destination area'), { target: { value: 'area-1' } });
+    fireEvent.click(screen.getByText('Save trail'));
+
+    expect(onUpdateTrail).toHaveBeenCalledWith(trail, { title: 'Trail to Main Wall', category: 'trail_to_area', destinationFeatureId: 'area-1', destinationLabel: null });
+  });
+
+  it('confirms trail deletion before calling delete handler', () => {
+    const onDeleteTrail = vi.fn();
+    Object.defineProperty(window, 'confirm', { value: vi.fn().mockReturnValue(true), configurable: true });
+    renderDetailPanel({ selectedBoulder: null, selectedTrail: trail, onDeleteTrail });
+
+    fireEvent.click(screen.getByText('Delete trail'));
+
+    expect(window.confirm).toHaveBeenCalledWith('Delete trail old trail?');
+    expect(onDeleteTrail).toHaveBeenCalledWith(trail);
   });
 });
 

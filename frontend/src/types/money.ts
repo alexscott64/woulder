@@ -26,6 +26,7 @@ export type MoneyProblemStatus = 'project' | 'sent' | 'established';
 export type MoneyNoteTargetType = 'project' | 'feature' | 'area' | 'boulder' | 'trail' | 'point' | 'none';
 export type MoneyUploadBlockKind = 'photo' | 'sketch' | 'file' | 'topo';
 export type MoneyArchiveMode = 'subtree' | 'promote_children';
+export type MoneyTrailCategory = 'connector' | 'approach' | 'trail_to_area' | 'trail_to_destination';
 
 export type MoneyPosition = [number, number];
 

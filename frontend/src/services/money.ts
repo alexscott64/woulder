@@ -103,8 +103,8 @@ export const moneyApi = {
     return response.data;
   },
 
-  async archiveFeature(featureId: string, mode: MoneyArchiveMode = 'subtree'): Promise<void> {
-    await authApiClient.delete(`/money/features/${featureId}`, { data: { mode } });
+  async archiveFeature(featureId: string, mode?: MoneyArchiveMode): Promise<void> {
+    await authApiClient.delete(`/money/features/${featureId}`, mode ? { data: { mode } } : undefined);
   },
 
   async moveFeatureParent(featureId: string, payload: MoneyMoveFeatureRequest): Promise<MoneyFeature> {

@@ -73,6 +73,12 @@ export function useUploadImageUrl(uploadId: string) {
     let objectUrl: string | null = null;
     let cancelled = false;
     setSrc(null);
+    if (!uploadId) {
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     setLoading(true);
     moneyApi.getUploadBlobUrl(uploadId).then(url => {
       if (cancelled) {

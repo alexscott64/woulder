@@ -26,6 +26,11 @@ const (
 
 	MoneyNotePrivate = "private"
 	MoneyNoteTeam    = "team"
+
+	MoneyTrailCategoryConnector          = "connector"
+	MoneyTrailCategoryApproach           = "approach"
+	MoneyTrailCategoryTrailToArea        = "trail_to_area"
+	MoneyTrailCategoryTrailToDestination = "trail_to_destination"
 )
 
 type MoneyProject struct {

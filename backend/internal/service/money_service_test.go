@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/textproto"
@@ -202,13 +203,73 @@ func TestAllowedUploadContentType(t *testing.T) {
 	}
 }
 
+func TestUpdateTrailLabelAndDestinationMetadata(t *testing.T) {
+	repo := &moneyUploadRepo{feature: &models.MoneyFeature{ID: "trail-1", FeatureType: models.MoneyFeatureTrail, Status: models.MoneyStatusActive}}
+	svc := NewMoneyService(repo, nil, 0)
+
+	updated, err := svc.UpdateFeature(context.Background(), "trail-1", models.MoneyFeatureRequest{
+		FeatureType: models.MoneyFeatureTrail,
+		Title:       "New approach label",
+		Status:      models.MoneyStatusActive,
+		GeoJSON:     json.RawMessage(`{"type":"LineString","coordinates":[[-121.52,47.71],[-121.51,47.72]]}`),
+		Properties:  json.RawMessage(`{"trail_category":"trail_to_area","trail_destination_feature_id":" area-7 ","trail_destination_label":""}`),
+	}, models.CurrentUser{ID: "user-1", Role: models.RoleDeveloper})
+	if err != nil {
+		t.Fatalf("UpdateFeature returned error: %v", err)
+	}
+	if updated.Title != "New approach label" || updated.UpdatedBy != "user-1" {
+		t.Fatalf("unexpected updated trail: %+v", updated)
+	}
+	var props map[string]string
+	if err := json.Unmarshal(updated.Properties, &props); err != nil {
+		t.Fatalf("updated properties are invalid JSON: %v", err)
+	}
+	if props["trail_category"] != models.MoneyTrailCategoryTrailToArea || props["trail_destination_feature_id"] != "area-7" {
+		t.Fatalf("unexpected trail properties: %v", props)
+	}
+	if _, ok := props["trail_destination_label"]; ok {
+		t.Fatalf("expected empty destination label to be omitted: %v", props)
+	}
+}
+
+func TestUpdateTrailDestinationRequiresTarget(t *testing.T) {
+	repo := &moneyUploadRepo{feature: &models.MoneyFeature{ID: "trail-1", FeatureType: models.MoneyFeatureTrail, Status: models.MoneyStatusActive}}
+	svc := NewMoneyService(repo, nil, 0)
+
+	_, err := svc.UpdateFeature(context.Background(), "trail-1", models.MoneyFeatureRequest{
+		FeatureType: models.MoneyFeatureTrail,
+		Title:       "Trail",
+		Status:      models.MoneyStatusActive,
+		GeoJSON:     json.RawMessage(`{"type":"LineString","coordinates":[[-121.52,47.71],[-121.51,47.72]]}`),
+		Properties:  json.RawMessage(`{"trail_category":"trail_to_area"}`),
+	}, models.CurrentUser{ID: "user-1", Role: models.RoleDeveloper})
+	if !errors.Is(err, ErrMoneyInvalidInput) {
+		t.Fatalf("expected ErrMoneyInvalidInput, got %v", err)
+	}
+}
+
+func TestDeleteTrailArchivesTrail(t *testing.T) {
+	repo := &moneyUploadRepo{feature: &models.MoneyFeature{ID: "trail-1", FeatureType: models.MoneyFeatureTrail, Status: models.MoneyStatusActive}}
+	svc := NewMoneyService(repo, nil, 0)
+
+	if err := svc.DeleteTrail(context.Background(), "trail-1", models.CurrentUser{ID: "user-1", Role: models.RoleDeveloper}); err != nil {
+		t.Fatalf("DeleteTrail returned error: %v", err)
+	}
+	if repo.archivedID != "trail-1" || repo.archivedBy != "user-1" {
+		t.Fatalf("expected trail archive, got id=%q by=%q", repo.archivedID, repo.archivedBy)
+	}
+}
+
 func moneyStrPtr(v string) *string { return &v }
 
 type moneyUploadRepo struct {
+	feature        *models.MoneyFeature
 	upload         *models.MoneyUpload
 	created        *models.MoneyUpload
 	deleted        bool
 	markedPhysical bool
+	archivedID     string
+	archivedBy     string
 }
 
 func (r *moneyUploadRepo) GetProjectBySlug(ctx context.Context, slug string) (*models.MoneyProject, error) {
@@ -221,13 +282,14 @@ func (r *moneyUploadRepo) ListFeatures(ctx context.Context, projectID string, fi
 	return nil, nil
 }
 func (r *moneyUploadRepo) GetFeature(ctx context.Context, id string) (*models.MoneyFeature, error) {
-	return nil, nil
+	return r.feature, nil
 }
 func (r *moneyUploadRepo) CreateFeature(ctx context.Context, feature models.MoneyFeature) (*models.MoneyFeature, error) {
 	return nil, nil
 }
 func (r *moneyUploadRepo) UpdateFeature(ctx context.Context, feature models.MoneyFeature) (*models.MoneyFeature, error) {
-	return nil, nil
+	r.feature = &feature
+	return &feature, nil
 }
 func (r *moneyUploadRepo) UpdateFeatureGeometry(ctx context.Context, id string, geojson []byte, bbox models.BBox, updatedBy string) (*models.MoneyFeature, error) {
 	return nil, nil
@@ -235,7 +297,11 @@ func (r *moneyUploadRepo) UpdateFeatureGeometry(ctx context.Context, id string, 
 func (r *moneyUploadRepo) UpsertFeatureByExternalRef(ctx context.Context, feature models.MoneyFeature) (*models.MoneyFeature, error) {
 	return nil, nil
 }
-func (r *moneyUploadRepo) ArchiveFeature(ctx context.Context, id, userID string) error { return nil }
+func (r *moneyUploadRepo) ArchiveFeature(ctx context.Context, id, userID string) error {
+	r.archivedID = id
+	r.archivedBy = userID
+	return nil
+}
 func (r *moneyUploadRepo) PromoteChildrenAndArchiveFeature(ctx context.Context, id string, parentID *string, userID string) error {
 	return nil
 }

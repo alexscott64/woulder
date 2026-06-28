@@ -269,9 +269,19 @@ func (s *MoneyService) UpdateFeature(ctx context.Context, id string, req models.
 	if !models.CanWriteMoney(user.Role) {
 		return nil, ErrMoneyForbidden
 	}
+	current, err := s.repo.GetFeature(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if current.Status == models.MoneyStatusArchived {
+		return nil, ErrMoneyInvalidInput
+	}
 	f, err := s.featureFromRequest(req)
 	if err != nil {
 		return nil, err
+	}
+	if current.FeatureType == models.MoneyFeatureTrail && f.FeatureType != models.MoneyFeatureTrail {
+		return nil, ErrMoneyInvalidInput
 	}
 	f.ID = id
 	f.UpdatedBy = user.ID
@@ -300,6 +310,20 @@ func (s *MoneyService) ArchiveFeature(ctx context.Context, id string, user model
 	return s.ArchiveFeatureWithMode(ctx, id, models.MoneyArchiveModeSubtree, user)
 }
 
+func (s *MoneyService) DeleteTrail(ctx context.Context, id string, user models.CurrentUser) error {
+	if !models.CanWriteMoney(user.Role) {
+		return ErrMoneyForbidden
+	}
+	feature, err := s.repo.GetFeature(ctx, id)
+	if err != nil {
+		return err
+	}
+	if feature.FeatureType != models.MoneyFeatureTrail || feature.Status == models.MoneyStatusArchived {
+		return ErrMoneyInvalidInput
+	}
+	return s.repo.ArchiveFeature(ctx, id, user.ID)
+}
+
 func (s *MoneyService) ArchiveFeatureWithMode(ctx context.Context, id string, mode models.MoneyArchiveMode, user models.CurrentUser) error {
 	if !models.CanWriteMoney(user.Role) {
 		return ErrMoneyForbidden
@@ -314,7 +338,13 @@ func (s *MoneyService) ArchiveFeatureWithMode(ctx context.Context, id string, mo
 	if err != nil {
 		return err
 	}
-	if target.FeatureType != models.MoneyFeatureArea || isMoneyRootFeature(features, target.ID) || target.Status == models.MoneyStatusArchived {
+	if target.Status == models.MoneyStatusArchived {
+		return ErrMoneyInvalidInput
+	}
+	if target.FeatureType == models.MoneyFeatureTrail {
+		return s.repo.ArchiveFeature(ctx, id, user.ID)
+	}
+	if target.FeatureType != models.MoneyFeatureArea || isMoneyRootFeature(features, target.ID) {
 		return ErrMoneyInvalidInput
 	}
 	if mode == models.MoneyArchiveModePromoteChildren {
@@ -594,11 +624,71 @@ func (s *MoneyService) featureFromRequest(req models.MoneyFeatureRequest) (model
 	if !json.Valid(style) || !json.Valid(props) {
 		return models.MoneyFeature{}, ErrMoneyInvalidInput
 	}
+	if req.FeatureType == models.MoneyFeatureTrail {
+		var err error
+		props, err = normalizeTrailProperties(props)
+		if err != nil {
+			return models.MoneyFeature{}, err
+		}
+	}
 	bbox, err := ValidateGeoJSON(req.GeoJSON)
 	if err != nil {
 		return models.MoneyFeature{}, err
 	}
 	return models.MoneyFeature{ParentFeatureID: req.ParentFeatureID, FeatureType: req.FeatureType, Title: strings.TrimSpace(req.Title), Description: cleanOptional(req.Description, 2000), Status: status, GeoJSON: req.GeoJSON, Style: style, Properties: props, MinLat: &bbox.MinLat, MinLon: &bbox.MinLon, MaxLat: &bbox.MaxLat, MaxLon: &bbox.MaxLon, SortOrder: req.SortOrder, ExternalRef: req.ExternalRef, ImportSource: req.ImportSource}, nil
+}
+
+func normalizeTrailProperties(raw json.RawMessage) (json.RawMessage, error) {
+	props := map[string]interface{}{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &props); err != nil {
+			return nil, ErrMoneyInvalidInput
+		}
+	}
+	category, _ := props["trail_category"].(string)
+	category = strings.TrimSpace(category)
+	if category == "" {
+		category = models.MoneyTrailCategoryConnector
+	}
+	if !validTrailCategory(category) {
+		return nil, ErrMoneyInvalidInput
+	}
+	props["trail_category"] = category
+	if props["trail_destination_feature_id"] != nil {
+		id, ok := props["trail_destination_feature_id"].(string)
+		if !ok {
+			return nil, ErrMoneyInvalidInput
+		}
+		id = strings.TrimSpace(id)
+		if id == "" {
+			delete(props, "trail_destination_feature_id")
+		} else {
+			props["trail_destination_feature_id"] = id
+		}
+	}
+	if props["trail_destination_label"] != nil {
+		label, ok := props["trail_destination_label"].(string)
+		if !ok {
+			return nil, ErrMoneyInvalidInput
+		}
+		label = strings.TrimSpace(label)
+		if len(label) > 200 {
+			return nil, ErrMoneyInvalidInput
+		}
+		if label == "" {
+			delete(props, "trail_destination_label")
+		} else {
+			props["trail_destination_label"] = label
+		}
+	}
+	if (category == models.MoneyTrailCategoryTrailToArea || category == models.MoneyTrailCategoryTrailToDestination) && props["trail_destination_feature_id"] == nil && props["trail_destination_label"] == nil {
+		return nil, ErrMoneyInvalidInput
+	}
+	out, err := json.Marshal(props)
+	if err != nil {
+		return nil, ErrMoneyInvalidInput
+	}
+	return out, nil
 }
 
 func ValidateGeoJSON(raw json.RawMessage) (*models.BBox, error) {
@@ -941,6 +1031,9 @@ func permissions(role string) models.MoneyPermissions {
 }
 func validFeatureType(t string) bool {
 	return t == models.MoneyFeatureArea || t == models.MoneyFeatureBoulder || t == models.MoneyFeatureProblem || t == models.MoneyFeatureTrail || t == models.MoneyFeatureTopo || t == models.MoneyFeaturePOI || t == models.MoneyFeatureDrawing
+}
+func validTrailCategory(category string) bool {
+	return category == models.MoneyTrailCategoryConnector || category == models.MoneyTrailCategoryApproach || category == models.MoneyTrailCategoryTrailToArea || category == models.MoneyTrailCategoryTrailToDestination
 }
 func validFeatureStatus(featureType, status string) bool {
 	switch featureType {
