@@ -161,6 +161,19 @@ describe('ContentView photos', () => {
     expect(screen.getByText('Tiny boulder note')).toBeTruthy();
     expect(screen.getAllByText('Money Creek / tiny boulder').length).toBeGreaterThan(0);
   });
+
+  it('hides uploads attached to deleted or missing notes from Photos view', () => {
+    renderContent('photos', { notes: [], uploads: [{ ...upload, note_id: 'deleted-note', feature_id: undefined }] });
+
+    expect(screen.queryByRole('button', { name: 'Open photo tiny-boulder.jpg' })).toBeNull();
+    expect(screen.getByText('No photos match these filters.')).toBeTruthy();
+  });
+
+  it('keeps uploads visible when their note is present', async () => {
+    renderContent('photos', { notes: [note], uploads: [{ ...upload, note_id: 'note-1', feature_id: undefined }] });
+
+    expect(await screen.findByRole('button', { name: 'Open photo tiny-boulder.jpg' })).toBeTruthy();
+  });
 });
 
 describe('ContentView contextual filters and thumbnails', () => {

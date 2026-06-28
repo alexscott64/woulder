@@ -3,11 +3,12 @@ import DeckGL from '@deck.gl/react';
 import { Map } from 'react-map-gl/maplibre';
 import { PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { PathStyleExtension } from '@deck.gl/extensions';
-import { Layers, LocateFixed, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react';
+import { Layers, LocateFixed, MapPin, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react';
 import { MoneyCragNode, MoneyFeature, MoneyPosition } from '../../../types/money';
 import { bbox, bboxCenter, closedPolygonPoints, centroid, deletePolygonVertex, flattenAreas, flattenBoulders, geometryPoints, insertPolygonVertexAfter, isValidAreaEditRing, MONEY_CREEK_CENTER, openPolygonPoints, polygonGeoJSON, replacePolygonVertex } from './model';
 import { loadMoneyCreekLineMap, type LineMapLabel, type LineMapPath, type MoneyCreekLineMapData } from './lineMap';
 import { DEV, T } from './theme';
+import { shouldFitAreaViewport } from './viewport';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { StyleSpecification } from 'maplibre-gl';
 
@@ -36,9 +37,11 @@ interface Props {
   mode: 'view' | 'create-area' | 'create-boulder' | 'edit-area';
   layers: LayerState;
   mobile: boolean;
+  goToPoint?: { position: MoneyPosition; nonce: number } | null;
   onEnter: (id: string) => void;
   onSelectBoulder: (id: string | null) => void;
   onSelectTrail: (id: string | null) => void;
+  onAddBoulderAt: (position: MoneyPosition, parentId: string | null) => void;
   onCreateDone: (points: MoneyPosition[]) => void;
   onCreateCancel: () => void;
   onEditSave: (points: MoneyPosition[]) => void;
@@ -61,7 +64,7 @@ const DETAIL_ZOOM = 16.15;
 const FINE_DETAIL_ZOOM = 17.25;
 const DASHED_PATH_STYLE = new PathStyleExtension({ dash: true });
 
-export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId, mode, layers, mobile, onEnter, onSelectBoulder, onSelectTrail, onCreateDone, onCreateCancel, onEditSave, onEditCancel, setLayers }: Props) {
+export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId, mode, layers, mobile, goToPoint, onEnter, onSelectBoulder, onSelectTrail, onAddBoulderAt, onCreateDone, onCreateCancel, onEditSave, onEditCancel, setLayers }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [viewState, setViewState] = useState<ViewState>(() => ({ longitude: MONEY_CREEK_CENTER[0], latitude: MONEY_CREEK_CENTER[1], zoom: 14.8, pitch: 0, bearing: 0 }));
   const [draft, setDraft] = useState<MoneyPosition[]>([]);
@@ -73,17 +76,21 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
   const [vertexMessage, setVertexMessage] = useState('');
   const [layersOpen, setLayersOpen] = useState(!mobile);
   const [lineMapState, setLineMapState] = useState<LineMapLoadState>({ status: 'idle', data: null });
+  const [addPoint, setAddPoint] = useState<{ position: MoneyPosition; parentId: string | null; x?: number; y?: number; source: 'search' | 'context' } | null>(null);
   const lineMapStartedRef = useRef(false);
   const creating = mode === 'create-area' || mode === 'create-boulder';
   const editing = mode === 'edit-area';
   const lastFocusBBoxKeyRef = useRef<string | null>(null);
+  const hasViewportInteractionRef = useRef(false);
 
   const focusBBox = useMemo(() => bbox(area), [area]);
   const focusBBoxKey = `${focusBBox[0]},${focusBBox[1]},${focusBBox[2]},${focusBBox[3]}`;
 
   useEffect(() => {
-    if (editing || lastFocusBBoxKeyRef.current === focusBBoxKey) return;
-    lastFocusBBoxKeyRef.current = focusBBoxKey;
+    const previousFocusBBoxKey = lastFocusBBoxKeyRef.current;
+    const shouldFit = shouldFitAreaViewport({ previousFocusBBoxKey, nextFocusBBoxKey: focusBBoxKey, editing, hasViewportInteraction: hasViewportInteractionRef.current });
+    if (!editing && previousFocusBBoxKey !== focusBBoxKey) lastFocusBBoxKeyRef.current = focusBBoxKey;
+    if (!shouldFit) return;
     setViewState(viewForBBox(focusBBox));
   }, [focusBBox, focusBBoxKey, editing]);
   useEffect(() => { if (creating) { setDraft([]); setDraftHistory([]); setSelectedDraftVertex(null); setVertexMessage('Tap the map to add vertices.'); } }, [creating]);
@@ -113,7 +120,6 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
   }, [layers.base]);
-
   const focusedAreaIds = useMemo(() => new Set(flattenAreas(area).map(node => node.feature.id)), [area]);
   const focusedBoulderIds = useMemo(() => new Set(flattenBoulders(area).map(node => node.feature.id)), [area]);
   const isFocusedArea = useCallback((id: string) => focusedAreaIds.has(id), [focusedAreaIds]);
@@ -124,6 +130,13 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
     .map(node => ({ node, polygon: geometryPoints(node.feature.geojson), center: featureCenter(node.feature) }))
     .filter(d => usablePolygon(d.polygon)), [root]);
   const areaData = useMemo(() => allAreaData.filter(d => layers.areas[d.node.feature.id] !== false), [allAreaData, layers.areas]);
+  useEffect(() => {
+    if (!goToPoint) return;
+    hasViewportInteractionRef.current = true;
+    const position = goToPoint.position;
+    setViewState(current => ({ ...current, longitude: position[0], latitude: position[1], zoom: Math.max(current.zoom, 18) }));
+    setAddPoint({ position, parentId: parentAreaIdForPoint(position, allAreaData, area.feature.id), source: 'search' });
+  }, [goToPoint?.nonce, allAreaData, area.feature.id, goToPoint]);
 
   const allBoulderData = useMemo<BoulderDatum[]>(() => flattenBoulders(root).flatMap((node, index) => {
     const dev = String(node.feature.status);
@@ -280,23 +293,31 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
       editing && new PathLayer({ id: 'money-reference-edit-outline', data: [{ path: editPolygon }], getPath: (d: { path: MoneyPosition[] }) => d.path, getColor: [255, 245, 220, 255], getWidth: 2.2, widthMinPixels: 2, widthMaxPixels: 5, jointRounded: true, capRounded: true }),
       editing && new ScatterplotLayer({ id: 'money-reference-edit-edge-handles', data: editEdgeHandles, pickable: true, getPosition: (d: { position: MoneyPosition }) => d.position, getFillColor: [174, 185, 116, 150], getLineColor: [255, 245, 220, 235], getRadius: 1, radiusMinPixels: 5, radiusMaxPixels: 9, stroked: true, onClick: info => { if (info.object) insertEditVertex(info.object.index, info.object.position); return true; } }),
       editing && new ScatterplotLayer({ id: 'money-reference-edit-handles', data: editHandles, pickable: true, getPosition: (d: { position: MoneyPosition }) => d.position, getFillColor: (d: { index: number }) => d.index === selectedEditVertex ? [255, 210, 115, 255] : [255, 245, 220, 255], getLineColor: [42, 36, 29, 255], getRadius: (d: { index: number }) => d.index === selectedEditVertex ? 1.7 : 1.35, radiusMinPixels: 7, radiusMaxPixels: 14, lineWidthMinPixels: 1.5, stroked: true, onClick: info => { if (info.object) { setSelectedEditVertex(info.object.index); setVertexMessage(`Vertex ${info.object.index + 1} selected.`); } return true; }, onDrag: info => { const coordinate = info.coordinate; if (info.object && coordinate && coordinate.length >= 2) moveEditVertex(info.object.index, [coordinate[0], coordinate[1]]); return true; } }),
+      addPoint && new ScatterplotLayer({ id: 'money-reference-add-boulder-point', data: [addPoint], pickable: false, getPosition: (d: { position: MoneyPosition }) => d.position, getFillColor: [255, 210, 115, 235], getLineColor: [42, 36, 29, 255], getRadius: 2.2, radiusMinPixels: 8, radiusMaxPixels: 18, lineWidthMinPixels: 2, stroked: true }),
     ].filter(Boolean);
-  }, [area.feature.id, areaData, areaLabelData, boulderData, boulderLabelData, contourData, creating, draft, editDraft, editing, indexContourData, insertDraftVertex, insertEditVertex, isFocusedArea, isFocusedBoulder, layers.base, layers.contours, layers.roads, layers.water, lineLabelData, moveDraftVertex, moveEditVertex, onEnter, onSelectBoulder, onSelectTrail, roadData, selectedBoulderId, selectedDraftVertex, selectedEditVertex, selectedTrailId, trailData, trailFineData, viewState.zoom, waterData]);
+  }, [addPoint, area.feature.id, areaData, areaLabelData, boulderData, boulderLabelData, contourData, creating, draft, editDraft, editing, indexContourData, insertDraftVertex, insertEditVertex, isFocusedArea, isFocusedBoulder, layers.base, layers.contours, layers.roads, layers.water, lineLabelData, moveDraftVertex, moveEditVertex, onEnter, onSelectBoulder, onSelectTrail, roadData, selectedBoulderId, selectedDraftVertex, selectedEditVertex, selectedTrailId, trailData, trailFineData, viewState.zoom, waterData]);
 
   const finish = () => { if (draft.length >= 3) onCreateDone(draft); };
   const saveEdit = () => { if (isValidAreaEditRing(editDraft)) onEditSave(editDraft); };
-  const focus = () => setViewState(viewForBBox(focusBBox));
-  const zoomBy = (delta: number) => setViewState(current => ({ ...current, zoom: clamp(current.zoom + delta, MIN_ZOOM, MAX_ZOOM) }));
+  const focus = () => { hasViewportInteractionRef.current = true; setViewState(viewForBBox(focusBBox)); };
+  const zoomBy = (delta: number) => { hasViewportInteractionRef.current = true; setViewState(current => ({ ...current, zoom: clamp(current.zoom + delta, MIN_ZOOM, MAX_ZOOM) })); };
+  const openAddBoulder = (point: { position: MoneyPosition; parentId: string | null }) => { setAddPoint(null); onAddBoulderAt(point.position, point.parentId); };
+  const contextMenuHandler = { onContextMenu: (info: { coordinate?: number[]; x?: number; y?: number }) => {
+    if (creating || editing || !info.coordinate || info.coordinate.length < 2) return;
+    const position: MoneyPosition = [info.coordinate[0], info.coordinate[1]];
+    setAddPoint({ position, parentId: parentAreaIdForPoint(position, allAreaData, area.feature.id), x: info.x, y: info.y, source: 'context' });
+  } } as Record<string, unknown>;
 
-  return <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: layers.base === 'stylized' ? 'transparent' : T.map.bg2 }}>
+  return <div ref={wrapRef} onContextMenu={event => event.preventDefault()} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: layers.base === 'stylized' ? 'transparent' : T.map.bg2 }}>
     <DeckGL controller={{ dragPan: !creating && !editing, scrollZoom: true, doubleClickZoom: !creating && !editing, touchZoom: true, keyboard: true }} layers={deckLayers} viewState={viewState} onViewStateChange={(event: { viewState: unknown }) => {
+      hasViewportInteractionRef.current = true;
       const next = event.viewState as Partial<ViewState>;
       setViewState(current => ({ longitude: next.longitude ?? current.longitude, latitude: next.latitude ?? current.latitude, zoom: clamp(next.zoom ?? current.zoom, MIN_ZOOM, MAX_ZOOM), pitch: next.pitch ?? current.pitch, bearing: next.bearing ?? current.bearing }));
     }} onClick={(info: { coordinate?: number[]; picked?: boolean }) => {
       if (creating && info.coordinate && info.coordinate.length >= 2 && !info.picked) addDraftVertex([info.coordinate[0], info.coordinate[1]]);
       if (editing && info.coordinate && info.coordinate.length >= 2 && !info.picked) insertEditVertex(nearestEdgeIndex(editDraft, [info.coordinate[0], info.coordinate[1]]), [info.coordinate[0], info.coordinate[1]]);
-      if (!creating && !editing && !info.picked) { onSelectBoulder(null); onSelectTrail(null); }
-    }} getCursor={() => creating ? 'crosshair' : editing ? 'pointer' : 'grab'}>
+      if (!creating && !editing && !info.picked) { onSelectBoulder(null); onSelectTrail(null); setAddPoint(null); }
+    }} {...contextMenuHandler} getCursor={() => creating ? 'crosshair' : editing ? 'pointer' : 'grab'}>
       <Map mapStyle={mapStyle(layers.base) as never} reuseMaps minZoom={MIN_ZOOM} maxZoom={MAX_ZOOM} onLoad={() => window.requestAnimationFrame(() => window.dispatchEvent(new Event('resize')))} />
     </DeckGL>
     {layers.base === 'slope' && <div className="pointer-events-none absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(62,122,78,0.23), rgba(201,184,74,0.18) 45%, rgba(200,87,47,0.20))' }} />}
@@ -309,6 +330,7 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
       </div>
     </div>}
     {!creating && !editing && (layersOpen ? <LayersPanel layers={layers} setLayers={setLayers} onClose={() => setLayersOpen(false)} root={root} /> : <button onClick={() => setLayersOpen(true)} style={{ position: 'absolute', top: 14, right: 14, zIndex: 10, display: 'flex', gap: 7, background: T.surf, border: `1px solid ${T.line2}`, borderRadius: 10, padding: '9px 13px', color: T.ink, fontWeight: 700, boxShadow: T.shadow }}><Layers size={16} />Layers</button>)}
+    {!creating && !editing && addPoint && <div style={{ position: 'absolute', left: addPoint.x ?? 14, top: addPoint.y ?? 98, zIndex: 20, transform: addPoint.x == null ? 'none' : 'translate(8px, 8px)', background: T.raise, border: `1px solid ${T.line2}`, borderRadius: 11, boxShadow: T.shadow, padding: 8, minWidth: 168 }}><div style={{ fontFamily: T.mono, color: T.mut, fontSize: 10.5, margin: '2px 4px 8px' }}>{addPoint.position[1].toFixed(6)}, {addPoint.position[0].toFixed(6)}</div><button type="button" onClick={() => openAddBoulder(addPoint)} style={{ ...mapButton, width: '100%', justifyContent: 'center', boxShadow: 'none' }}><MapPin size={15} />Add boulder</button><button type="button" onClick={() => setAddPoint(null)} style={{ marginTop: 6, width: '100%', border: 'none', background: 'transparent', color: T.mut, fontWeight: 700, cursor: 'pointer', padding: 6 }}>Cancel</button></div>}
     {creating && <div style={{ position: 'absolute', bottom: mobile ? 22 : 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', background: T.surf, border: `1px solid ${T.line2}`, borderRadius: 14, padding: 8, boxShadow: T.shadow, zIndex: 10, maxWidth: mobile ? '92vw' : 720 }}><button onClick={onCreateCancel} style={ctrl(false)}><X size={16} />Cancel</button><button onClick={undoDraft} disabled={!draftHistory.length} style={ctrl(false, !draftHistory.length)}><RotateCcw size={16} />Undo last</button><button onClick={clearDraft} disabled={!draft.length} style={ctrl(false, !draft.length)}><X size={16} />Clear</button><button onClick={deleteDraftVertex} disabled={selectedDraftVertex == null} style={ctrl(false, selectedDraftVertex == null)}><Trash2 size={16} />Delete vertex</button><button disabled={draft.length < 3} onClick={finish} style={ctrl(true, draft.length < 3)}><Plus size={16} />Done</button></div>}
     {creating && <div style={{ position: 'absolute', left: 14, bottom: mobile ? 126 : 84, background: T.surf, border: `1px solid ${T.line2}`, borderRadius: 10, padding: '8px 11px', color: T.mut, fontSize: 12, zIndex: 10, maxWidth: mobile ? '88vw' : 480 }}>Tap map to add vertices · drag/select white vertices · tap green midpoints to insert · {draft.length} point{draft.length === 1 ? '' : 's'} · {draft.length < 3 ? `${3 - draft.length} more needed` : 'ready'}{vertexMessage ? ` · ${vertexMessage}` : ''}</div>}
     {editing && <div style={{ position: 'absolute', bottom: mobile ? 22 : 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', background: T.surf, border: `1px solid ${T.line2}`, borderRadius: 14, padding: 8, boxShadow: T.shadow, zIndex: 10, maxWidth: mobile ? '92vw' : 680 }}><button onClick={onEditCancel} style={ctrl(false)}><X size={16} />Cancel</button><button onClick={undoEdit} disabled={!editHistory.length} style={ctrl(false, !editHistory.length)}><RotateCcw size={16} />Undo last</button><button onClick={deleteEditVertex} disabled={selectedEditVertex == null || editDraft.length <= 3} style={ctrl(false, selectedEditVertex == null || editDraft.length <= 3)}><Trash2 size={16} />Delete vertex</button><button disabled={!isValidAreaEditRing(editDraft)} onClick={saveEdit} style={ctrl(true, !isValidAreaEditRing(editDraft))}><Save size={16} />Save</button></div>}
@@ -478,6 +500,26 @@ function areaFill(_d: AreaDatum, base: string, focused: boolean): Rgba { return 
 function isLonLatPosition(p: MoneyPosition): boolean { return Number.isFinite(p[0]) && Number.isFinite(p[1]) && Math.abs(p[0]) <= 180 && Math.abs(p[1]) <= 90; }
 function usablePath(path: MoneyPosition[]): boolean { return path.length >= 2 && path.every(isLonLatPosition); }
 function usablePolygon(points: MoneyPosition[]): boolean { return points.length >= 3 && points.every(isLonLatPosition); }
+function parentAreaIdForPoint(point: MoneyPosition, areas: AreaDatum[], fallbackId: string): string {
+  const containing = areas.filter(area => pointInPolygon(point, area.polygon)).sort((a, b) => polygonArea(a.polygon) - polygonArea(b.polygon));
+  return containing[0]?.node.feature.id ?? fallbackId;
+}
+function pointInPolygon(point: MoneyPosition, polygon: MoneyPosition[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+    const intersects = yi > point[1] !== yj > point[1] && point[0] < (xj - xi) * (point[1] - yi) / (yj - yi || Number.EPSILON) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+function polygonArea(polygon: MoneyPosition[]): number {
+  return Math.abs(polygon.reduce((sum, point, index) => {
+    const next = polygon[(index + 1) % polygon.length];
+    return sum + point[0] * next[1] - next[0] * point[1];
+  }, 0));
+}
 function withAlpha(color: Rgba, alpha: number): Rgba { return [color[0], color[1], color[2], alpha]; }
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
 function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }

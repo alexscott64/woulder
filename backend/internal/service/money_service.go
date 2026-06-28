@@ -117,7 +117,8 @@ func (s *MoneyService) CragSnapshot(ctx context.Context, projectID string) (*mod
 	}
 	visible := featureIDSet(features)
 	root, trails := BuildMoneyCragTree(features)
-	return &models.MoneyCragSnapshot{Project: *p, Root: root, Trails: trails, Notes: filterNotesByVisibleFeatures(notes, visible), Uploads: filterUploadsByVisibleFeatures(uploads, visible)}, nil
+	visibleNotes := filterNotesByVisibleFeatures(notes, visible)
+	return &models.MoneyCragSnapshot{Project: *p, Root: root, Trails: trails, Notes: visibleNotes, Uploads: filterUploadsByVisibleFeaturesAndNotes(uploads, visibleNotes, visible)}, nil
 }
 
 func BuildMoneyCragTree(features []models.MoneyFeature) (*models.MoneyCragNode, []models.MoneyCragNode) {
@@ -507,7 +508,23 @@ func (s *MoneyService) DeleteNote(ctx context.Context, noteID string, user model
 	if !models.CanWriteMoney(user.Role) {
 		return ErrMoneyForbidden
 	}
-	return s.repo.DeleteNote(ctx, noteID, user.ID, user.Role)
+	note, err := s.repo.GetNote(ctx, noteID)
+	if err != nil {
+		return err
+	}
+	uploads, err := s.uploadsOwnedOnlyByNote(ctx, note)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.DeleteNote(ctx, noteID, user.ID, user.Role); err != nil {
+		return err
+	}
+	for _, upload := range uploads {
+		if err := s.deleteUploadRecordAndObject(ctx, upload, user); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *MoneyService) StoreUpload(ctx context.Context, projectID string, featureID, noteID *string, fh *multipart.FileHeader, user models.CurrentUser) (*models.MoneyUpload, error) {
@@ -594,6 +611,15 @@ func (s *MoneyService) SignedUploadDownloadURL(ctx context.Context, uploadID str
 	return &models.MoneyUploadDownloadURL{URL: url, ExpiresAt: time.Now().Add(s.signedURLTTL), ProxyURL: proxyURL}, nil
 }
 
+func (s *MoneyService) UpdateUploadMetadata(ctx context.Context, uploadID string, req models.MoneyUploadMetadataRequest, user models.CurrentUser) (*models.MoneyUpload, error) {
+	if !models.CanWriteMoney(user.Role) {
+		return nil, ErrMoneyForbidden
+	}
+	title := cleanOptional(req.Title, 200)
+	comments := cleanOptional(req.Comments, 5000)
+	return s.repo.UpdateUploadMetadata(ctx, uploadID, title, comments, user.ID, user.Role)
+}
+
 func (s *MoneyService) DeleteUpload(ctx context.Context, uploadID string, user models.CurrentUser) error {
 	if !models.CanWriteMoney(user.Role) {
 		return ErrMoneyForbidden
@@ -602,13 +628,73 @@ func (s *MoneyService) DeleteUpload(ctx context.Context, uploadID string, user m
 	if err != nil {
 		return err
 	}
-	if err := s.repo.DeleteUpload(ctx, uploadID, user.ID, user.Role); err != nil {
+	return s.deleteUploadRecordAndObject(ctx, *u, user)
+}
+
+func (s *MoneyService) deleteUploadRecordAndObject(ctx context.Context, upload models.MoneyUpload, user models.CurrentUser) error {
+	if err := s.repo.DeleteUpload(ctx, upload.ID, user.ID, user.Role); err != nil {
 		return err
 	}
-	if err := s.storage.Delete(ctx, u.StorageKey); err == nil {
-		_ = s.repo.MarkUploadPhysicallyDeleted(ctx, uploadID)
+	if s.storage != nil {
+		if err := s.storage.Delete(ctx, upload.StorageKey); err == nil {
+			_ = s.repo.MarkUploadPhysicallyDeleted(ctx, upload.ID)
+		}
 	}
 	return nil
+}
+
+func (s *MoneyService) uploadsOwnedOnlyByNote(ctx context.Context, note *models.MoneyNote) ([]models.MoneyUpload, error) {
+	if note == nil {
+		return nil, nil
+	}
+	noteUploadIDs := uploadIDsFromNoteBlocks(note.Blocks)
+	projectUploads, err := s.repo.ListUploadsByProject(ctx, note.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	projectNotes, err := s.repo.ListNotesByProject(ctx, note.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	referencedByOtherNotes := map[string]bool{}
+	for _, other := range projectNotes {
+		if other.ID == note.ID {
+			continue
+		}
+		for id := range uploadIDsFromNoteBlocks(other.Blocks) {
+			referencedByOtherNotes[id] = true
+		}
+	}
+	owned := make([]models.MoneyUpload, 0)
+	for _, upload := range projectUploads {
+		directlyAttached := upload.NoteID != nil && *upload.NoteID == note.ID
+		blockAttached := noteUploadIDs[upload.ID]
+		if !directlyAttached && !blockAttached {
+			continue
+		}
+		if referencedByOtherNotes[upload.ID] {
+			continue
+		}
+		owned = append(owned, upload)
+	}
+	return owned, nil
+}
+
+func uploadIDsFromNoteBlocks(blocks json.RawMessage) map[string]bool {
+	ids := map[string]bool{}
+	if len(blocks) == 0 || !json.Valid(blocks) {
+		return ids
+	}
+	var parsed []models.MoneyNoteBlock
+	if err := json.Unmarshal(blocks, &parsed); err != nil {
+		return ids
+	}
+	for _, block := range parsed {
+		if block.UploadID != nil && strings.TrimSpace(*block.UploadID) != "" {
+			ids[*block.UploadID] = true
+		}
+	}
+	return ids
 }
 
 func (s *MoneyService) featureFromRequest(req models.MoneyFeatureRequest) (models.MoneyFeature, error) {
@@ -1001,9 +1087,24 @@ func filterNotesByVisibleFeatures(notes []models.MoneyNote, visible map[string]b
 }
 
 func filterUploadsByVisibleFeatures(uploads []models.MoneyUpload, visible map[string]bool) []models.MoneyUpload {
+	return filterUploadsByVisibleFeaturesAndNotes(uploads, nil, visible)
+}
+
+func filterUploadsByVisibleFeaturesAndNotes(uploads []models.MoneyUpload, notes []models.MoneyNote, visible map[string]bool) []models.MoneyUpload {
+	visibleNotes := make(map[string]bool, len(notes))
+	visibleNoteUploadIDs := map[string]bool{}
+	for _, note := range notes {
+		visibleNotes[note.ID] = true
+		for id := range uploadIDsFromNoteBlocks(note.Blocks) {
+			visibleNoteUploadIDs[id] = true
+		}
+	}
 	out := make([]models.MoneyUpload, 0, len(uploads))
 	for _, u := range uploads {
 		if u.FeatureID != nil && !visible[*u.FeatureID] {
+			continue
+		}
+		if u.NoteID != nil && !visibleNotes[*u.NoteID] && !visibleNoteUploadIDs[u.ID] {
 			continue
 		}
 		out = append(out, u)
@@ -1032,7 +1133,7 @@ func filterPrimaryUploadsByVisibleFeatures(uploads map[string]models.MoneyUpload
 }
 
 func isFeatureTarget(targetType string) bool {
-	return targetType == "feature" || targetType == "area" || targetType == "boulder" || targetType == "trail"
+	return targetType == "feature" || targetType == "area" || targetType == "boulder" || targetType == "trail" || targetType == "problem" || targetType == "point"
 }
 
 func permissions(role string) models.MoneyPermissions {

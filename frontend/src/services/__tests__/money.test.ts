@@ -5,6 +5,7 @@ import { authApiClient, authorizedFetch } from '../auth';
 vi.mock('../auth', () => ({
   authApiClient: {
     get: vi.fn(),
+    patch: vi.fn(),
   },
   authorizedFetch: vi.fn(),
 }));
@@ -31,5 +32,11 @@ describe('moneyApi upload downloads', () => {
 
     await expect(moneyApi.getUploadBlobUrl('upload-1')).resolves.toBe(objectURL);
     expect(vi.mocked(authorizedFetch).mock.calls[0][0]).toMatch(/\/api\/money\/uploads\/upload-1$/);
+  });
+  it('updates editable upload metadata', async () => {
+    vi.mocked(authApiClient.patch).mockResolvedValue({ data: { id: 'upload-1', title: 'Topo overview', comments: 'Main face' } });
+
+    await expect(moneyApi.updateUploadMetadata('upload-1', { title: 'Topo overview', comments: 'Main face' })).resolves.toEqual(expect.objectContaining({ title: 'Topo overview', comments: 'Main face' }));
+    expect(authApiClient.patch).toHaveBeenCalledWith('/money/uploads/upload-1/metadata', { title: 'Topo overview', comments: 'Main face' });
   });
 });

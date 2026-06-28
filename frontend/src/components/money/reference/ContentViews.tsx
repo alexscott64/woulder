@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, FileText, RotateCcw, Route, Upload } from 'lucide-react';
+import { Camera, FileText, Plus, RotateCcw, Route, Upload } from 'lucide-react';
 import { MoneyCragNode, MoneyNote, MoneyTrashItem, MoneyTrailCategory, MoneyUpload, MoneyUploadBlockKind } from '../../../types/money';
 import { cragChildren, cragProblems, findNode, flattenAreas, flattenBoulders, flattenProblems, pathTo, problemMeta } from './model';
 import { DEV, T } from './theme';
 import { PhotoLightbox, PhotoLightboxItem, UploadPhotoButton, useUploadImageUrl } from './PhotoLightbox';
 import { ParsedTrailImport, parseTrailFile } from './trailImport';
+import { TopoOverlay } from './topoOverlay';
 
 type OpenPhoto = (item: PhotoLightboxItem) => void;
 export type ReferenceFilterView = 'problems' | 'boulders' | 'trails' | 'photos' | 'notes';
@@ -56,32 +57,35 @@ interface ContentViewProps {
   currentAreaId?: string | null;
   openBoulder: (id: string) => void;
   selectTrail: (id: string) => void;
+  onAddBoulder?: (parentId?: string | null) => void;
   onOpenComposer: (kind?: 'photo' | 'sketch' | 'file' | null) => void;
   onEditNote: (note: MoneyNote) => void;
   onDeleteNote: (note: MoneyNote) => void;
   onDeleteUpload: (upload: MoneyUpload) => void;
+  onUpdateUploadMetadata?: (upload: MoneyUpload, metadata: { title: string | null; comments: string | null }) => Promise<MoneyUpload | void> | MoneyUpload | void;
   onRestore: (id: string) => void;
   onCreateTrail: (trail: ParsedTrailImport & { filename: string }) => void;
   onUpdateTrail: (trail: MoneyCragNode, updates: { title: string; category: MoneyTrailCategory; destinationFeatureId?: string | null; destinationLabel?: string | null }) => void;
+  onSaveTopo?: (problem: MoneyCragNode, overlay: TopoOverlay) => void;
 }
 
 export function isReferenceFilterView(view: string): view is ReferenceFilterView {
   return view === 'problems' || view === 'boulders' || view === 'trails' || view === 'photos' || view === 'notes';
 }
 
-export function ContentView({ view, root, trails, notes, uploads, trash, canWrite, mobile, filters = defaultReferenceFilters, setFilters, currentAreaId, openBoulder, selectTrail, onOpenComposer, onEditNote, onDeleteNote, onDeleteUpload, onRestore, onCreateTrail, onUpdateTrail }: ContentViewProps) {
+export function ContentView({ view, root, trails, notes, uploads, trash, canWrite, mobile, filters = defaultReferenceFilters, setFilters, currentAreaId, openBoulder, selectTrail, onAddBoulder, onOpenComposer, onEditNote, onDeleteNote, onDeleteUpload, onUpdateUploadMetadata, onRestore, onCreateTrail, onUpdateTrail, onSaveTopo }: ContentViewProps) {
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoLightboxItem | null>(null);
   return <main style={{ flex: 1, minWidth: 0, overflowY: 'auto', background: T.app }}>
     <div style={{ maxWidth: 1080, margin: '0 auto', padding: mobile ? '20px 18px 90px' : '28px 32px 60px' }}>
       {mobile && isReferenceFilterView(view) && setFilters && <div style={{ ...card, padding: 12, marginBottom: 18 }}><ReferenceFilterRail view={view} root={root} trails={trails} notes={notes} uploads={uploads} filters={filters} setFilters={setFilters} currentAreaId={currentAreaId} /></div>}
       {view === 'problems' && <Problems root={root} notes={notes} uploads={uploads} filters={filters} openBoulder={openBoulder} onOpenPhoto={setSelectedPhoto} />}
-      {view === 'boulders' && <Boulders root={root} notes={notes} uploads={uploads} filters={filters} currentAreaId={currentAreaId} openBoulder={openBoulder} onOpenPhoto={setSelectedPhoto} />}
+      {view === 'boulders' && <Boulders root={root} notes={notes} uploads={uploads} filters={filters} currentAreaId={currentAreaId} canWrite={canWrite} openBoulder={openBoulder} onAddBoulder={onAddBoulder} onOpenPhoto={setSelectedPhoto} />}
       {view === 'trails' && <Trails root={root} trails={trails} filters={filters} canWrite={canWrite} selectTrail={selectTrail} onCreateTrail={onCreateTrail} onUpdateTrail={onUpdateTrail} />}
       {view === 'photos' && <Photos root={root} notes={notes} uploads={uploads} filters={filters} canWrite={canWrite} onOpenComposer={onOpenComposer} onOpenPhoto={setSelectedPhoto} onDeleteUpload={onDeleteUpload} />}
       {view === 'notes' && <Notes root={root} notes={notes} uploads={uploads} filters={filters} canWrite={canWrite} onOpenComposer={onOpenComposer} onOpenPhoto={setSelectedPhoto} onEditNote={onEditNote} onDeleteNote={onDeleteNote} onDeleteUpload={onDeleteUpload} />}
       {view === 'trash' && <Trash items={trash} canWrite={canWrite} onRestore={onRestore} />}
     </div>
-    {selectedPhoto && <PhotoLightbox item={selectedPhoto} canDelete={canWrite} onDelete={upload => { onDeleteUpload(upload); setSelectedPhoto(null); }} onClose={() => setSelectedPhoto(null)} />}
+    {selectedPhoto && <PhotoLightbox item={selectedPhoto} root={root} canWrite={canWrite} canDelete={canWrite} onUpdateMetadata={onUpdateUploadMetadata} onSaveTopo={onSaveTopo} onDelete={upload => { onDeleteUpload(upload); setSelectedPhoto(null); }} onClose={() => setSelectedPhoto(null)} />}
   </main>;
 }
 
@@ -157,9 +161,10 @@ function Problems({ root, notes, uploads, filters, openBoulder, onOpenPhoto }: {
   return <><Head title="Problems" sub={`${all.length} matching lines across every area.`} /><div style={{ ...card, overflow: 'hidden' }}>{all.map((p, i) => { const meta = problemMeta(p.feature); const upload = primaryUploadForFeature(p.feature.id, uploads, notes); return <div key={p.feature.id} onClick={() => openBoulder(p.boulder.feature.id)} style={{ display: 'grid', gridTemplateColumns: '56px 64px minmax(140px,1fr) minmax(110px,150px) minmax(100px,150px) 104px', gap: 12, alignItems: 'center', padding: '11px 16px', borderTop: i ? `1px solid ${T.line}` : 'none', cursor: 'pointer' }}><FeatureThumb upload={upload} label={p.feature.title} ratio="1 / 1" onOpen={item => onOpenPhoto(item)} notes={notes} root={root} /><span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.accent }}>{meta.grade}</span><span style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{p.feature.title}</span><span style={{ fontSize: 12.5, color: T.mut }}>{p.boulder.feature.title}</span><span style={{ fontSize: 12.5, color: T.mut }}>{p.area.feature.title}</span><Badge status={meta.status} /></div>; })}{all.length === 0 && <EmptyState label="No problems match these filters." />}</div></>;
 }
 
-function Boulders({ root, notes, uploads, filters, currentAreaId, openBoulder, onOpenPhoto }: { root: MoneyCragNode | null; notes: MoneyNote[]; uploads: MoneyUpload[]; filters: ReferenceFilters; currentAreaId?: string | null; openBoulder: (id: string) => void; onOpenPhoto: OpenPhoto }) {
+function Boulders({ root, notes, uploads, filters, currentAreaId, canWrite, openBoulder, onAddBoulder, onOpenPhoto }: { root: MoneyCragNode | null; notes: MoneyNote[]; uploads: MoneyUpload[]; filters: ReferenceFilters; currentAreaId?: string | null; canWrite: boolean; openBoulder: (id: string) => void; onAddBoulder?: (parentId?: string | null) => void; onOpenPhoto: OpenPhoto }) {
   const list = useMemo(() => filterBoulders(root, notes, uploads, filters, currentAreaId), [root, notes, uploads, filters, currentAreaId]);
-  return <><Head title="Boulders" sub={`${list.length} matching blocks — tracked from scouted to established.`} /><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>{list.map(b => { const dev = b.feature.status as keyof typeof DEV.meta; const m = DEV.meta[dev] ?? DEV.meta.scouted; const upload = primaryUploadForFeature(b.feature.id, uploads, notes); return <div key={b.feature.id} onClick={() => openBoulder(b.feature.id)} style={{ ...card, overflow: 'hidden', cursor: 'pointer' }}>{upload ? <FeatureThumb upload={upload} label={b.feature.title} ratio="16 / 8" onOpen={item => onOpenPhoto(item)} notes={notes} root={root} /> : <Stripe label={`${b.feature.title.toLowerCase()} · no photo`} ratio="16 / 8" />}<div style={{ padding: 14 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><span style={{ fontFamily: T.mono, fontSize: 10, fontWeight: 700, color: m.c, background: m.bg, padding: '2px 8px', borderRadius: 5 }}>{m.short}</span><span style={{ marginLeft: 'auto', fontFamily: T.mono, fontSize: 11, color: T.mut }}>{cragProblems(b).length} problems</span></div><div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{b.feature.title}</div><div style={{ marginTop: 4, fontSize: 12, color: T.mut }}>{areaLabelForFeature(root, b.feature.id)}</div></div></div>; })}{list.length === 0 && <EmptyState label="No boulders match these filters." />}</div></>;
+  const parentId = filters.subAreaId !== 'all' ? filters.subAreaId : filters.areaId !== 'all' ? filters.areaId : currentAreaId;
+  return <><Head title="Boulders" sub={`${list.length} matching blocks — tracked from scouted to established.`} action={canWrite && onAddBoulder ? <button onClick={() => onAddBoulder(parentId)} style={btnA}><Plus size={15} />Add boulder</button> : undefined} /><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>{list.map(b => { const dev = b.feature.status as keyof typeof DEV.meta; const m = DEV.meta[dev] ?? DEV.meta.scouted; const upload = primaryUploadForFeature(b.feature.id, uploads, notes); return <div key={b.feature.id} onClick={() => openBoulder(b.feature.id)} style={{ ...card, overflow: 'hidden', cursor: 'pointer' }}>{upload ? <FeatureThumb upload={upload} label={b.feature.title} ratio="16 / 8" onOpen={item => onOpenPhoto(item)} notes={notes} root={root} /> : <Stripe label={`${b.feature.title.toLowerCase()} · no photo`} ratio="16 / 8" />}<div style={{ padding: 14 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><span style={{ fontFamily: T.mono, fontSize: 10, fontWeight: 700, color: m.c, background: m.bg, padding: '2px 8px', borderRadius: 5 }}>{m.short}</span><span style={{ marginLeft: 'auto', fontFamily: T.mono, fontSize: 11, color: T.mut }}>{cragProblems(b).length} problems</span></div><div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{b.feature.title}</div><div style={{ marginTop: 4, fontSize: 12, color: T.mut }}>{areaLabelForFeature(root, b.feature.id)}</div></div></div>; })}{list.length === 0 && <EmptyState label="No boulders match these filters." />}</div></>;
 }
 
 const trailCategoryOptions: Array<{ value: MoneyTrailCategory; label: string }> = [
@@ -208,8 +213,9 @@ function PhotoSelect({ value, onChange, label }: { value: PhotoFilter; onChange:
 function SortSelect({ value, onChange, options }: { value: SortFilter; onChange: (value: SortFilter) => void; options: Array<[SortFilter, string]> }) { return <label style={filterLabel}>Sort<select aria-label="Sort filter" value={value} onChange={e => onChange(e.target.value as SortFilter)} style={filterField}>{options.map(([option, label]) => <option key={option} value={option}>{label}</option>)}</select></label>; }
 
 function uploadsForNoteBlocks(uploads: MoneyUpload[], note: MoneyNote): MoneyUpload[] { const ids = new Set((note.blocks ?? []).map(block => block.upload_id).filter((id): id is string => Boolean(id))); return uploads.filter(upload => ids.has(upload.id) || upload.note_id === note.id); }
-function lightboxItemForUpload(upload: MoneyUpload, notes: MoneyNote[], root: MoneyCragNode | null): PhotoLightboxItem { const note = noteForUpload(upload, notes); const featureId = upload.feature_id ?? note?.target_ref ?? note?.feature_id; return { upload, title: upload.original_filename, contextLabel: contextLabelForFeature(root, featureId), noteBody: note?.body }; }
+function lightboxItemForUpload(upload: MoneyUpload, notes: MoneyNote[], root: MoneyCragNode | null): PhotoLightboxItem { const note = noteForUpload(upload, notes); const featureId = upload.feature_id ?? note?.target_ref ?? note?.feature_id; return { upload, title: upload.title || upload.original_filename, contextLabel: contextLabelForFeature(root, featureId), noteBody: note?.body }; }
 function noteForUpload(upload: MoneyUpload, notes: MoneyNote[]): MoneyNote | undefined { return notes.find(note => note.id === upload.note_id || (note.blocks ?? []).some(block => block.upload_id === upload.id)); }
+function uploadIsVisibleInNotes(upload: MoneyUpload, notes: MoneyNote[]): boolean { return !upload.note_id || notes.some(note => note.id === upload.note_id || (note.blocks ?? []).some(block => block.upload_id === upload.id)); }
 function contextLabelForFeature(root: MoneyCragNode | null, featureId?: string | null): string | undefined { if (!featureId) return undefined; const problem = flattenProblems(root).find(item => item.feature.id === featureId); if (problem) return [...pathTo(root, problem.area.feature.id).map(node => node.feature.title), problem.boulder.feature.title, problem.feature.title].join(' / '); const path = pathTo(root, featureId); if (path.length > 0) return path.map(node => node.feature.title).join(' / '); const node = findNode(root, featureId); return node?.feature.title; }
 function normalizeTrailCategory(value: unknown): MoneyTrailCategory { return value === 'approach' || value === 'trail_to_area' || value === 'trail_to_destination' ? value : 'connector'; }
 function trailCategoryLabel(category: MoneyTrailCategory): string { return trailCategoryOptions.find(option => option.value === category)?.label ?? 'Connector'; }
@@ -276,10 +282,11 @@ function filterTrails(root: MoneyCragNode | null, trails: MoneyCragNode[], filte
 }
 
 function filterPhotoItems(root: MoneyCragNode | null, notes: MoneyNote[], uploads: MoneyUpload[], filters: ReferenceFilters): PhotoLightboxItem[] {
-  return uploads.map(upload => lightboxItemForUpload(upload, notes, root)).filter(item => {
+  const visibleUploads = uploads.filter(upload => uploadIsVisibleInNotes(upload, notes));
+  return visibleUploads.map(upload => lightboxItemForUpload(upload, notes, root)).filter(item => {
     const featureId = uploadFeatureId(item.upload, notes);
     const target = targetForFeature(root, featureId) || (noteForUpload(item.upload, notes)?.target_type === 'project' ? 'project' : 'none');
-    return searchMatch(`${item.upload.original_filename} ${item.contextLabel ?? ''} ${item.noteBody ?? ''}`, filters.search)
+    return searchMatch(`${item.upload.title ?? ''} ${item.upload.original_filename} ${item.upload.comments ?? ''} ${item.contextLabel ?? ''} ${item.noteBody ?? ''}`, filters.search)
       && matchesArea(root, featureId, effectiveAreaFilterId(filters, undefined, 'photos'))
       && (filters.uploadKind === 'all' || item.upload.block_kind === filters.uploadKind)
       && (filters.target === 'all' || target === filters.target);
@@ -302,5 +309,5 @@ function filterNotes(root: MoneyCragNode | null, notes: MoneyNote[], uploads: Mo
 function sortNodes(a: MoneyCragNode, b: MoneyCragNode, filters: ReferenceFilters, root: MoneyCragNode | null): number { if (filters.sort === 'area') return areaLabelForFeature(root, a.feature.id).localeCompare(areaLabelForFeature(root, b.feature.id)) || a.feature.title.localeCompare(b.feature.title); if (filters.sort === 'status') return String(a.feature.status).localeCompare(String(b.feature.status)) || a.feature.title.localeCompare(b.feature.title); return a.feature.title.localeCompare(b.feature.title); }
 function sortProblemNodes(a: MoneyCragNode & { boulder: MoneyCragNode; area: MoneyCragNode }, b: MoneyCragNode & { boulder: MoneyCragNode; area: MoneyCragNode }, filters: ReferenceFilters): number { if (filters.sort === 'area') return a.area.feature.title.localeCompare(b.area.feature.title) || a.feature.title.localeCompare(b.feature.title); if (filters.sort === 'status') return String(a.feature.status).localeCompare(String(b.feature.status)) || a.feature.title.localeCompare(b.feature.title); return a.feature.title.localeCompare(b.feature.title); }
 function sortTrails(a: MoneyCragNode, b: MoneyCragNode, filters: ReferenceFilters, root: MoneyCragNode | null): number { if (filters.sort === 'category') return trailCategoryLabel(normalizeTrailCategory(a.feature.properties.trail_category)).localeCompare(trailCategoryLabel(normalizeTrailCategory(b.feature.properties.trail_category))) || a.feature.title.localeCompare(b.feature.title); if (filters.sort === 'destination') return trailDestinationName(a, root).localeCompare(trailDestinationName(b, root)) || a.feature.title.localeCompare(b.feature.title); return a.feature.title.localeCompare(b.feature.title); }
-function sortUploads(a: MoneyUpload, b: MoneyUpload, filters: ReferenceFilters): number { if (filters.sort === 'oldest') return Date.parse(a.created_at) - Date.parse(b.created_at); if (filters.sort === 'title') return a.original_filename.localeCompare(b.original_filename); return Date.parse(b.created_at) - Date.parse(a.created_at); }
+function sortUploads(a: MoneyUpload, b: MoneyUpload, filters: ReferenceFilters): number { if (filters.sort === 'oldest') return Date.parse(a.created_at) - Date.parse(b.created_at); if (filters.sort === 'title') return (a.title || a.original_filename).localeCompare(b.title || b.original_filename); return Date.parse(b.created_at) - Date.parse(a.created_at); }
 function trailDestinationName(trail: MoneyCragNode, root: MoneyCragNode | null): string { const destinationId = typeof trail.feature.properties.trail_destination_feature_id === 'string' ? trail.feature.properties.trail_destination_feature_id : ''; const destinationLabel = typeof trail.feature.properties.trail_destination_label === 'string' ? trail.feature.properties.trail_destination_label : ''; return destinationId ? flattenAreas(root).find(area => area.feature.id === destinationId)?.feature.title ?? '' : destinationLabel; }

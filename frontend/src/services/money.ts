@@ -22,6 +22,7 @@ import {
   MoneyUpload,
   MoneyUploadBlockKind,
   MoneyUploadDownloadURL,
+  MoneyUploadMetadataRequest,
 } from '../types/money';
 
 function cleanFilters(filters?: MoneyFeatureFilters & { bbox?: MoneyBBox; updatedAfter?: string }) {
@@ -170,6 +171,11 @@ export const moneyApi = {
     if (!response.ok) throw new Error('Failed to load image');
     const blob = await response.blob();
     return URL.createObjectURL(blob);
+  },
+
+  async updateUploadMetadata(uploadId: string, payload: MoneyUploadMetadataRequest): Promise<MoneyUpload> {
+    const response = await authApiClient.patch<MoneyUpload>(`/money/uploads/${uploadId}/metadata`, payload);
+    return response.data;
   },
 
   async deleteUpload(uploadId: string): Promise<void> {

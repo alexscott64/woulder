@@ -53,8 +53,8 @@ func TestPostgresRepositoryListUploadsByProjectFallsBackWhenAssetStorageMigratio
 		WillReturnError(&pq.Error{Code: "42703", Message: "column deleted_at does not exist"})
 	mock.ExpectQuery(regexp.QuoteMeta(queryListUploadsByProjectLegacy)).
 		WithArgs("project-1").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "project_id", "feature_id", "note_id", "original_filename", "storage_key", "content_type", "byte_size", "width", "height", "checksum_sha256", "block_kind", "metadata", "asset_kind", "storage_backend", "storage_bucket", "storage_region", "storage_etag", "storage_version_id", "visibility", "sync_status", "deleted_at", "deleted_by", "delete_requested_at", "physically_deleted_at", "uploaded_by", "created_at", "updated_at"}).
-			AddRow("upload-1", "project-1", "feature-1", "note-1", "photo.jpg", "money-creek/assets/upload-1/original/photo.jpg", "image/jpeg", int64(42), nil, nil, "checksum", "photo", []byte(`{}`), "original", "local", nil, nil, nil, nil, "private", "available", nil, nil, nil, nil, "user-1", testTime, testTime))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "project_id", "feature_id", "note_id", "original_filename", "title", "comments", "storage_key", "content_type", "byte_size", "width", "height", "checksum_sha256", "block_kind", "metadata", "asset_kind", "storage_backend", "storage_bucket", "storage_region", "storage_etag", "storage_version_id", "visibility", "sync_status", "deleted_at", "deleted_by", "delete_requested_at", "physically_deleted_at", "uploaded_by", "created_at", "updated_at"}).
+			AddRow("upload-1", "project-1", "feature-1", "note-1", "photo.jpg", nil, nil, "money-creek/assets/upload-1/original/photo.jpg", "image/jpeg", int64(42), nil, nil, "checksum", "photo", []byte(`{}`), "original", "local", nil, nil, nil, nil, "private", "available", nil, nil, nil, nil, "user-1", testTime, testTime))
 
 	uploads, err := repo.ListUploadsByProject(context.Background(), "project-1")
 	if err != nil {
@@ -82,6 +82,33 @@ func TestPostgresRepositoryDeleteUploadSoftDeletes(t *testing.T) {
 
 	if err := repo.DeleteUpload(context.Background(), "upload-1", "user-1", "developer"); err != nil {
 		t.Fatalf("DeleteUpload returned error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestPostgresRepositoryUpdateUploadMetadata(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New returned error: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewPostgresRepository(db)
+	title := "Topo overview"
+	comments := "Shows the main face."
+	mock.ExpectQuery(regexp.QuoteMeta(queryUpdateUploadMetadata)).
+		WithArgs("upload-1", &title, &comments, "user-1", "developer").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "project_id", "feature_id", "note_id", "original_filename", "title", "comments", "storage_key", "content_type", "byte_size", "width", "height", "checksum_sha256", "block_kind", "metadata", "asset_kind", "storage_backend", "storage_bucket", "storage_region", "storage_etag", "storage_version_id", "visibility", "sync_status", "deleted_at", "deleted_by", "delete_requested_at", "physically_deleted_at", "uploaded_by", "created_at", "updated_at"}).
+			AddRow("upload-1", "project-1", "feature-1", nil, "photo.jpg", title, comments, "money-creek/assets/upload-1/original/photo.jpg", "image/jpeg", int64(42), nil, nil, "checksum", "photo", []byte(`{}`), "original", "r2", nil, nil, nil, nil, "private", "available", nil, nil, nil, nil, "user-1", testTime, testTime))
+
+	upload, err := repo.UpdateUploadMetadata(context.Background(), "upload-1", &title, &comments, "user-1", "developer")
+	if err != nil {
+		t.Fatalf("UpdateUploadMetadata returned error: %v", err)
+	}
+	if upload.Title == nil || *upload.Title != title || upload.Comments == nil || *upload.Comments != comments {
+		t.Fatalf("unexpected upload metadata: %+v", upload)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet expectations: %v", err)
@@ -147,9 +174,9 @@ func TestPostgresRepositoryListUploadsByProjectLatestSchemaScansStorageAndDelete
 	deletedAt := testTime.Add(time.Hour)
 	mock.ExpectQuery(regexp.QuoteMeta(queryListUploadsByProject)).
 		WithArgs("project-1").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "project_id", "feature_id", "note_id", "original_filename", "storage_key", "content_type", "byte_size", "width", "height", "checksum_sha256", "block_kind", "metadata", "asset_kind", "storage_backend", "storage_bucket", "storage_region", "storage_etag", "storage_version_id", "visibility", "sync_status", "deleted_at", "deleted_by", "delete_requested_at", "physically_deleted_at", "uploaded_by", "created_at", "updated_at"}).
-			AddRow("upload-1", "project-1", "feature-1", "note-1", "photo.jpg", "money-creek/assets/upload-1/original/photo.jpg", "image/jpeg", int64(42), nil, nil, "checksum", "photo", []byte(`{"caption":"topo"}`), "original", "r2", bucket, region, etag, nil, "private", "available", nil, nil, nil, nil, "user-1", testTime, testTime).
-			AddRow("deleted-upload", "project-1", "feature-1", "note-1", "deleted.jpg", "money-creek/assets/deleted/original/deleted.jpg", "image/jpeg", int64(1), nil, nil, "checksum", "photo", []byte(`{}`), "original", "r2", bucket, region, etag, nil, "private", "deleted", deletedAt, "user-1", deletedAt, nil, "user-1", testTime, deletedAt))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "project_id", "feature_id", "note_id", "original_filename", "title", "comments", "storage_key", "content_type", "byte_size", "width", "height", "checksum_sha256", "block_kind", "metadata", "asset_kind", "storage_backend", "storage_bucket", "storage_region", "storage_etag", "storage_version_id", "visibility", "sync_status", "deleted_at", "deleted_by", "delete_requested_at", "physically_deleted_at", "uploaded_by", "created_at", "updated_at"}).
+			AddRow("upload-1", "project-1", "feature-1", "note-1", "photo.jpg", "Topo overview", "Shows the main face", "money-creek/assets/upload-1/original/photo.jpg", "image/jpeg", int64(42), nil, nil, "checksum", "photo", []byte(`{"caption":"topo"}`), "original", "r2", bucket, region, etag, nil, "private", "available", nil, nil, nil, nil, "user-1", testTime, testTime).
+			AddRow("deleted-upload", "project-1", "feature-1", "note-1", "deleted.jpg", nil, nil, "money-creek/assets/deleted/original/deleted.jpg", "image/jpeg", int64(1), nil, nil, "checksum", "photo", []byte(`{}`), "original", "r2", bucket, region, etag, nil, "private", "deleted", deletedAt, "user-1", deletedAt, nil, "user-1", testTime, deletedAt))
 
 	uploads, err := repo.ListUploadsByProject(context.Background(), "project-1")
 	if err != nil {

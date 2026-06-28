@@ -178,6 +178,21 @@ func TestSignedUploadDownloadURLUsesPresignerWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestUpdateUploadMetadataTrimsAndSavesTitleComments(t *testing.T) {
+	repo := &moneyUploadRepo{upload: &models.MoneyUpload{ID: "upload-1", OriginalFilename: "photo.jpg", UploadedBy: "user-1"}}
+	svc := NewMoneyService(repo, nil, 1024)
+	title := "  Topo overview  "
+	comments := "  Shows the main face.  "
+
+	upload, err := svc.UpdateUploadMetadata(context.Background(), "upload-1", models.MoneyUploadMetadataRequest{Title: &title, Comments: &comments}, models.CurrentUser{ID: "user-1", Role: models.RoleDeveloper})
+	if err != nil {
+		t.Fatalf("UpdateUploadMetadata returned error: %v", err)
+	}
+	if upload.Title == nil || *upload.Title != "Topo overview" || upload.Comments == nil || *upload.Comments != "Shows the main face." {
+		t.Fatalf("unexpected upload metadata: %+v", upload)
+	}
+}
+
 func TestDeleteUploadSoftDeletesThenMarksPhysicalDelete(t *testing.T) {
 	repo := &moneyUploadRepo{upload: &models.MoneyUpload{ID: "upload-1", StorageKey: "money-creek/assets/upload-1/original/photo.jpg", UploadedBy: "user-1"}}
 	store := &captureStorage{}
@@ -188,6 +203,37 @@ func TestDeleteUploadSoftDeletesThenMarksPhysicalDelete(t *testing.T) {
 	}
 	if !repo.deleted || !repo.markedPhysical || store.deletedKey != repo.upload.StorageKey {
 		t.Fatalf("expected soft and physical delete markers, repo=%+v store=%+v", repo, store)
+	}
+}
+
+func TestDeleteNoteDeletesOnlyUploadsOwnedByThatNote(t *testing.T) {
+	noteID := "note-1"
+	sharedUploadID := "shared-upload"
+	noteOnlyUploadID := "note-only-upload"
+	directUploadID := "direct-upload"
+	repo := &moneyUploadRepo{
+		note:  &models.MoneyNote{ID: noteID, ProjectID: "project-1", Blocks: json.RawMessage(`[{"kind":"photo","upload_id":"shared-upload"},{"kind":"photo","upload_id":"note-only-upload"}]`)},
+		notes: []models.MoneyNote{{ID: "note-2", ProjectID: "project-1", Blocks: json.RawMessage(`[{"kind":"photo","upload_id":"shared-upload"}]`)}},
+		uploads: []models.MoneyUpload{
+			{ID: sharedUploadID, ProjectID: "project-1", StorageKey: "money-creek/shared.jpg", UploadedBy: "user-1"},
+			{ID: noteOnlyUploadID, ProjectID: "project-1", StorageKey: "money-creek/note-only.jpg", UploadedBy: "user-1"},
+			{ID: directUploadID, ProjectID: "project-1", NoteID: &noteID, StorageKey: "money-creek/direct.jpg", UploadedBy: "user-1"},
+		},
+	}
+	store := &captureStorage{}
+	svc := NewMoneyService(repo, store, 1024)
+
+	if err := svc.DeleteNote(context.Background(), noteID, models.CurrentUser{ID: "user-1", Role: models.RoleDeveloper}); err != nil {
+		t.Fatalf("DeleteNote returned error: %v", err)
+	}
+	if !repo.noteDeleted {
+		t.Fatal("expected note to be soft deleted")
+	}
+	if got := strings.Join(repo.deletedUploadIDs, ","); got != "note-only-upload,direct-upload" {
+		t.Fatalf("expected only note-owned uploads to be deleted, got %q", got)
+	}
+	if got := strings.Join(store.deletedKeys, ","); got != "money-creek/note-only.jpg,money-creek/direct.jpg" {
+		t.Fatalf("expected note-owned storage objects to be deleted, got %q", got)
 	}
 }
 
@@ -321,13 +367,18 @@ func TestDeleteTrailArchivesTrail(t *testing.T) {
 func moneyStrPtr(v string) *string { return &v }
 
 type moneyUploadRepo struct {
-	feature        *models.MoneyFeature
-	upload         *models.MoneyUpload
-	created        *models.MoneyUpload
-	deleted        bool
-	markedPhysical bool
-	archivedID     string
-	archivedBy     string
+	feature          *models.MoneyFeature
+	note             *models.MoneyNote
+	notes            []models.MoneyNote
+	upload           *models.MoneyUpload
+	uploads          []models.MoneyUpload
+	created          *models.MoneyUpload
+	deleted          bool
+	deletedUploadIDs []string
+	markedPhysical   bool
+	archivedID       string
+	archivedBy       string
+	noteDeleted      bool
 }
 
 func (r *moneyUploadRepo) GetProjectBySlug(ctx context.Context, slug string) (*models.MoneyProject, error) {
@@ -374,7 +425,10 @@ func (r *moneyUploadRepo) ListNotes(ctx context.Context, featureID string) ([]mo
 	return nil, nil
 }
 func (r *moneyUploadRepo) ListNotesByProject(ctx context.Context, projectID string) ([]models.MoneyNote, error) {
-	return nil, nil
+	return r.notes, nil
+}
+func (r *moneyUploadRepo) GetNote(ctx context.Context, noteID string) (*models.MoneyNote, error) {
+	return r.note, nil
 }
 func (r *moneyUploadRepo) CreateNote(ctx context.Context, note models.MoneyNote) (*models.MoneyNote, error) {
 	return nil, nil
@@ -383,6 +437,7 @@ func (r *moneyUploadRepo) UpdateNote(ctx context.Context, noteID, body, visibili
 	return &models.MoneyNote{ID: noteID, Body: body, Visibility: visibility, Tags: tags, Blocks: blocks, UpdatedBy: userID}, nil
 }
 func (r *moneyUploadRepo) DeleteNote(ctx context.Context, noteID, userID, role string) error {
+	r.noteDeleted = true
 	return nil
 }
 func (r *moneyUploadRepo) CreateUpload(ctx context.Context, upload models.MoneyUpload) (*models.MoneyUpload, error) {
@@ -396,15 +451,24 @@ func (r *moneyUploadRepo) ListUploadsByFeature(ctx context.Context, featureID st
 	return nil, nil
 }
 func (r *moneyUploadRepo) ListUploadsByProject(ctx context.Context, projectID string) ([]models.MoneyUpload, error) {
-	return nil, nil
+	return r.uploads, nil
 }
 func (r *moneyUploadRepo) DeleteUpload(ctx context.Context, uploadID, userID, role string) error {
 	r.deleted = true
+	r.deletedUploadIDs = append(r.deletedUploadIDs, uploadID)
 	return nil
 }
 func (r *moneyUploadRepo) MarkUploadPhysicallyDeleted(ctx context.Context, uploadID string) error {
 	r.markedPhysical = true
 	return nil
+}
+func (r *moneyUploadRepo) UpdateUploadMetadata(ctx context.Context, uploadID string, title, comments *string, userID, role string) (*models.MoneyUpload, error) {
+	if r.upload == nil {
+		r.upload = &models.MoneyUpload{ID: uploadID}
+	}
+	r.upload.Title = title
+	r.upload.Comments = comments
+	return r.upload, nil
 }
 func (r *moneyUploadRepo) FeatureNoteCounts(ctx context.Context, projectID string) (map[string]int, error) {
 	return nil, nil
@@ -416,6 +480,7 @@ func (r *moneyUploadRepo) PrimaryUploads(ctx context.Context, projectID string) 
 type captureStorage struct {
 	savedKey             string
 	deletedKey           string
+	deletedKeys          []string
 	signedURL            string
 	presignedKey         string
 	presignedFilename    string
@@ -433,6 +498,7 @@ func (s *captureStorage) Open(ctx context.Context, key string) (io.ReadCloser, e
 }
 func (s *captureStorage) Delete(ctx context.Context, key string) error {
 	s.deletedKey = key
+	s.deletedKeys = append(s.deletedKeys, key)
 	return nil
 }
 func (s *captureStorage) SignedGetURL(ctx context.Context, key, filename, contentType string, ttl time.Duration) (string, error) {

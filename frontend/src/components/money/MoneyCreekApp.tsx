@@ -3,15 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Camera, FileText, Loader2, LogOut, Map, Menu, Mountain, Plus, Route, Search, Trash2 } from 'lucide-react';
 import { AuthProvider, useAuth } from '../../contexts/AuthContext';
 import { moneyApi } from '../../services/money';
-import { MoneyArchiveMode, MoneyCragNode, MoneyDevStatus, MoneyNote, MoneyNoteBlock, MoneyNoteTargetType, MoneyPosition, MoneyProblemStatus, MoneyTrailCategory } from '../../types/money';
+import { MoneyArchiveMode, MoneyCragNode, MoneyDevStatus, MoneyFeature, MoneyNote, MoneyNoteBlock, MoneyNoteTargetType, MoneyPosition, MoneyProblemStatus, MoneyTrailCategory, MoneyUpload } from '../../types/money';
 import { LoginScreen } from './LoginScreen';
 import { ContentView, ReferenceFilterRail, defaultReferenceFilters, isReferenceFilterView } from './reference/ContentViews';
 import { CragMap } from './reference/CragMap';
 import { DetailPanel } from './reference/DetailPanel';
-import { cragBoulders, cragChildren, cragProblems, findNode, flattenAreas, parentArea, pathTo, polygonGeoJSON } from './reference/model';
+import { AddBoulderModal, AddBoulderPayload } from './reference/AddBoulderModal';
+import { parseCoordinateSearch } from './reference/coordinates';
+import { cragBoulders, cragChildren, cragProblems, findNode, flattenAreas, parentArea, pathTo, pointGeoJSON, polygonGeoJSON } from './reference/model';
 import { NoteComposer, NoteComposerPayload } from './reference/NoteComposer';
 import { T } from './reference/theme';
 import { ParsedTrailImport } from './reference/trailImport';
+import { TopoOverlay, upsertTopoOverlay } from './reference/topoOverlay';
 
 const PROJECT_SLUG = 'money-creek';
 type View = 'map' | 'problems' | 'boulders' | 'trails' | 'photos' | 'notes' | 'trash';
@@ -47,6 +50,10 @@ function MoneyCreekWorkspace() {
   const [deleteChoice, setDeleteChoice] = useState<MoneyCragNode | null>(null);
   const [layers, setLayers] = useState<LayersState>({ base: 'stylized', roads: true, water: true, contours: true, trails: true, areas: {}, dev: { scouted: true, 'needs-work': true, cleaning: true, established: true } });
   const [referenceFilters, setReferenceFilters] = useState(defaultReferenceFilters);
+  const [mapSearch, setMapSearch] = useState('');
+  const [mapSearchError, setMapSearchError] = useState<string | null>(null);
+  const [goToPoint, setGoToPoint] = useState<{ position: MoneyPosition; nonce: number } | null>(null);
+  const [addBoulder, setAddBoulder] = useState<{ position?: MoneyPosition | null; parentId?: string | null } | null>(null);
 
   const projectQuery = useQuery({ queryKey: ['money-project', PROJECT_SLUG], queryFn: () => moneyApi.getProject(PROJECT_SLUG), enabled: isAuthenticated, staleTime: 10 * 60 * 1000 });
   const projectId = projectQuery.data?.project.id;
@@ -73,38 +80,46 @@ function MoneyCreekWorkspace() {
     void queryClient.invalidateQueries({ queryKey: ['money-trash', projectId] });
   };
   const createArea = useMutation({ mutationFn: ({ name, parentId, points }: { name: string; parentId?: string | null; points: MoneyPosition[] }) => moneyApi.createArea(projectId!, { parent_feature_id: parentId, title: name, description: `Freshly outlined — add sub-areas or boulders to fill it in.`, geojson: polygonGeoJSON(points), properties: { kind: 'Boulders', aspect: 'newly mapped' } }), onSuccess: f => { invalidate(); setCurrentId(f.id); } });
-  const createBoulder = useMutation({ mutationFn: ({ name, parentId, points }: { name: string; parentId: string; points: MoneyPosition[] }) => moneyApi.createBoulder(projectId!, { parent_feature_id: parentId, title: name, description: null, dev_status: 'scouted', geojson: polygonGeoJSON(points), properties: {} }), onSuccess: f => { invalidate(); setSelectedBoulderId(f.id); } });
+  const createBoulder = useMutation({ mutationFn: ({ name, parentId, points, position, devStatus }: { name: string; parentId: string; points?: MoneyPosition[]; position?: MoneyPosition; devStatus?: MoneyDevStatus }) => moneyApi.createBoulder(projectId!, { parent_feature_id: parentId, title: name, description: null, dev_status: devStatus ?? 'scouted', geojson: position ? pointGeoJSON(position) : polygonGeoJSON(points ?? []), properties: position ? { center: position, source: 'coordinate-add' } : {} }), onSuccess: f => { invalidate(); setSelectedBoulderId(f.id); setCurrentId(f.parent_feature_id ?? currentId); setView('map'); setAddBoulder(null); setGoToPoint(null); } });
   const updateDev = useMutation({ mutationFn: ({ id, dev }: { id: string; dev: MoneyDevStatus }) => moneyApi.updateBoulderStatus(id, { dev_status: dev }), onSuccess: invalidate });
   const renameBoulder = useMutation({ mutationFn: ({ boulder, title }: { boulder: MoneyCragNode; title: string }) => moneyApi.updateFeature(boulder.feature.id, { parent_feature_id: boulder.feature.parent_feature_id ?? null, feature_type: 'boulder', title, description: boulder.feature.description ?? null, status: boulder.feature.status, geojson: boulder.feature.geojson, style: boulder.feature.style ?? {}, properties: boulder.feature.properties ?? {}, sort_order: boulder.feature.sort_order }), onSuccess: feature => { invalidate(); setSelectedBoulderId(feature.id); } });
   const updateAreaGeometry = useMutation({ mutationFn: ({ id, points }: { id: string; points: MoneyPosition[] }) => moneyApi.updateAreaGeometry(id, { geojson: polygonGeoJSON(points) }), onSuccess: () => { invalidate(); setMode('view'); setLayers(l => ({ ...l, base: 'stylized' })); } });
   const createProblem = useMutation({ mutationFn: ({ boulderId, p }: { boulderId: string; p: { name: string; grade: string; status: MoneyProblemStatus; stars: number; fa?: string | null; types: string[] } }) => moneyApi.createProblem(projectId!, { boulder_id: boulderId, ...p }), onSuccess: invalidate });
   const createNote = useMutation({ mutationFn: async (payload: NoteComposerPayload) => {
     const featureId = isFeatureNoteTarget(payload.target_type) ? payload.target_ref : undefined;
-    const localPreviewBlocks = payload.blocks.filter(block => !block.url?.startsWith('blob:'));
-    const uploaded: MoneyNoteBlock[] = [];
+    const uploaded = new globalThis.Map<string, MoneyNoteBlock>();
     for (const item of payload.files) {
       const u = await moneyApi.uploadImage(projectId!, item.file, { featureId, blockKind: item.kind });
-      uploaded.push({ kind: item.kind, upload_id: u.id, name: u.original_filename });
+      uploaded.set(item.blockKey, { kind: item.kind, upload_id: u.id, name: u.original_filename });
     }
-    return moneyApi.createProjectNote(projectId!, { body: payload.body, visibility: 'team', target_type: payload.target_type, target_ref: payload.target_ref, tags: payload.tags, blocks: [...localPreviewBlocks, ...uploaded] });
+    return moneyApi.createProjectNote(projectId!, { body: payload.body, visibility: 'team', target_type: payload.target_type, target_ref: payload.target_ref, tags: payload.tags, blocks: resolveSubmittedBlocks(payload.blocks, uploaded) });
   }, onSuccess: () => { invalidate(); setComposer(null); if (mobile) setSheetExpanded(true); } });
   const updateNote = useMutation({ mutationFn: async ({ note, payload }: { note: MoneyNote; payload: NoteComposerPayload }) => {
     const featureId = isFeatureNoteTarget(payload.target_type) ? payload.target_ref : undefined;
-    const localPreviewBlocks = payload.blocks.filter(block => !block.url?.startsWith('blob:'));
-    const uploaded: MoneyNoteBlock[] = [];
+    const uploaded = new globalThis.Map<string, MoneyNoteBlock>();
     for (const item of payload.files) {
       const u = await moneyApi.uploadImage(projectId!, item.file, { featureId, noteId: note.id, blockKind: item.kind });
-      uploaded.push({ kind: item.kind, upload_id: u.id, name: u.original_filename });
+      uploaded.set(item.blockKey, { kind: item.kind, upload_id: u.id, name: u.original_filename });
     }
-    return moneyApi.updateNote(note.id, { body: payload.body, visibility: note.visibility ?? 'team', target_type: note.target_type, target_ref: note.target_ref ?? note.feature_id, tags: payload.tags, blocks: [...localPreviewBlocks, ...uploaded] });
+    return moneyApi.updateNote(note.id, { body: payload.body, visibility: note.visibility ?? 'team', target_type: note.target_type, target_ref: note.target_ref ?? note.feature_id, tags: payload.tags, blocks: resolveSubmittedBlocks(payload.blocks, uploaded) });
   }, onSuccess: () => { invalidate(); setComposer(null); } });
   const deleteNote = useMutation({ mutationFn: (noteId: string) => moneyApi.deleteNote(noteId), onSuccess: invalidate });
   const deleteUpload = useMutation({ mutationFn: (uploadId: string) => moneyApi.deleteUpload(uploadId), onSuccess: invalidate });
+  const updateUploadMetadata = useMutation({ mutationFn: ({ upload, title, comments }: { upload: MoneyUpload; title: string | null; comments: string | null }) => moneyApi.updateUploadMetadata(upload.id, { title, comments }), onSuccess: invalidate });
+  const updateNoteAndDeleteRemovedUploads = useMutation({ mutationFn: async ({ note, payload }: { note: MoneyNote; payload: NoteComposerPayload }) => {
+    const before = uploadIdsFromBlocks(note.blocks ?? []);
+    const next = await updateNote.mutateAsync({ note, payload });
+    const after = uploadIdsFromBlocks(payload.blocks);
+    const removed = [...before].filter(id => !after.has(id));
+    await Promise.all(removed.map(id => moneyApi.deleteUpload(id)));
+    return next;
+  }, onSuccess: invalidate });
   const deleteArea = useMutation({ mutationFn: ({ id, mode }: { id: string; mode: MoneyArchiveMode }) => moneyApi.archiveFeature(id, mode), onSuccess: (_r, vars) => { const parent = parentArea(root, vars.id); invalidate(); setCurrentId(parent?.feature.id ?? root?.feature.id ?? null); setSelectedBoulderId(null); setSelectedTrailId(null); setDeleteChoice(null); setView('map'); } });
   const moveArea = useMutation({ mutationFn: ({ id, parentId, sortOrder }: { id: string; parentId: string | null; sortOrder?: number }) => moneyApi.moveFeatureParent(id, { parent_feature_id: parentId, sort_order: sortOrder }), onSuccess: (_f, vars) => { invalidate(); setCurrentId(vars.id); setSelectedBoulderId(null); setSelectedTrailId(null); setView('map'); } });
   const restoreArea = useMutation({ mutationFn: (id: string) => moneyApi.restoreFeature(id), onSuccess: invalidate });
   const updateTrail = useMutation({ mutationFn: ({ trail, updates }: { trail: MoneyCragNode; updates: TrailUpdate }) => moneyApi.updateFeature(trail.feature.id, { feature_type: 'trail', title: updates.title, description: trail.feature.description ?? null, status: trail.feature.status, geojson: trail.feature.geojson, style: trail.feature.style ?? {}, properties: { ...trail.feature.properties, trail_category: updates.category, trail_destination_feature_id: updates.destinationFeatureId || undefined, trail_destination_label: updates.destinationLabel || undefined }, sort_order: trail.feature.sort_order }), onSuccess: feature => { invalidate(); setSelectedTrailId(feature.id); setView('map'); } });
   const deleteTrail = useMutation({ mutationFn: (trail: MoneyCragNode) => moneyApi.archiveFeature(trail.feature.id), onSuccess: () => { invalidate(); setSelectedTrailId(null); setView('map'); } });
+  const updateTopo = useMutation({ mutationFn: ({ problem, overlay }: { problem: MoneyFeature; overlay: TopoOverlay }) => moneyApi.updateFeature(problem.id, { parent_feature_id: problem.parent_feature_id ?? null, feature_type: 'problem', title: problem.title, description: problem.description ?? null, status: problem.status, geojson: problem.geojson, style: problem.style ?? {}, properties: upsertTopoOverlay(problem, overlay), sort_order: problem.sort_order }), onSuccess: invalidate });
   const createTrail = useMutation({ mutationFn: (trail: ParsedTrailImport & { filename: string }) => moneyApi.createFeature(projectId!, { feature_type: 'trail', title: trail.title, description: null, status: 'active', geojson: trail.geojson, style: {}, properties: { trail_category: 'connector', source: trail.sourceFormat, source_filename: trail.filename, imported_point_count: trail.pointCount }, sort_order: (cragQuery.data?.trails?.length ?? 0) + 1 }), onSuccess: feature => { invalidate(); setSelectedTrailId(feature.id); setView('map'); } });
 
   if (isBootstrapping) return <div className="flex min-h-screen items-center justify-center bg-[#17110F] text-[#EEE1D3]"><Loader2 className="mr-3 h-6 w-6 animate-spin text-[#AEB974]" />Restoring Money Creek session</div>;
@@ -116,7 +131,7 @@ function MoneyCreekWorkspace() {
   const selectBoulder = (id: string | null) => { const parent = parentArea(root, id); if (parent) setCurrentId(parent.feature.id); setSelectedBoulderId(id); setSelectedTrailId(null); if (mobile) setSheetExpanded(Boolean(id)); };
   const selectTrail = (id: string | null) => { setSelectedTrailId(id); setSelectedBoulderId(null); setView('map'); if (mobile) setSheetExpanded(Boolean(id)); };
   const openBoulder = (id: string) => { const parent = parentArea(root, id); if (parent) setCurrentId(parent.feature.id); setSelectedBoulderId(id); setSelectedTrailId(null); setView('map'); if (mobile) setSheetExpanded(true); };
-  const startCreate = (kind: Extract<Mode, 'create-area' | 'create-boulder'>) => { setMode(kind); setView('map'); setAddOpen(false); setDrawer(false); setSelectedBoulderId(null); setSelectedTrailId(null); setLayers(l => ({ ...l, base: 'satellite' })); };
+  const startCreate = (kind: Extract<Mode, 'create-area' | 'create-boulder'>) => { if (kind === 'create-boulder') { openAddBoulderModal(null, area.feature.id); return; } setMode(kind); setView('map'); setAddOpen(false); setDrawer(false); setSelectedBoulderId(null); setSelectedTrailId(null); setLayers(l => ({ ...l, base: 'satellite' })); };
   const saveCreate = (name: string) => { if (!pending || !area) return; if (pending.kind === 'create-area') createArea.mutate({ name, parentId: area.feature.id, points: pending.points }); if (pending.kind === 'create-boulder') createBoulder.mutate({ name, parentId: area.feature.id, points: pending.points }); setPending(null); setMode('view'); setLayers(l => ({ ...l, base: 'stylized' })); };
   const startEditArea = () => { if (!canEditCurrentArea) return; setMode('edit-area'); setView('map'); setSheetExpanded(false); setSelectedBoulderId(null); setSelectedTrailId(null); setLayers(l => ({ ...l, base: 'satellite', areas: { ...l.areas, [area.feature.id]: true } })); };
   const saveAreaEdit = (points: MoneyPosition[]) => updateAreaGeometry.mutate({ id: area.feature.id, points });
@@ -129,6 +144,16 @@ function MoneyCreekWorkspace() {
     const parent = parentArea(root, area.feature.id);
     if (parent) enter(parent.feature.id);
   };
+  const openAddBoulderModal = (position?: MoneyPosition | null, parentId?: string | null) => { setAddOpen(false); setDrawer(false); setMode('view'); setSelectedBoulderId(null); setSelectedTrailId(null); setAddBoulder({ position, parentId: parentId ?? area.feature.id }); };
+  const saveBoulderFromModal = (payload: AddBoulderPayload) => createBoulder.mutate({ name: payload.name, parentId: payload.parentId, position: payload.position, devStatus: payload.devStatus });
+  const submitMapSearch = (event: React.FormEvent) => {
+    event.preventDefault();
+    const parsed = parseCoordinateSearch(mapSearch);
+    if (!parsed) { setMapSearchError('Enter coordinates like 47.6997, -121.4703.'); return; }
+    setMapSearchError(null);
+    setView('map');
+    setGoToPoint({ position: parsed.position, nonce: Date.now() });
+  };
   const breadcrumbs = pathTo(root, area.feature.id);
   const canGoBack = Boolean(selectedTrailId || selectedBoulderId || parentArea(root, area.feature.id));
 
@@ -136,22 +161,23 @@ function MoneyCreekWorkspace() {
     <header style={{ flexShrink: 0, height: 54, background: T.surf, borderBottom: `1px solid ${T.line}`, display: 'flex', alignItems: 'center', padding: '0 12px', gap: 10, zIndex: 40 }}>
       {mobile ? <button onClick={() => setDrawer(true)} style={iconBtn}><Menu size={20} /></button> : <Logo />}
       {canGoBack && <button onClick={goBack} aria-label="Back to parent" style={{ ...iconBtn, border: `1px solid ${T.line2}`, borderRadius: 8, background: T.inset }}><ArrowLeft size={17} /></button>}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0, overflow: 'hidden' }}>{breadcrumbs.slice(mobile ? -2 : 0).map((n, i, arr) => <span key={n.feature.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{i > 0 && <span style={{ color: T.faint, fontFamily: T.mono }}>/</span>}<button onClick={() => i < arr.length - 1 && enter(n.feature.id)} style={{ border: 'none', background: 'transparent', color: i === arr.length - 1 && !selectedBoulder && !selectedTrail ? T.ink : T.mut, fontSize: i === arr.length - 1 ? 15 : 13.5, fontWeight: i === arr.length - 1 ? 800 : 600, cursor: i === arr.length - 1 ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>{n.feature.title}</button></span>)}{selectedBoulder && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ color: T.faint, fontFamily: T.mono }}>/</span><button onClick={() => null} style={{ border: 'none', background: 'transparent', color: T.ink, fontSize: 15, fontWeight: 800, cursor: 'default', whiteSpace: 'nowrap' }}>{selectedBoulder.feature.title}</button></span>}{selectedTrail && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ color: T.faint, fontFamily: T.mono }}>/</span><button onClick={() => null} style={{ border: 'none', background: 'transparent', color: T.ink, fontSize: 15, fontWeight: 800, cursor: 'default', whiteSpace: 'nowrap' }}>{selectedTrail.feature.title}</button></span>}</div>
-      {!mobile && <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.inset, border: `1px solid ${T.line}`, borderRadius: 9, padding: '7px 11px', width: 190, color: T.mut }}><Search size={16} /><input placeholder="Search" style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', color: T.ink, fontFamily: T.mono, fontSize: 12 }} /></div>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0, overflow: 'hidden' }}>{breadcrumbs.slice(mobile ? -2 : 0).map((n, i, arr) => { const isCurrentArea = !selectedBoulder && !selectedTrail && i === arr.length - 1; return <span key={n.feature.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{i > 0 && <span style={{ color: T.faint, fontFamily: T.mono }}>/</span>}<button aria-label={`Go to ${n.feature.title}`} onClick={() => enter(n.feature.id)} style={{ border: 'none', background: 'transparent', color: isCurrentArea ? T.ink : T.mut, fontSize: isCurrentArea ? 15 : 13.5, fontWeight: isCurrentArea ? 800 : 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>{n.feature.title}</button></span>; })}{selectedBoulder && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ color: T.faint, fontFamily: T.mono }}>/</span><button aria-label={`Go to ${selectedBoulder.feature.title}`} onClick={() => selectBoulder(selectedBoulder.feature.id)} style={{ border: 'none', background: 'transparent', color: T.ink, fontSize: 15, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>{selectedBoulder.feature.title}</button></span>}{selectedTrail && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ color: T.faint, fontFamily: T.mono }}>/</span><button aria-label={`Go to ${selectedTrail.feature.title}`} onClick={() => selectTrail(selectedTrail.feature.id)} style={{ border: 'none', background: 'transparent', color: T.ink, fontSize: 15, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>{selectedTrail.feature.title}</button></span>}</div>
+      {!mobile && <form onSubmit={submitMapSearch} title={mapSearchError ?? 'Search by coordinates'} style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.inset, border: `1px solid ${mapSearchError ? '#B65B4D' : T.line}`, borderRadius: 9, padding: '7px 11px', width: 230, color: T.mut }}><Search size={16} /><input aria-label="Map search" value={mapSearch} onChange={e => { setMapSearch(e.target.value); setMapSearchError(null); }} placeholder="lat, lng" style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', color: T.ink, fontFamily: T.mono, fontSize: 12 }} /></form>}
       <button onClick={() => void logout()} title={user?.email} style={iconBtn}><LogOut size={17} /></button>
       {canWrite && <div style={{ position: 'relative' }}><button onClick={() => setAddOpen(!addOpen)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: T.onAccent, background: T.accent, border: 'none', borderRadius: 9, padding: mobile ? '9px 12px' : '9px 14px', minHeight: 40, cursor: 'pointer' }}><Plus size={16} />{!mobile && ' Add'}</button>{addOpen && <AddMenu startCreate={startCreate} openComposer={kind => setComposer({ kind })} />}</div>}
     </header>
     <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
       {!mobile && <nav style={{ width: 238, flexShrink: 0, background: T.surf, borderRight: `1px solid ${T.line}`, padding: '12px 10px', overflowY: 'auto' }}><WorkspaceNav view={view} setView={v => setView(v)} root={root} trails={cragQuery.data?.trails ?? []} notes={notes} trashCount={trashQuery.data?.items.length ?? 0} /><div style={{ borderTop: `1px solid ${T.line}`, margin: '4px 4px 10px' }} />{isReferenceFilterView(view) ? <ReferenceFilterRail view={view} root={root} trails={cragQuery.data?.trails ?? []} notes={notes} uploads={uploads} filters={referenceFilters} setFilters={setReferenceFilters} currentAreaId={area.feature.id} /> : <TreeRail root={root} currentId={area.feature.id} canWrite={canWrite} enter={enter} onMove={moveAreaToParent} />}</nav>}
       {view === 'map' ? <>
-        <div style={{ flex: 1, position: 'relative', minWidth: 0 }}><CragMap root={root as MoneyCragNode} area={area} trails={cragQuery.data?.trails ?? []} selectedBoulderId={selectedBoulderId} selectedTrailId={selectedTrailId} mode={mode} layers={layers} setLayers={setLayers} mobile={mobile} onEnter={enter} onSelectBoulder={selectBoulder} onSelectTrail={selectTrail} onCreateDone={points => setPending({ kind: mode === 'create-boulder' ? 'create-boulder' : 'create-area', points })} onCreateCancel={() => { setMode('view'); setLayers(l => ({ ...l, base: 'stylized' })); }} onEditSave={saveAreaEdit} onEditCancel={cancelAreaEdit} /></div>
-        {mode === 'view' && <DetailPanel root={root} area={area} selectedBoulder={selectedBoulder as MoneyCragNode | null} selectedTrail={selectedTrail} notes={notes} uploads={uploads} tab={tab} setTab={setTab} mobile={mobile} expanded={sheetExpanded} setExpanded={setSheetExpanded} canWrite={canWrite} canEditArea={canEditCurrentArea} onEditArea={startEditArea} onDeleteArea={confirmDeleteArea} onEnter={enter} onSelectBoulder={id => selectBoulder(id)} onNewArea={() => startCreate('create-area')} onNewBoulder={() => startCreate('create-boulder')} onSetDev={(id, dev) => updateDev.mutate({ id, dev })} onRenameBoulder={(boulder, title) => renameBoulder.mutate({ boulder, title })} onAddProblem={(boulderId, p) => createProblem.mutate({ boulderId, p })} onOpenComposer={kind => setComposer({ kind })} onEditNote={note => setComposer({ note })} onDeleteNote={note => deleteNote.mutate(note.id)} onDeleteUpload={upload => deleteUpload.mutate(upload.id)} onUpdateTrail={(trail, updates) => updateTrail.mutate({ trail, updates })} onDeleteTrail={trail => deleteTrail.mutate(trail)} />}
-      </> : <ContentView view={view} root={root} trails={cragQuery.data?.trails ?? []} notes={notes} uploads={uploads} trash={trashQuery.data?.items ?? []} canWrite={canWrite} mobile={mobile} filters={referenceFilters} setFilters={setReferenceFilters} currentAreaId={area.feature.id} openBoulder={openBoulder} selectTrail={selectTrail} onOpenComposer={kind => setComposer({ kind })} onEditNote={note => setComposer({ note })} onDeleteNote={note => deleteNote.mutate(note.id)} onDeleteUpload={upload => deleteUpload.mutate(upload.id)} onRestore={id => restoreArea.mutate(id)} onCreateTrail={trail => createTrail.mutate(trail)} onUpdateTrail={(trail, updates) => updateTrail.mutate({ trail, updates })} />}
+        <div style={{ flex: 1, position: 'relative', minWidth: 0 }}><CragMap root={root as MoneyCragNode} area={area} trails={cragQuery.data?.trails ?? []} selectedBoulderId={selectedBoulderId} selectedTrailId={selectedTrailId} mode={mode} layers={layers} setLayers={setLayers} mobile={mobile} goToPoint={goToPoint} onEnter={enter} onSelectBoulder={selectBoulder} onSelectTrail={selectTrail} onAddBoulderAt={(position, parentId) => openAddBoulderModal(position, parentId)} onCreateDone={points => setPending({ kind: mode === 'create-boulder' ? 'create-boulder' : 'create-area', points })} onCreateCancel={() => { setMode('view'); setLayers(l => ({ ...l, base: 'stylized' })); }} onEditSave={saveAreaEdit} onEditCancel={cancelAreaEdit} /></div>
+        {mode === 'view' && <DetailPanel root={root} area={area} selectedBoulder={selectedBoulder as MoneyCragNode | null} selectedTrail={selectedTrail} notes={notes} uploads={uploads} tab={tab} setTab={setTab} mobile={mobile} expanded={sheetExpanded} setExpanded={setSheetExpanded} canWrite={canWrite} canEditArea={canEditCurrentArea} onEditArea={startEditArea} onDeleteArea={confirmDeleteArea} onEnter={enter} onSelectBoulder={id => selectBoulder(id)} onNewArea={() => startCreate('create-area')} onNewBoulder={() => startCreate('create-boulder')} onSetDev={(id, dev) => updateDev.mutate({ id, dev })} onRenameBoulder={(boulder, title) => renameBoulder.mutate({ boulder, title })} onAddProblem={(boulderId, p) => createProblem.mutate({ boulderId, p })} onOpenComposer={kind => setComposer({ kind })} onEditNote={note => setComposer({ note })} onDeleteNote={note => deleteNote.mutate(note.id)} onDeleteUpload={upload => deleteUpload.mutate(upload.id)} onUpdateUploadMetadata={(upload, metadata) => updateUploadMetadata.mutateAsync({ upload, ...metadata })} onSaveTopo={(problem, overlay) => updateTopo.mutate({ problem: problem.feature, overlay })} onUpdateTrail={(trail, updates) => updateTrail.mutate({ trail, updates })} onDeleteTrail={trail => deleteTrail.mutate(trail)} />}
+      </> : <ContentView view={view} root={root} trails={cragQuery.data?.trails ?? []} notes={notes} uploads={uploads} trash={trashQuery.data?.items ?? []} canWrite={canWrite} mobile={mobile} filters={referenceFilters} setFilters={setReferenceFilters} currentAreaId={area.feature.id} openBoulder={openBoulder} selectTrail={selectTrail} onAddBoulder={parentId => openAddBoulderModal(null, parentId ?? area.feature.id)} onOpenComposer={kind => setComposer({ kind })} onEditNote={note => setComposer({ note })} onDeleteNote={note => deleteNote.mutate(note.id)} onDeleteUpload={upload => deleteUpload.mutate(upload.id)} onUpdateUploadMetadata={(upload, metadata) => updateUploadMetadata.mutateAsync({ upload, ...metadata })} onRestore={id => restoreArea.mutate(id)} onCreateTrail={trail => createTrail.mutate(trail)} onUpdateTrail={(trail, updates) => updateTrail.mutate({ trail, updates })} onSaveTopo={(problem, overlay) => updateTopo.mutate({ problem: problem.feature, overlay })} />}
     </div>
     {mobile && drawer && <div onClick={() => setDrawer(false)} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(8,5,4,0.55)' }}><div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: 290, background: T.surf, borderRight: `1px solid ${T.line2}`, padding: '14px 10px', overflowY: 'auto' }}><div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 8px 14px' }}><Logo /><b>Money Creek</b></div><WorkspaceNav view={view} setView={v => { setView(v); setDrawer(false); }} root={root} trails={cragQuery.data?.trails ?? []} notes={notes} trashCount={trashQuery.data?.items.length ?? 0} /><div style={{ borderTop: `1px solid ${T.line}`, margin: '4px 4px 10px' }} />{isReferenceFilterView(view) ? <ReferenceFilterRail view={view} root={root} trails={cragQuery.data?.trails ?? []} notes={notes} uploads={uploads} filters={referenceFilters} setFilters={setReferenceFilters} currentAreaId={area.feature.id} /> : <TreeRail root={root} currentId={area.feature.id} canWrite={canWrite} enter={id => { enter(id); setDrawer(false); }} onMove={moveAreaToParent} />}</div></div>}
     {deleteChoice && <DeleteAreaDialog area={deleteChoice} onCancel={() => setDeleteChoice(null)} onDelete={mode => deleteArea.mutate({ id: deleteChoice.feature.id, mode })} />}
     {pending && <NameSheet kind={pending.kind} parentName={area.feature.title} onSave={saveCreate} onCancel={() => setPending(null)} />}
-    {composer && <NoteComposer root={root} area={area} boulder={selectedBoulder as MoneyCragNode | null} initialBlock={composer.kind} initialNote={composer.note} uploads={uploads} mobile={mobile} onClose={() => setComposer(null)} onSubmit={payload => composer.note ? updateNote.mutate({ note: composer.note, payload }) : createNote.mutate(payload)} />}
+    {addBoulder && <AddBoulderModal root={root} initialPosition={addBoulder.position} initialParentId={addBoulder.parentId} fallbackParentId={area.feature.id} saving={createBoulder.isPending} onClose={() => setAddBoulder(null)} onSave={saveBoulderFromModal} />}
+    {composer && <NoteComposer root={root} area={area} boulder={selectedBoulder as MoneyCragNode | null} initialBlock={composer.kind} initialNote={composer.note} uploads={uploads} mobile={mobile} onClose={() => setComposer(null)} onSubmit={payload => composer.note ? updateNoteAndDeleteRemovedUploads.mutate({ note: composer.note, payload }) : createNote.mutate(payload)} />}
   </div>;
 }
 
@@ -171,6 +197,19 @@ const ghostBtn: React.CSSProperties = { border: 'none', borderRadius: 10, paddin
 
 function isFeatureNoteTarget(targetType: MoneyNoteTargetType): boolean {
   return targetType === 'feature' || targetType === 'area' || targetType === 'boulder' || targetType === 'trail' || targetType === 'point';
+}
+
+function uploadIdsFromBlocks(blocks: MoneyNoteBlock[]): Set<string> {
+  return new Set(blocks.map(block => block.upload_id).filter((id): id is string => Boolean(id)));
+}
+
+export function resolveSubmittedBlocks(blocks: MoneyNoteBlock[], uploaded: Map<string, MoneyNoteBlock>): MoneyNoteBlock[] {
+  return blocks.flatMap(block => {
+    const localBlockKey = typeof block.metadata?.local_block_key === 'string' ? block.metadata.local_block_key : null;
+    if (localBlockKey) return uploaded.has(localBlockKey) ? [uploaded.get(localBlockKey)!] : [];
+    if (block.url?.startsWith('blob:')) return [];
+    return [block];
+  });
 }
 
 export default function MoneyCreekApp() { return <AuthProvider><MoneyCreekWorkspace /></AuthProvider>; }

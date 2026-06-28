@@ -82,6 +82,9 @@ func (r *moneyTreeRepo) ListNotesByProject(ctx context.Context, projectID string
 	copy(out, r.notes)
 	return out, nil
 }
+func (r *moneyTreeRepo) GetNote(ctx context.Context, noteID string) (*models.MoneyNote, error) {
+	return nil, nil
+}
 func (r *moneyTreeRepo) CreateNote(ctx context.Context, note models.MoneyNote) (*models.MoneyNote, error) {
 	return nil, nil
 }
@@ -110,6 +113,9 @@ func (r *moneyTreeRepo) DeleteUpload(ctx context.Context, uploadID, userID, role
 }
 func (r *moneyTreeRepo) MarkUploadPhysicallyDeleted(ctx context.Context, uploadID string) error {
 	return nil
+}
+func (r *moneyTreeRepo) UpdateUploadMetadata(ctx context.Context, uploadID string, title, comments *string, userID, role string) (*models.MoneyUpload, error) {
+	return nil, nil
 }
 func (r *moneyTreeRepo) FeatureNoteCounts(ctx context.Context, projectID string) (map[string]int, error) {
 	return nil, nil

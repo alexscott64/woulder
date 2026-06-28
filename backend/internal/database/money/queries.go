@@ -81,6 +81,7 @@ const (
 	`
 	queryListNotes                = queryNoteSelect + ` WHERE deleted_at IS NULL AND (feature_id=$1 OR target_ref=$1) ORDER BY created_at DESC`
 	queryListNotesByProject       = queryNoteSelect + ` WHERE project_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC`
+	queryGetNote                  = queryNoteSelect + ` WHERE id=$1 AND deleted_at IS NULL`
 	queryListNotesLegacy          = queryNoteSelect + ` WHERE feature_id=$1 OR target_ref=$1 ORDER BY created_at DESC`
 	queryListNotesByProjectLegacy = queryNoteSelect + ` WHERE project_id=$1 ORDER BY created_at DESC`
 	queryCreateNote               = `
@@ -112,14 +113,14 @@ const (
 		INSERT INTO woulder.money_uploads
 		(id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, uploaded_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-		RETURNING id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, deleted_at, deleted_by, delete_requested_at, physically_deleted_at, uploaded_by, created_at, updated_at
+		RETURNING id, project_id, feature_id, note_id, original_filename, title, comments, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, deleted_at, deleted_by, delete_requested_at, physically_deleted_at, uploaded_by, created_at, updated_at
 	`
 	queryUploadSelect = `
-		SELECT id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, deleted_at, deleted_by, delete_requested_at, physically_deleted_at, uploaded_by, created_at, updated_at
+		SELECT id, project_id, feature_id, note_id, original_filename, title, comments, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, deleted_at, deleted_by, delete_requested_at, physically_deleted_at, uploaded_by, created_at, updated_at
 		FROM woulder.money_uploads
 	`
 	queryUploadSelectLegacy = `
-		SELECT id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256,
+		SELECT id, project_id, feature_id, note_id, original_filename, NULL::text AS title, NULL::text AS comments, storage_key, content_type, byte_size, width, height, checksum_sha256,
 		       'photo' AS block_kind, '{}'::jsonb AS metadata, 'original' AS asset_kind, 'local' AS storage_backend, NULL::text AS storage_bucket,
 		       NULL::text AS storage_region, NULL::text AS storage_etag, NULL::text AS storage_version_id, 'private' AS visibility,
 		       'available' AS sync_status, NULL::timestamptz AS deleted_at, NULL::uuid AS deleted_by, NULL::timestamptz AS delete_requested_at,
@@ -138,10 +139,16 @@ const (
 		RETURNING storage_key
 	`
 	queryMarkUploadPhysicallyDeleted = `UPDATE woulder.money_uploads SET physically_deleted_at=COALESCE(physically_deleted_at, now()), updated_at=now() WHERE id=$1`
-	queryFeatureNoteCounts           = `SELECT COALESCE(feature_id::text, target_ref), count(*) FROM woulder.money_notes WHERE project_id=$1 AND deleted_at IS NULL AND COALESCE(feature_id::text, target_ref) IS NOT NULL GROUP BY COALESCE(feature_id::text, target_ref)`
-	queryFeatureNoteCountsLegacy     = `SELECT COALESCE(feature_id::text, target_ref), count(*) FROM woulder.money_notes WHERE project_id=$1 AND COALESCE(feature_id::text, target_ref) IS NOT NULL GROUP BY COALESCE(feature_id::text, target_ref)`
-	queryPrimaryUploads              = `
-		SELECT DISTINCT ON (feature_id) id, project_id, feature_id, note_id, original_filename, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, deleted_at, deleted_by, delete_requested_at, physically_deleted_at, uploaded_by, created_at, updated_at
+	queryUpdateUploadMetadata        = `
+		UPDATE woulder.money_uploads
+		SET title=$2, comments=$3, updated_at=now()
+		WHERE id=$1 AND deleted_at IS NULL AND (uploaded_by=$4 OR $5='admin')
+		RETURNING id, project_id, feature_id, note_id, original_filename, title, comments, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, deleted_at, deleted_by, delete_requested_at, physically_deleted_at, uploaded_by, created_at, updated_at
+	`
+	queryFeatureNoteCounts       = `SELECT COALESCE(feature_id::text, target_ref), count(*) FROM woulder.money_notes WHERE project_id=$1 AND deleted_at IS NULL AND COALESCE(feature_id::text, target_ref) IS NOT NULL GROUP BY COALESCE(feature_id::text, target_ref)`
+	queryFeatureNoteCountsLegacy = `SELECT COALESCE(feature_id::text, target_ref), count(*) FROM woulder.money_notes WHERE project_id=$1 AND COALESCE(feature_id::text, target_ref) IS NOT NULL GROUP BY COALESCE(feature_id::text, target_ref)`
+	queryPrimaryUploads          = `
+		SELECT DISTINCT ON (feature_id) id, project_id, feature_id, note_id, original_filename, title, comments, storage_key, content_type, byte_size, width, height, checksum_sha256, block_kind, metadata, asset_kind, storage_backend, storage_bucket, storage_region, storage_etag, storage_version_id, visibility, sync_status, deleted_at, deleted_by, delete_requested_at, physically_deleted_at, uploaded_by, created_at, updated_at
 		FROM woulder.money_uploads WHERE project_id=$1 AND feature_id IS NOT NULL AND deleted_at IS NULL ORDER BY feature_id, created_at DESC
 	`
 )

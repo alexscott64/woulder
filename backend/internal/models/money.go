@@ -100,6 +100,8 @@ type MoneyUpload struct {
 	FeatureID           *string         `json:"feature_id,omitempty"`
 	NoteID              *string         `json:"note_id,omitempty"`
 	OriginalFilename    string          `json:"original_filename"`
+	Title               *string         `json:"title,omitempty"`
+	Comments            *string         `json:"comments,omitempty"`
 	StorageKey          string          `json:"-"`
 	ContentType         string          `json:"content_type"`
 	ByteSize            int64           `json:"byte_size"`
@@ -260,6 +262,11 @@ type MoneyNoteRequest struct {
 	TargetRef  *string         `json:"target_ref,omitempty"`
 	Tags       []string        `json:"tags"`
 	Blocks     json.RawMessage `json:"blocks"`
+}
+
+type MoneyUploadMetadataRequest struct {
+	Title    *string `json:"title"`
+	Comments *string `json:"comments"`
 }
 
 type BBox struct {

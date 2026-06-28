@@ -219,6 +219,7 @@ func main() {
 			moneyGroup.DELETE("/notes/:note_id", middleware.RequireMoneyWrite(), handler.DeleteMoneyNote)
 			moneyGroup.GET("/uploads/:upload_id", handler.StreamMoneyUpload)
 			moneyGroup.GET("/uploads/:upload_id/download-url", handler.GetMoneyUploadDownloadURL)
+			moneyGroup.PATCH("/uploads/:upload_id/metadata", middleware.RequireMoneyWrite(), handler.UpdateMoneyUploadMetadata)
 			moneyGroup.DELETE("/uploads/:upload_id", middleware.RequireMoneyWrite(), handler.DeleteMoneyUpload)
 		}
 	}

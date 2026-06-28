@@ -106,6 +106,8 @@ export interface MoneyUpload {
   feature_id?: string;
   note_id?: string;
   original_filename: string;
+  title?: string;
+  comments?: string;
   content_type: string;
   byte_size: number;
   width?: number;
@@ -165,6 +167,8 @@ export interface MoneyNoteRequest {
   tags?: string[];
   blocks?: MoneyNoteBlock[];
 }
+
+export interface MoneyUploadMetadataRequest { title?: string | null; comments?: string | null; }
 
 export interface MoneyFeatureFilters { type?: MoneyFeatureType | 'all'; status?: MoneyFeatureStatus | 'all'; search?: string; }
 export interface MoneyBBox { minLon: number; minLat: number; maxLon: number; maxLat: number; }

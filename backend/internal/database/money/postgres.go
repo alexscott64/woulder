@@ -152,6 +152,10 @@ func (r *PostgresRepository) ListNotesByProject(ctx context.Context, projectID s
 	return scanNotes(rows)
 }
 
+func (r *PostgresRepository) GetNote(ctx context.Context, noteID string) (*models.MoneyNote, error) {
+	return scanNote(r.db.QueryRowContext(ctx, queryGetNote, noteID))
+}
+
 func (r *PostgresRepository) CreateNote(ctx context.Context, n models.MoneyNote) (*models.MoneyNote, error) {
 	return scanNote(r.db.QueryRowContext(ctx, queryCreateNote, n.ProjectID, n.FeatureID, n.TargetType, n.TargetRef, n.Body, n.Visibility, pq.Array(n.Tags), n.Blocks, n.ExternalRef, n.ImportSource, n.CreatedBy, n.UpdatedBy))
 }
@@ -206,6 +210,10 @@ func (r *PostgresRepository) DeleteUpload(ctx context.Context, uploadID, userID,
 func (r *PostgresRepository) MarkUploadPhysicallyDeleted(ctx context.Context, uploadID string) error {
 	_, err := r.db.ExecContext(ctx, queryMarkUploadPhysicallyDeleted, uploadID)
 	return err
+}
+
+func (r *PostgresRepository) UpdateUploadMetadata(ctx context.Context, uploadID string, title, comments *string, userID, role string) (*models.MoneyUpload, error) {
+	return scanUpload(r.db.QueryRowContext(ctx, queryUpdateUploadMetadata, uploadID, title, comments, userID, role))
 }
 
 func (r *PostgresRepository) FeatureNoteCounts(ctx context.Context, projectID string) (map[string]int, error) {
@@ -360,7 +368,7 @@ func scanUpload(row scanner) (*models.MoneyUpload, error) {
 }
 func scanUploadRows(row scanner) (*models.MoneyUpload, error) {
 	var u models.MoneyUpload
-	err := row.Scan(&u.ID, &u.ProjectID, &u.FeatureID, &u.NoteID, &u.OriginalFilename, &u.StorageKey, &u.ContentType, &u.ByteSize, &u.Width, &u.Height, &u.ChecksumSHA256, &u.BlockKind, &u.Metadata, &u.AssetKind, &u.StorageBackend, &u.StorageBucket, &u.StorageRegion, &u.StorageETag, &u.StorageVersionID, &u.Visibility, &u.SyncStatus, &u.DeletedAt, &u.DeletedBy, &u.DeleteRequestedAt, &u.PhysicallyDeletedAt, &u.UploadedBy, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.ID, &u.ProjectID, &u.FeatureID, &u.NoteID, &u.OriginalFilename, &u.Title, &u.Comments, &u.StorageKey, &u.ContentType, &u.ByteSize, &u.Width, &u.Height, &u.ChecksumSHA256, &u.BlockKind, &u.Metadata, &u.AssetKind, &u.StorageBackend, &u.StorageBucket, &u.StorageRegion, &u.StorageETag, &u.StorageVersionID, &u.Visibility, &u.SyncStatus, &u.DeletedAt, &u.DeletedBy, &u.DeleteRequestedAt, &u.PhysicallyDeletedAt, &u.UploadedBy, &u.CreatedAt, &u.UpdatedAt)
 	return &u, err
 }
 

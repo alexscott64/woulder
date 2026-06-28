@@ -263,6 +263,16 @@ func (h *Handler) GetMoneyUploadDownloadURL(c *gin.Context) {
 	respondMoney(c, resp, err)
 }
 
+func (h *Handler) UpdateMoneyUploadMetadata(c *gin.Context) {
+	var req models.MoneyUploadMetadataRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	resp, err := h.moneyService.UpdateUploadMetadata(c.Request.Context(), c.Param("upload_id"), req, appmw.CurrentUser(c))
+	respondMoney(c, resp, err)
+}
+
 func (h *Handler) DeleteMoneyUpload(c *gin.Context) {
 	err := h.moneyService.DeleteUpload(c.Request.Context(), c.Param("upload_id"), appmw.CurrentUser(c))
 	respondMoney(c, gin.H{"status": "deleted"}, err)
