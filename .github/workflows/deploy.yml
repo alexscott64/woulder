@@ -23,6 +23,7 @@ jobs:
         run: |
           cd backend
           GOOS=linux GOARCH=amd64 go build -o woulder-api ./cmd/server
+          GOOS=linux GOARCH=amd64 go build -o woulder-migrate ./cmd/migrate
 
       # Build frontend
       - name: Set up Node.js
@@ -60,10 +61,13 @@ jobs:
 
           # Upload new binary
           scp -i ~/.ssh/id_ed25519 backend/woulder-api root@${{ secrets.VPS_HOST }}:/opt/woulder/woulder-api
+          scp -i ~/.ssh/id_ed25519 backend/woulder-migrate root@${{ secrets.VPS_HOST }}:/opt/woulder/woulder-migrate
 
-          # Upload static files (dashboards)
-          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "mkdir -p /opt/woulder/static"
+          # Upload migrations and static files (dashboards)
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "mkdir -p /opt/woulder/static /opt/woulder/migrations /var/lib/woulder/uploads"
+          scp -i ~/.ssh/id_ed25519 backend/internal/database/migrations/* root@${{ secrets.VPS_HOST }}:/opt/woulder/migrations/
           scp -i ~/.ssh/id_ed25519 -r backend/static/* root@${{ secrets.VPS_HOST }}:/opt/woulder/static/
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "chown -R woulder:woulder /var/lib/woulder 2>/dev/null || true; chmod 750 /var/lib/woulder/uploads"
 
           # Create .env file on server with secrets
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'PORT=${{ secrets.PORT }}' > /opt/woulder/.env"
@@ -79,9 +83,20 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'ANALYTICS_JWT_SECRET=${{ secrets.ANALYTICS_JWT_SECRET }}' >> /opt/woulder/.env"
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'ANALYTICS_ADMIN_USERNAME=${{ secrets.ANALYTICS_ADMIN_USERNAME }}' >> /opt/woulder/.env"
           ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'ANALYTICS_ADMIN_PASSWORD=${{ secrets.ANALYTICS_ADMIN_PASSWORD }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'APP_JWT_SECRET=${{ secrets.APP_JWT_SECRET }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'APP_ACCESS_TOKEN_MINUTES=${{ secrets.APP_ACCESS_TOKEN_MINUTES }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'APP_REFRESH_TOKEN_DAYS=${{ secrets.APP_REFRESH_TOKEN_DAYS }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'APP_ADMIN_EMAIL=${{ secrets.APP_ADMIN_EMAIL }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'APP_ADMIN_PASSWORD=${{ secrets.APP_ADMIN_PASSWORD }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'APP_ADMIN_DISPLAY_NAME=${{ secrets.APP_ADMIN_DISPLAY_NAME }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'MONEY_USERNAME=${{ secrets.MONEY_USERNAME }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'MONEY_PASSWORD=${{ secrets.MONEY_PASSWORD }}' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'UPLOAD_STORAGE_DRIVER=local' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'UPLOAD_DIR=/var/lib/woulder/uploads' >> /opt/woulder/.env"
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "echo 'UPLOAD_MAX_BYTES=${{ secrets.UPLOAD_MAX_BYTES }}' >> /opt/woulder/.env"
 
-          # Make executable and start
-          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "chmod +x /opt/woulder/woulder-api && systemctl start woulder"
+          # Make executable, run migrations, and start
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.VPS_HOST }} "chmod +x /opt/woulder/woulder-api /opt/woulder/woulder-migrate && cd /opt/woulder && MIGRATIONS_PATH=/opt/woulder/migrations ./woulder-migrate up && systemctl start woulder"
 
       - name: Deploy frontend
         run: |

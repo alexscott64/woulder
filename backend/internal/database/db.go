@@ -12,11 +12,13 @@ import (
 
 	"github.com/alexscott64/woulder/backend/internal/database/analytics"
 	"github.com/alexscott64/woulder/backend/internal/database/areas"
+	"github.com/alexscott64/woulder/backend/internal/database/auth"
 	"github.com/alexscott64/woulder/backend/internal/database/boulders"
 	"github.com/alexscott64/woulder/backend/internal/database/climbing"
 	"github.com/alexscott64/woulder/backend/internal/database/heatmap"
 	"github.com/alexscott64/woulder/backend/internal/database/kaya"
 	"github.com/alexscott64/woulder/backend/internal/database/locations"
+	"github.com/alexscott64/woulder/backend/internal/database/money"
 	"github.com/alexscott64/woulder/backend/internal/database/mountainproject"
 	"github.com/alexscott64/woulder/backend/internal/database/rivers"
 	"github.com/alexscott64/woulder/backend/internal/database/rocks"
@@ -214,6 +216,16 @@ func (db *Database) Kaya() kaya.Repository {
 // Analytics returns the analytics repository for site tracking operations.
 func (db *Database) Analytics() analytics.Repository {
 	return analytics.NewPostgresRepository(db.conn)
+}
+
+// Auth returns the general app auth repository.
+func (db *Database) Auth() auth.Repository {
+	return auth.NewPostgresRepository(db.conn)
+}
+
+// Money returns the Money Creek toolkit repository.
+func (db *Database) Money() money.Repository {
+	return money.NewPostgresRepository(db.conn)
 }
 
 // Legacy wrapper methods for backward compatibility

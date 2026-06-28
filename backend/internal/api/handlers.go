@@ -21,6 +21,8 @@ type Handler struct {
 	boulderDryingService *service.BoulderDryingService
 	heatMapService       *service.HeatMapService
 	analyticsService     *service.AnalyticsService
+	authService          *service.AuthService
+	moneyService         *service.MoneyService
 	kayaRepo             kaya.Repository
 	jobMonitor           *monitoring.JobMonitor
 }
@@ -33,6 +35,8 @@ func NewHandler(
 	boulderDryingService *service.BoulderDryingService,
 	heatMapService *service.HeatMapService,
 	analyticsService *service.AnalyticsService,
+	authService *service.AuthService,
+	moneyService *service.MoneyService,
 	kayaRepo kaya.Repository,
 	jobMonitor *monitoring.JobMonitor,
 ) *Handler {
@@ -44,6 +48,8 @@ func NewHandler(
 		boulderDryingService: boulderDryingService,
 		heatMapService:       heatMapService,
 		analyticsService:     analyticsService,
+		authService:          authService,
+		moneyService:         moneyService,
 		kayaRepo:             kayaRepo,
 		jobMonitor:           jobMonitor,
 	}

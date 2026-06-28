@@ -1,0 +1,187 @@
+import { MoneyCragNode, MoneyDevStatus, MoneyFeature, MoneyGeometry, MoneyGeoJSON, MoneyNote, MoneyPosition, MoneyProblemStatus } from '../../../types/money';
+
+export function cragChildren(node: MoneyCragNode): MoneyCragNode[] { return node.children ?? []; }
+export function cragBoulders(node: MoneyCragNode): MoneyCragNode[] { return node.boulders ?? []; }
+export function cragProblems(node: MoneyCragNode): MoneyCragNode[] { return node.problems ?? []; }
+
+export const W = 1000;
+export const H = 680;
+export const MONEY_CREEK_CENTER: MoneyPosition = [-121.4703, 47.6997];
+export const MONEY_CREEK_FALLBACK_BBOX: [number, number, number, number] = [-121.492, 47.695, -121.458, 47.707];
+
+export function geometryPoints(geojson: MoneyGeoJSON): MoneyPosition[] {
+  const geometry: MoneyGeometry | undefined = geojson.type === 'Feature' ? geojson.geometry : geojson.type === 'FeatureCollection' ? geojson.features[0]?.geometry : geojson;
+  if (!geometry) return [];
+  if (geometry.type === 'Point') return [geometry.coordinates];
+  if (geometry.type === 'LineString') return geometry.coordinates;
+  if (geometry.type === 'Polygon') return geometry.coordinates[0] ?? [];
+  return [];
+}
+
+export function polygonGeoJSON(points: MoneyPosition[]): MoneyGeoJSON {
+  return { type: 'Polygon', coordinates: [closedPolygonPoints(points)] };
+}
+
+export function openPolygonPoints(points: MoneyPosition[]): MoneyPosition[] {
+  if (points.length > 1 && samePosition(points[0], points[points.length - 1])) return points.slice(0, -1);
+  return [...points];
+}
+
+export function closedPolygonPoints(points: MoneyPosition[]): MoneyPosition[] {
+  const open = openPolygonPoints(points);
+  return open.length ? [...open, open[0]] : open;
+}
+
+export function replacePolygonVertex(points: MoneyPosition[], index: number, position: MoneyPosition): MoneyPosition[] {
+  const open = openPolygonPoints(points);
+  if (index < 0 || index >= open.length) return open;
+  return open.map((point, i) => i === index ? position : point);
+}
+
+export function insertPolygonVertexAfter(points: MoneyPosition[], index: number, position: MoneyPosition): MoneyPosition[] {
+  const open = openPolygonPoints(points);
+  const insertAt = Math.min(Math.max(index + 1, 0), open.length);
+  return [...open.slice(0, insertAt), position, ...open.slice(insertAt)];
+}
+
+export function deletePolygonVertex(points: MoneyPosition[], index: number, minVertices = 3): MoneyPosition[] {
+  const open = openPolygonPoints(points);
+  if (open.length <= minVertices || index < 0 || index >= open.length) return open;
+  return open.filter((_point, i) => i !== index);
+}
+
+export function isValidAreaEditRing(points: MoneyPosition[]): boolean {
+  const open = openPolygonPoints(points);
+  const distinct = new Set(open.map(point => `${point[0].toFixed(7)},${point[1].toFixed(7)}`));
+  return open.length >= 3 && open.length <= 500 && distinct.size >= 3 && open.every(([lon, lat]) => lon >= -180 && lon <= 180 && lat >= -90 && lat <= 90);
+}
+
+function samePosition(a: MoneyPosition, b: MoneyPosition): boolean { return a[0] === b[0] && a[1] === b[1]; }
+
+export function lineGeoJSON(points: MoneyPosition[]): MoneyGeoJSON { return { type: 'LineString', coordinates: points }; }
+export function pointGeoJSON(point: MoneyPosition): MoneyGeoJSON { return { type: 'Point', coordinates: point }; }
+
+export function centroid(points: MoneyPosition[]): MoneyPosition {
+  if (!points.length) return MONEY_CREEK_CENTER;
+  return points.reduce<MoneyPosition>((a, p) => [a[0] + p[0] / points.length, a[1] + p[1] / points.length], [0, 0]);
+}
+
+export function bbox(node: MoneyCragNode): [number, number, number, number] {
+  const pts = collectNodePoints(node);
+  if (!pts.length) return MONEY_CREEK_FALLBACK_BBOX;
+  return pts.reduce<[number, number, number, number]>((a, p) => [Math.min(a[0], p[0]), Math.min(a[1], p[1]), Math.max(a[2], p[0]), Math.max(a[3], p[1])], [1e9, 1e9, -1e9, -1e9]);
+}
+
+export function bboxCenter(box: [number, number, number, number]): MoneyPosition {
+  return [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
+}
+
+function collectNodePoints(node: MoneyCragNode): MoneyPosition[] {
+  const pts = [...geometryPoints(node.feature.geojson)];
+  cragChildren(node).forEach(child => pts.push(...geometryPoints(child.feature.geojson)));
+  cragBoulders(node).forEach(boulder => pts.push(...geometryPoints(boulder.feature.geojson)));
+  return pts;
+}
+
+export function poly(points: MoneyPosition[]) { return points.map(p => p.join(',')).join(' '); }
+
+export function smoothOpen(pts: MoneyPosition[]) {
+  if (pts.length < 2) return '';
+  let d = `M ${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    d += ` C ${p1[0] + (p2[0] - p0[0]) / 6} ${p1[1] + (p2[1] - p0[1]) / 6}, ${p2[0] - (p3[0] - p1[0]) / 6} ${p2[1] - (p3[1] - p1[1]) / 6}, ${p2[0]} ${p2[1]}`;
+  }
+  return d;
+}
+
+export function flattenAreas(root: MoneyCragNode | null): MoneyCragNode[] {
+  const out: MoneyCragNode[] = [];
+  const walk = (node: MoneyCragNode) => { out.push(node); cragChildren(node).forEach(walk); };
+  if (root) walk(root);
+  return out;
+}
+
+export function flattenBoulders(root: MoneyCragNode | null): MoneyCragNode[] {
+  const out: MoneyCragNode[] = [];
+  const walk = (node: MoneyCragNode) => { out.push(...cragBoulders(node)); cragChildren(node).forEach(walk); };
+  if (root) walk(root);
+  return out;
+}
+
+export function flattenProblems(root: MoneyCragNode | null): Array<MoneyCragNode & { boulder: MoneyCragNode; area: MoneyCragNode }> {
+  const out: Array<MoneyCragNode & { boulder: MoneyCragNode; area: MoneyCragNode }> = [];
+  const walk = (area: MoneyCragNode) => {
+    cragBoulders(area).forEach(boulder => cragProblems(boulder).forEach(problem => out.push({ ...problem, boulder, area })));
+    cragChildren(area).forEach(walk);
+  };
+  if (root) walk(root);
+  return out;
+}
+
+export function findNode(root: MoneyCragNode | null, id?: string | null): MoneyCragNode | null {
+  if (!root || !id) return null;
+  if (root.feature.id === id) return root;
+  for (const boulder of cragBoulders(root)) {
+    if (boulder.feature.id === id) return boulder;
+    const problem = cragProblems(boulder).find(p => p.feature.id === id);
+    if (problem) return problem;
+  }
+  for (const child of cragChildren(root)) {
+    const found = findNode(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+export function parentArea(root: MoneyCragNode | null, id?: string | null): MoneyCragNode | null {
+  if (!root || !id) return null;
+  for (const boulder of cragBoulders(root)) if (boulder.feature.id === id) return root;
+  for (const child of cragChildren(root)) {
+    if (child.feature.id === id) return root;
+    const found = parentArea(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+export function pathTo(root: MoneyCragNode | null, id?: string | null): MoneyCragNode[] {
+  if (!root || !id) return [];
+  if (root.feature.id === id) return [root];
+  for (const child of cragChildren(root)) {
+    const p = pathTo(child, id);
+    if (p.length) return [root, ...p];
+  }
+  for (const boulder of cragBoulders(root)) if (boulder.feature.id === id) return [root, boulder];
+  return [];
+}
+
+export function stats(node: MoneyCragNode) {
+  const dev: Record<MoneyDevStatus, number> = { scouted: 0, 'needs-work': 0, cleaning: 0, established: 0 };
+  let boulders = 0, problems = 0, sent = 0, projects = 0;
+  const walk = (area: MoneyCragNode) => {
+    cragBoulders(area).forEach(b => {
+      boulders += 1;
+      const status = b.feature.status as MoneyDevStatus;
+      if (status in dev) dev[status] += 1;
+      cragProblems(b).forEach(p => { problems += 1; if (p.feature.status === 'sent') sent += 1; if (p.feature.status === 'project') projects += 1; });
+    });
+    cragChildren(area).forEach(walk);
+  };
+  walk(node);
+  return { boulders, problems, sent, projects, subareas: cragChildren(node).length, dev };
+}
+
+export function problemMeta(feature: MoneyFeature) {
+  return {
+    grade: String(feature.properties.grade ?? 'V?'),
+    stars: Number(feature.properties.stars ?? 1),
+    fa: typeof feature.properties.fa === 'string' ? feature.properties.fa : null,
+    types: Array.isArray(feature.properties.types) ? feature.properties.types.map(String) : [],
+    status: feature.status as MoneyProblemStatus,
+  };
+}
+
+export function notesFor(notes: MoneyNote[], type: string, id: string) {
+  return notes.filter(n => n.target_type === type && n.target_ref === id || n.feature_id === id);
+}

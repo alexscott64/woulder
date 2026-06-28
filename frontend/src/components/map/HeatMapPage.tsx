@@ -1,15 +1,16 @@
-import { useState, useEffect } from 'react';
+import { Suspense, lazy, useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { heatMapApi } from '../../services/api';
 import { HeatMapPoint } from '../../types/heatmap';
 import { Calendar, Activity, Loader2, AlertCircle, TrendingUp, Users, Map as MapIcon, List, ChevronDown, ChevronUp, SlidersHorizontal } from 'lucide-react';
-import { ActivityMapDeckGL } from './ActivityMapDeckGL';
 import { AreaDetailDrawer } from './AreaDetailDrawer';
 import { ClusterDetailDrawer } from './ClusterDetailDrawer';
 import { RouteTypeFilter } from './RouteTypeFilter';
 import { GradeRangeFilter } from './GradeRangeFilter';
 import { type GradeRangeSelection, gradeRangeToApiParams } from '../../utils/grades';
 import { trackHeatMapAction } from '../../services/analytics';
+
+const ActivityMapDeckGL = lazy(() => import('./ActivityMapDeckGL').then(module => ({ default: module.ActivityMapDeckGL })));
 
 type ViewMode = 'map' | 'list';
 
@@ -347,22 +348,24 @@ export function HeatMapPage() {
         <div className="max-w-7xl mx-auto w-full px-2 sm:px-4 lg:px-8 pb-2 sm:pb-4 flex-1 min-h-0">
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden h-full w-full relative">
             <div className="h-full w-full">
-              <ActivityMapDeckGL
-                points={sortedPoints}
-                onAreaClick={(areaId) => {
-                  setShowClusterDrawer(false);
-                  setClusterAreas([]); // Clear old cluster
-                  setSelectedAreaId(areaId);
-                  trackHeatMapAction('area_click', { area_id: areaId });
-                }}
-                selectedAreaId={selectedAreaId}
-                onShowCluster={(areas) => {
-                  setSelectedAreaId(null); // Close area drawer first
-                  setShowClusterDrawer(false); // Close old cluster drawer
-                  setClusterAreas(areas); // Set new cluster
-                  setShowClusterDrawer(true); // Open new cluster drawer
-                }}
-              />
+              <Suspense fallback={<div className="flex h-full w-full items-center justify-center text-gray-500 dark:text-gray-400">Loading map renderer...</div>}>
+                <ActivityMapDeckGL
+                  points={sortedPoints}
+                  onAreaClick={(areaId) => {
+                    setShowClusterDrawer(false);
+                    setClusterAreas([]); // Clear old cluster
+                    setSelectedAreaId(areaId);
+                    trackHeatMapAction('area_click', { area_id: areaId });
+                  }}
+                  selectedAreaId={selectedAreaId}
+                  onShowCluster={(areas) => {
+                    setSelectedAreaId(null); // Close area drawer first
+                    setShowClusterDrawer(false); // Close old cluster drawer
+                    setClusterAreas(areas); // Set new cluster
+                    setShowClusterDrawer(true); // Open new cluster drawer
+                  }}
+                />
+              </Suspense>
             </div>
           </div>
           

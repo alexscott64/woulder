@@ -15,6 +15,8 @@ type Config struct {
 	Database DatabaseConfig
 	Weather  WeatherConfig
 	Cache    CacheConfig
+	Auth     AuthConfig
+	Upload   UploadConfig
 }
 
 // ServerConfig holds server-related configuration
@@ -68,10 +70,38 @@ type CacheConfig struct {
 	DurationMinutes int
 }
 
+// AuthConfig holds general app auth configuration.
+type AuthConfig struct {
+	JWTSecret          string
+	AccessTokenMinutes int
+	RefreshTokenDays   int
+	AdminEmail         string
+	AdminPassword      string
+	AdminDisplayName   string
+}
+
+// UploadConfig holds private Money Creek asset storage configuration.
+type UploadConfig struct {
+	StorageDriver     string
+	Dir               string
+	MaxBytes          int64
+	AssetKeyPrefix    string
+	R2AccountID       string
+	R2AccessKeyID     string
+	R2SecretAccessKey string
+	R2Bucket          string
+	R2Endpoint        string
+	R2PublicBaseURL   string
+	R2Region          string
+	R2SignedURLTTL    time.Duration
+}
+
 // Load reads configuration from environment variables
 func Load() (*Config, error) {
-	// Load .env file if it exists (ignore error if not found)
-	_ = godotenv.Load()
+	// Load .env files if they exist (ignore error if not found). Include
+	// backend/.env so app auth can use MONEY_USERNAME/MONEY_PASSWORD when the
+	// server is launched from the repository root.
+	_ = godotenv.Load(".env", "backend/.env", "../.env", "../../backend/.env")
 
 	cfg := &Config{
 		Server: ServerConfig{
@@ -80,7 +110,7 @@ func Load() (*Config, error) {
 			DisableBackgroundSyncs: getEnvAsBool("DISABLE_BACKGROUND_SYNCS", false),
 			CORS: CORSConfig{
 				AllowOrigins:     []string{"*"}, // TODO: Configure per environment
-				AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+				AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 				AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 				ExposeHeaders:    []string{"Content-Length"},
 				AllowCredentials: true,
@@ -107,6 +137,28 @@ func Load() (*Config, error) {
 		},
 		Cache: CacheConfig{
 			DurationMinutes: getEnvAsInt("CACHE_DURATION", 10),
+		},
+		Auth: AuthConfig{
+			JWTSecret:          getEnv("APP_JWT_SECRET", "development-only-change-me"),
+			AccessTokenMinutes: getEnvAsInt("APP_ACCESS_TOKEN_MINUTES", 15),
+			RefreshTokenDays:   getEnvAsInt("APP_REFRESH_TOKEN_DAYS", 30),
+			AdminEmail:         getEnv("APP_ADMIN_EMAIL", getEnv("MONEY_USERNAME", "")),
+			AdminPassword:      getEnv("APP_ADMIN_PASSWORD", getEnv("MONEY_PASSWORD", "")),
+			AdminDisplayName:   getEnv("APP_ADMIN_DISPLAY_NAME", "Money Creek Admin"),
+		},
+		Upload: UploadConfig{
+			StorageDriver:     getEnv("ASSET_STORAGE_BACKEND", getEnv("UPLOAD_STORAGE_DRIVER", "local")),
+			Dir:               getEnv("UPLOAD_DIR", "./uploads"),
+			MaxBytes:          int64(getEnvAsInt("R2_UPLOAD_MAX_BYTES", getEnvAsInt("UPLOAD_MAX_BYTES", 15*1024*1024))),
+			AssetKeyPrefix:    getEnv("ASSET_KEY_PREFIX", "money-creek"),
+			R2AccountID:       getEnv("R2_ACCOUNT_ID", ""),
+			R2AccessKeyID:     getEnv("R2_ACCESS_KEY_ID", ""),
+			R2SecretAccessKey: getEnv("R2_SECRET_ACCESS_KEY", ""),
+			R2Bucket:          getEnv("R2_BUCKET", "woulder"),
+			R2Endpoint:        getEnv("R2_ENDPOINT", ""),
+			R2PublicBaseURL:   getEnv("R2_PUBLIC_BASE_URL", ""),
+			R2Region:          getEnv("R2_REGION", "auto"),
+			R2SignedURLTTL:    time.Duration(getEnvAsInt("R2_SIGNED_URL_TTL_SECONDS", 300)) * time.Second,
 		},
 	}
 

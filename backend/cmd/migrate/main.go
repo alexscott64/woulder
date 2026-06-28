@@ -82,8 +82,12 @@ func main() {
 		command = os.Args[1]
 	}
 
-	// Get migrations directory
-	migrationsPath := filepath.Join("..", "..", "internal", "database", "migrations")
+	// Get migrations directory. MIGRATIONS_PATH is used by deployment where the
+	// migrate binary runs outside the source tree.
+	migrationsPath := os.Getenv("MIGRATIONS_PATH")
+	if migrationsPath == "" {
+		migrationsPath = defaultMigrationsPath()
+	}
 
 	// Execute command
 	switch command {
@@ -151,6 +155,20 @@ func createMigrationsTable(db *sql.DB) error {
 		)
 	`)
 	return err
+}
+
+func defaultMigrationsPath() string {
+	candidates := []string{
+		filepath.Join("..", "..", "internal", "database", "migrations"),
+		filepath.Join("internal", "database", "migrations"),
+		filepath.Join("backend", "internal", "database", "migrations"),
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return candidates[0]
 }
 
 func getCurrentVersion(db *sql.DB) (int, error) {

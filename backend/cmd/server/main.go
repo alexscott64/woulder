@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -19,6 +20,7 @@ import (
 	"github.com/alexscott64/woulder/backend/internal/mountainproject"
 	"github.com/alexscott64/woulder/backend/internal/rivers"
 	"github.com/alexscott64/woulder/backend/internal/service"
+	"github.com/alexscott64/woulder/backend/internal/storage"
 	"github.com/alexscott64/woulder/backend/internal/weather"
 )
 
@@ -58,9 +60,30 @@ func main() {
 	boulderDryingService := service.NewBoulderDryingService(db.Boulders(), db.Weather(), db.Locations(), db.Rocks(), db.MountainProject(), weatherClient)
 	heatMapService := service.NewHeatMapService(db.HeatMap())
 	analyticsService := service.NewAnalyticsService(db.Analytics())
+	authService := service.NewAuthService(db.Auth(), cfg.Auth)
+	if err := authService.BootstrapAdmin(context.Background()); err != nil {
+		log.Printf("Warning: failed to bootstrap app admin: %v", err)
+	}
+	var uploadStorage storage.Storage
+	switch cfg.Upload.StorageDriver {
+	case "r2":
+		r2Store, err := storage.NewR2Storage(context.Background(), storage.R2Config{AccountID: cfg.Upload.R2AccountID, AccessKeyID: cfg.Upload.R2AccessKeyID, SecretAccessKey: cfg.Upload.R2SecretAccessKey, Bucket: cfg.Upload.R2Bucket, Endpoint: cfg.Upload.R2Endpoint, Region: cfg.Upload.R2Region, PublicBaseURL: cfg.Upload.R2PublicBaseURL})
+		if err != nil {
+			log.Fatalf("Failed to initialize R2 asset storage: %v", err)
+		}
+		uploadStorage = r2Store
+	case "local", "":
+		if err := os.MkdirAll(cfg.Upload.Dir, 0755); err != nil {
+			log.Fatalf("Failed to create upload directory %s: %v", cfg.Upload.Dir, err)
+		}
+		uploadStorage = storage.NewLocalStorage(cfg.Upload.Dir)
+	default:
+		log.Fatalf("Unsupported asset storage backend %q", cfg.Upload.StorageDriver)
+	}
+	moneyService := service.NewMoneyServiceWithOptions(db.Money(), uploadStorage, cfg.Upload.MaxBytes, service.MoneyServiceOptions{StorageBackend: cfg.Upload.StorageDriver, StorageBucket: cfg.Upload.R2Bucket, StorageRegion: cfg.Upload.R2Region, KeyPrefix: cfg.Upload.AssetKeyPrefix, SignedURLTTL: cfg.Upload.R2SignedURLTTL})
 
 	// Initialize API handler with services
-	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService, analyticsService, db.Kaya(), jobMonitor)
+	handler := api.NewHandler(locationService, weatherServiceLayer, riverServiceLayer, climbTrackingService, boulderDryingService, heatMapService, analyticsService, authService, moneyService, db.Kaya(), jobMonitor)
 
 	// Start background syncs only if not disabled (e.g., in development)
 	if cfg.Server.DisableBackgroundSyncs {
@@ -157,6 +180,48 @@ func main() {
 		apiGroup.GET("/monitoring/jobs/history", handler.GetJobHistory)
 		apiGroup.GET("/monitoring/jobs/summary", handler.GetJobsSummary)
 		apiGroup.GET("/monitoring/jobs/:job_id", handler.GetJobStatus)
+		// General app auth routes
+		authGroup := apiGroup.Group("/auth")
+		{
+			authGroup.POST("/login", handler.AuthLogin)
+			authGroup.POST("/refresh", handler.AuthRefresh)
+			authGroup.POST("/logout", handler.AuthLogout)
+			authGroup.GET("/me", middleware.Auth(authService), handler.AuthMe)
+		}
+
+		// Money Creek toolkit routes (auth required)
+		moneyGroup := apiGroup.Group("/money")
+		moneyGroup.Use(middleware.Auth(authService))
+		{
+			moneyGroup.GET("/projects/:project_id", handler.GetMoneyProject)
+			moneyGroup.GET("/projects/:project_id/snapshot", handler.GetMoneySnapshot)
+			moneyGroup.GET("/projects/:project_id/crag", handler.GetMoneyCragSnapshot)
+			moneyGroup.GET("/projects/:project_id/features", handler.ListMoneyFeatures)
+			moneyGroup.GET("/projects/:project_id/trash", handler.ListMoneyTrash)
+			moneyGroup.POST("/projects/:project_id/features", middleware.RequireMoneyWrite(), handler.CreateMoneyFeature)
+			moneyGroup.POST("/projects/:project_id/areas", middleware.RequireMoneyWrite(), handler.CreateMoneyArea)
+			moneyGroup.POST("/projects/:project_id/boulders", middleware.RequireMoneyWrite(), handler.CreateMoneyBoulder)
+			moneyGroup.POST("/projects/:project_id/problems", middleware.RequireMoneyWrite(), handler.CreateMoneyProblem)
+			moneyGroup.GET("/projects/:project_id/notes", handler.ListMoneyProjectNotes)
+			moneyGroup.POST("/projects/:project_id/notes", middleware.RequireMoneyWrite(), handler.CreateMoneyProjectNote)
+			moneyGroup.POST("/projects/:project_id/uploads", middleware.RequireMoneyWrite(), handler.UploadMoneyImage)
+			moneyGroup.GET("/features/:feature_id", handler.GetMoneyFeature)
+			moneyGroup.PATCH("/features/:feature_id", middleware.RequireMoneyWrite(), handler.UpdateMoneyFeature)
+			moneyGroup.PATCH("/features/:feature_id/geometry", middleware.RequireMoneyWrite(), handler.UpdateMoneyAreaGeometry)
+			moneyGroup.PATCH("/features/:feature_id/parent", middleware.RequireMoneyWrite(), handler.MoveMoneyFeatureParent)
+			moneyGroup.PATCH("/features/:feature_id/boulder-status", middleware.RequireMoneyWrite(), handler.UpdateMoneyBoulderStatus)
+			moneyGroup.DELETE("/features/:feature_id", middleware.RequireMoneyWrite(), handler.ArchiveMoneyFeature)
+			moneyGroup.POST("/features/:feature_id/trash", middleware.RequireMoneyWrite(), handler.ArchiveMoneyFeature)
+			moneyGroup.POST("/features/:feature_id/restore", middleware.RequireMoneyWrite(), handler.RestoreMoneyFeature)
+			moneyGroup.GET("/features/:feature_id/notes", handler.ListMoneyNotes)
+			moneyGroup.POST("/features/:feature_id/notes", middleware.RequireMoneyWrite(), handler.CreateMoneyNote)
+			moneyGroup.PATCH("/notes/:note_id", middleware.RequireMoneyWrite(), handler.UpdateMoneyNote)
+			moneyGroup.DELETE("/notes/:note_id", middleware.RequireMoneyWrite(), handler.DeleteMoneyNote)
+			moneyGroup.GET("/uploads/:upload_id", handler.StreamMoneyUpload)
+			moneyGroup.GET("/uploads/:upload_id/download-url", handler.GetMoneyUploadDownloadURL)
+			moneyGroup.PATCH("/uploads/:upload_id/metadata", middleware.RequireMoneyWrite(), handler.UpdateMoneyUploadMetadata)
+			moneyGroup.DELETE("/uploads/:upload_id", middleware.RequireMoneyWrite(), handler.DeleteMoneyUpload)
+		}
 	}
 
 	// Serve job monitoring dashboard at /jtrack
