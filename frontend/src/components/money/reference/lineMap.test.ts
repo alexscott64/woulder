@@ -1,12 +1,18 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import lineMapFixture from './fixtures/money-creek-line-map.geojson?raw';
 import { LINE_MAP_CATEGORIES, LINE_MAP_BOUNDS, __resetMoneyCreekLineMapCacheForTests, isBoundedLonLat, loadMoneyCreekLineMap, type MoneyCreekLineMapData } from './lineMap';
 
 describe('Money Creek line map fixture', () => {
   let lineMapData: MoneyCreekLineMapData;
 
   beforeAll(async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(lineMapFixture, { headers: { 'Content-Type': 'application/geo+json' } })));
     lineMapData = await loadMoneyCreekLineMap();
   }, 120000);
+
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
 
   it('loads every supported line category needed by the stylized map', () => {
     const { byCategory } = lineMapData;

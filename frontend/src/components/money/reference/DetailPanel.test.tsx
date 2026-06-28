@@ -76,7 +76,7 @@ const note: MoneyNote = {
 };
 
 function renderDetailPanel(overrides: Partial<React.ComponentProps<typeof DetailPanel>> = {}) {
-  return render(<DetailPanel root={area} area={area} selectedBoulder={boulder} selectedTrail={null} notes={[note]} uploads={[upload]} tab="overview" mobile={false} expanded canWrite canEditArea={false} setExpanded={vi.fn()} setTab={vi.fn()} onEnter={vi.fn()} onSelectBoulder={vi.fn()} onNewArea={vi.fn()} onNewBoulder={vi.fn()} onEditArea={vi.fn()} onDeleteArea={vi.fn()} onSetDev={vi.fn()} onAddProblem={vi.fn()} onOpenComposer={vi.fn()} onEditNote={vi.fn()} onDeleteNote={vi.fn()} onDeleteUpload={vi.fn()} onUpdateTrail={vi.fn()} onDeleteTrail={vi.fn()} {...overrides} />);
+  return render(<DetailPanel root={area} area={area} selectedBoulder={boulder} selectedTrail={null} notes={[note]} uploads={[upload]} tab="overview" mobile={false} expanded canWrite canEditArea={false} setExpanded={vi.fn()} setTab={vi.fn()} onEnter={vi.fn()} onSelectBoulder={vi.fn()} onNewArea={vi.fn()} onNewBoulder={vi.fn()} onEditArea={vi.fn()} onDeleteArea={vi.fn()} onSetDev={vi.fn()} onRenameBoulder={vi.fn()} onAddProblem={vi.fn()} onOpenComposer={vi.fn()} onEditNote={vi.fn()} onDeleteNote={vi.fn()} onDeleteUpload={vi.fn()} onUpdateTrail={vi.fn()} onDeleteTrail={vi.fn()} {...overrides} />);
 }
 
 describe('DetailPanel uploaded photos', () => {
@@ -103,6 +103,22 @@ describe('DetailPanel uploaded photos', () => {
   });
 });
 
+describe('DetailPanel boulder management', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('saves boulder name edits', () => {
+    const onRenameBoulder = vi.fn();
+    renderDetailPanel({ onRenameBoulder });
+
+    fireEvent.change(screen.getByLabelText('Boulder name'), { target: { value: 'Tiny Roof' } });
+    fireEvent.click(screen.getByText('Save boulder name'));
+
+    expect(onRenameBoulder).toHaveBeenCalledWith(boulder, 'Tiny Roof');
+  });
+});
+ 
 describe('DetailPanel trail management', () => {
   beforeEach(() => {
     vi.clearAllMocks();

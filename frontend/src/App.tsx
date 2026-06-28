@@ -9,9 +9,9 @@ import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { getConditionColor } from './components/weather/weatherDisplay';
 import { RefreshCw, WifiOff, ChevronUp, Settings, Github, Heart, Mail, Map, Cloud } from 'lucide-react';
 import { format } from 'date-fns';
-import { HeatMapPage } from './components/map/HeatMapPage';
 import { trackPageView } from './services/analytics';
 
+const HeatMapPage = lazy(() => import('./components/map/HeatMapPage').then(module => ({ default: module.HeatMapPage })));
 const MoneyCreekApp = lazy(() => import('./components/money/MoneyCreekApp'));
 
 const queryClient = new QueryClient({
@@ -175,7 +175,9 @@ function Dashboard() {
         </header>
 
         {/* Heat Map Content */}
-        <HeatMapPage />
+        <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center text-gray-700 dark:text-gray-300">Loading activity map...</div>}>
+          <HeatMapPage />
+        </Suspense>
 
         {/* Footer */}
         <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-12">

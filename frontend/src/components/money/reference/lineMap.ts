@@ -60,15 +60,18 @@ export type MoneyCreekLineMapData = {
   labels: LineMapLabel[];
 };
 
-type RawLineMapModule = { default: string };
+const LINE_MAP_URL = `${import.meta.env.BASE_URL}money-creek-line-map.geojson`;
 
 const categorySet = new Set<string>(LINE_MAP_CATEGORIES);
 let lineMapLoadPromise: Promise<MoneyCreekLineMapData> | null = null;
 
-export function loadMoneyCreekLineMap(): Promise<MoneyCreekLineMapData> {
-  lineMapLoadPromise ??= import('./fixtures/money-creek-line-map.geojson?raw')
-    .then((module: RawLineMapModule) => {
-      const fixture = JSON.parse(module.default) as RawFeatureCollection;
+export function loadMoneyCreekLineMap(fetchLineMap: typeof fetch = fetch): Promise<MoneyCreekLineMapData> {
+  lineMapLoadPromise ??= fetchLineMap(LINE_MAP_URL)
+    .then(response => {
+      if (!response.ok) throw new Error(`Failed to load Money Creek line map: ${response.status} ${response.statusText}`);
+      return response.json() as Promise<RawFeatureCollection>;
+    })
+    .then(fixture => {
       const paths = normalizeLineMap(fixture);
       const byCategory = groupLineMapByCategory(paths);
       const labels = normalizeLineMapLabels(fixture, paths);
