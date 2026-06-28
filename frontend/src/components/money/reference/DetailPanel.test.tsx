@@ -108,12 +108,47 @@ describe('DetailPanel boulder management', () => {
     vi.clearAllMocks();
   });
 
-  it('saves boulder name edits', () => {
+  it('saves boulder name edits from the compact header controls', () => {
     const onRenameBoulder = vi.fn();
     renderDetailPanel({ onRenameBoulder });
 
+    expect(screen.queryByLabelText('Boulder name')).toBeNull();
+    expect(screen.queryByText('Save boulder name')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit boulder name' }));
     fireEvent.change(screen.getByLabelText('Boulder name'), { target: { value: 'Tiny Roof' } });
-    fireEvent.click(screen.getByText('Save boulder name'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save boulder name' }));
+
+    expect(onRenameBoulder).toHaveBeenCalledWith(boulder, 'Tiny Roof');
+  });
+
+  it('discards boulder name edits without calling rename', () => {
+    const onRenameBoulder = vi.fn();
+    renderDetailPanel({ onRenameBoulder });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit boulder name' }));
+    fireEvent.change(screen.getByLabelText('Boulder name'), { target: { value: 'Tiny Roof' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard boulder name changes' }));
+
+    expect(onRenameBoulder).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Boulder name')).toBeNull();
+    expect(screen.getAllByText('tiny boulder').length).toBeGreaterThan(0);
+  });
+
+  it('supports keyboard save and cancel in mobile boulder headers', () => {
+    const onRenameBoulder = vi.fn();
+    renderDetailPanel({ mobile: true, onRenameBoulder });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit boulder name' }));
+    const input = screen.getByLabelText('Boulder name');
+    fireEvent.change(input, { target: { value: 'Tiny Roof' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(onRenameBoulder).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit boulder name' }));
+    const nextInput = screen.getByLabelText('Boulder name');
+    fireEvent.change(nextInput, { target: { value: 'Tiny Roof' } });
+    fireEvent.keyDown(nextInput, { key: 'Enter' });
 
     expect(onRenameBoulder).toHaveBeenCalledWith(boulder, 'Tiny Roof');
   });

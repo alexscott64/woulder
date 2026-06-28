@@ -280,8 +280,17 @@ func (s *MoneyService) UpdateFeature(ctx context.Context, id string, req models.
 	if err != nil {
 		return nil, err
 	}
-	if current.FeatureType == models.MoneyFeatureTrail && f.FeatureType != models.MoneyFeatureTrail {
+	if current.FeatureType != f.FeatureType {
 		return nil, ErrMoneyInvalidInput
+	}
+	if req.ParentFeatureID == nil {
+		f.ParentFeatureID = current.ParentFeatureID
+	}
+	if req.ExternalRef == nil {
+		f.ExternalRef = current.ExternalRef
+	}
+	if req.ImportSource == nil {
+		f.ImportSource = current.ImportSource
 	}
 	f.ID = id
 	f.UpdatedBy = user.ID

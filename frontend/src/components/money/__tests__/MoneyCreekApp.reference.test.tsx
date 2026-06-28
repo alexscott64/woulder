@@ -10,7 +10,7 @@ vi.mock('../../../contexts/AuthContext', () => ({
 }));
 
 vi.mock('../reference/CragMap', () => ({
-  CragMap: ({ onSelectBoulder }: { onSelectBoulder: (id: string | null) => void }) => <div data-testid="crag-map"><button onClick={() => onSelectBoulder('nested-boulder')}>Map select nested boulder</button></div>,
+  CragMap: ({ area, selectedBoulderId, onSelectBoulder }: { area: MoneyCragNode; selectedBoulderId: string | null; onSelectBoulder: (id: string | null) => void }) => <div data-testid="crag-map" data-area-id={area.feature.id} data-selected-boulder-id={selectedBoulderId ?? ''}><button onClick={() => onSelectBoulder('nested-boulder')}>Map select nested boulder</button></div>,
 }));
 
 const moneyMocks = vi.hoisted(() => ({
@@ -35,9 +35,9 @@ function feature(overrides: Partial<MoneyFeature> & Pick<MoneyFeature, 'id' | 'f
   return { ...baseFeature, ...overrides } as MoneyFeature;
 }
 
-function makeRoot(): MoneyCragNode {
+function makeRoot(nestedBoulderTitle = 'tiny boulder'): MoneyCragNode {
   const rootBoulder: MoneyCragNode = { feature: feature({ id: 'root-boulder', feature_type: 'boulder', title: 'roadside boulder', status: 'scouted', geojson: { type: 'Polygon', coordinates: [[[20, 0], [30, 0], [30, 10], [20, 0]]] } }), children: null, boulders: null, problems: null };
-  const nestedBoulder: MoneyCragNode = { feature: feature({ id: 'nested-boulder', feature_type: 'boulder', title: 'tiny boulder', status: 'scouted', geojson: { type: 'Polygon', coordinates: [[[0, 0], [10, 0], [10, 10], [0, 0]]] } }), children: null, boulders: null, problems: null };
+  const nestedBoulder: MoneyCragNode = { feature: feature({ id: 'nested-boulder', parent_feature_id: 'nested-area', feature_type: 'boulder', title: nestedBoulderTitle, status: 'scouted', geojson: { type: 'Polygon', coordinates: [[[0, 0], [10, 0], [10, 10], [0, 0]]] }, properties: { landing: 'flat' } }), children: null, boulders: null, problems: null };
   const nestedArea: MoneyCragNode = { feature: feature({ id: 'nested-area', feature_type: 'area', title: 'Sub Zone', description: 'Nested area', status: 'active', geojson: { type: 'Polygon', coordinates: [[[0, 0], [50, 0], [50, 50], [0, 0]]] }, properties: { kind: 'Boulders', aspect: 'forest' } }), children: null, boulders: [nestedBoulder], problems: null };
   return { feature: feature({ id: 'area-1', feature_type: 'area', title: 'Money Creek', description: 'Reference crag', status: 'active', geojson: { type: 'Polygon', coordinates: [[[0, 0], [100, 0], [100, 100], [0, 0]]] }, properties: { kind: 'Crag', aspect: 'Skykomish' } }), children: [nestedArea], boulders: [rootBoulder], problems: null };
 }
@@ -64,10 +64,11 @@ function renderApp() {
 describe('MoneyCreekApp reference shell', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    moneyMocks.getCragSnapshot.mockResolvedValue({ project: { id: 'project-1', slug: 'money-creek', name: 'Money Creek', center_lat: 0, center_lon: 0, default_zoom: 14, created_at: '', updated_at: '' }, trails: null, notes: null, uploads: null, root: makeRoot() });
+    let root = makeRoot();
+    moneyMocks.getCragSnapshot.mockImplementation(async () => ({ project: { id: 'project-1', slug: 'money-creek', name: 'Money Creek', center_lat: 0, center_lon: 0, default_zoom: 14, created_at: '', updated_at: '' }, trails: null, notes: null, uploads: null, root }));
     moneyMocks.uploadImage.mockResolvedValue({ id: 'upload-1', original_filename: 'tiny-boulder.jpg' });
     moneyMocks.createProjectNote.mockResolvedValue({ id: 'note-1' });
-    moneyMocks.updateFeature.mockImplementation(async (_id, payload) => ({ id: _id, ...payload }));
+    moneyMocks.updateFeature.mockImplementation(async (_id, payload) => { root = makeRoot(payload.title); return { id: _id, ...payload }; });
   });
 
   it('renders the reference-style workspace navigation', async () => {
@@ -104,5 +105,19 @@ describe('MoneyCreekApp reference shell', () => {
     expect(screen.queryByText('roadside boulder')).toBeNull();
     const areaFilter = screen.getByLabelText('Boulders filters area') as HTMLSelectElement;
     expect(within(areaFilter).getByText('Current area')).toBeTruthy();
+  });
+
+  it('renames the selected boulder from the icon header editor', async () => {
+    renderApp();
+
+    fireEvent.click(await screen.findByText('Map select nested boulder'));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit boulder name' }));
+    fireEvent.change(screen.getByLabelText('Boulder name'), { target: { value: 'Tiny Roof' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save boulder name' }));
+
+    await waitFor(() => expect(moneyMocks.updateFeature).toHaveBeenCalledWith('nested-boulder', expect.objectContaining({ feature_type: 'boulder', title: 'Tiny Roof', parent_feature_id: 'nested-area', status: 'scouted', geojson: { type: 'Polygon', coordinates: [[[0, 0], [10, 0], [10, 10], [0, 0]]] }, properties: { landing: 'flat' } })));
+    await waitFor(() => expect(screen.getByTestId('crag-map').dataset.selectedBoulderId).toBe('nested-boulder'));
+    expect(screen.getByTestId('crag-map').dataset.areaId).toBe('nested-area');
+    expect((await screen.findAllByText('Tiny Roof')).length).toBeGreaterThan(0);
   });
 });

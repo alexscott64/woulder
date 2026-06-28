@@ -232,6 +232,64 @@ func TestUpdateTrailLabelAndDestinationMetadata(t *testing.T) {
 	}
 }
 
+func TestUpdateBoulderRenamePreservesParentGeometryAndMetadata(t *testing.T) {
+	parentID := "area-7"
+	externalRef := "ref-1"
+	importSource := "money_reference"
+	repo := &moneyUploadRepo{feature: &models.MoneyFeature{
+		ID:              "boulder-1",
+		ProjectID:       "project-1",
+		ParentFeatureID: &parentID,
+		FeatureType:     models.MoneyFeatureBoulder,
+		Title:           "Old name",
+		Status:          models.MoneyStatusScouted,
+		ExternalRef:     &externalRef,
+		ImportSource:    &importSource,
+	}}
+	svc := NewMoneyService(repo, nil, 0)
+
+	updated, err := svc.UpdateFeature(context.Background(), "boulder-1", models.MoneyFeatureRequest{
+		FeatureType: models.MoneyFeatureBoulder,
+		Title:       "New name",
+		Status:      models.MoneyStatusScouted,
+		GeoJSON:     json.RawMessage(`{"type":"Polygon","coordinates":[[[-121.52,47.71],[-121.51,47.71],[-121.51,47.72],[-121.52,47.71]]]}`),
+		Properties:  json.RawMessage(`{"landing":"flat"}`),
+		Style:       json.RawMessage(`{"color":"green"}`),
+		SortOrder:   4,
+	}, models.CurrentUser{ID: "user-1", Role: models.RoleDeveloper})
+	if err != nil {
+		t.Fatalf("UpdateFeature returned error: %v", err)
+	}
+	if updated.Title != "New name" || updated.ParentFeatureID == nil || *updated.ParentFeatureID != parentID || updated.Status != models.MoneyStatusScouted {
+		t.Fatalf("unexpected updated boulder: %+v", updated)
+	}
+	if updated.ExternalRef == nil || *updated.ExternalRef != externalRef || updated.ImportSource == nil || *updated.ImportSource != importSource {
+		t.Fatalf("expected import metadata preserved, got external=%v source=%v", updated.ExternalRef, updated.ImportSource)
+	}
+	if updated.MinLat == nil || *updated.MinLat != 47.71 || updated.MaxLon == nil || *updated.MaxLon != -121.51 {
+		t.Fatalf("expected bbox from preserved geometry, got %+v", updated)
+	}
+	var props map[string]string
+	if err := json.Unmarshal(updated.Properties, &props); err != nil || props["landing"] != "flat" {
+		t.Fatalf("unexpected properties: %v err=%v", props, err)
+	}
+}
+
+func TestUpdateFeatureRejectsTypeChange(t *testing.T) {
+	repo := &moneyUploadRepo{feature: &models.MoneyFeature{ID: "boulder-1", FeatureType: models.MoneyFeatureBoulder, Status: models.MoneyStatusScouted}}
+	svc := NewMoneyService(repo, nil, 0)
+
+	_, err := svc.UpdateFeature(context.Background(), "boulder-1", models.MoneyFeatureRequest{
+		FeatureType: models.MoneyFeatureTrail,
+		Title:       "Not a trail",
+		Status:      models.MoneyStatusActive,
+		GeoJSON:     json.RawMessage(`{"type":"LineString","coordinates":[[-121.52,47.71],[-121.51,47.72]]}`),
+	}, models.CurrentUser{ID: "user-1", Role: models.RoleDeveloper})
+	if !errors.Is(err, ErrMoneyInvalidInput) {
+		t.Fatalf("expected ErrMoneyInvalidInput, got %v", err)
+	}
+}
+
 func TestUpdateTrailDestinationRequiresTarget(t *testing.T) {
 	repo := &moneyUploadRepo{feature: &models.MoneyFeature{ID: "trail-1", FeatureType: models.MoneyFeatureTrail, Status: models.MoneyStatusActive}}
 	svc := NewMoneyService(repo, nil, 0)

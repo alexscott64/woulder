@@ -76,10 +76,16 @@ export function CragMap({ root, area, trails, selectedBoulderId, selectedTrailId
   const lineMapStartedRef = useRef(false);
   const creating = mode === 'create-area' || mode === 'create-boulder';
   const editing = mode === 'edit-area';
+  const lastFocusBBoxKeyRef = useRef<string | null>(null);
 
   const focusBBox = useMemo(() => bbox(area), [area]);
+  const focusBBoxKey = `${focusBBox[0]},${focusBBox[1]},${focusBBox[2]},${focusBBox[3]}`;
 
-  useEffect(() => { if (!editing) setViewState(viewForBBox(focusBBox)); }, [focusBBox, editing]);
+  useEffect(() => {
+    if (editing || lastFocusBBoxKeyRef.current === focusBBoxKey) return;
+    lastFocusBBoxKeyRef.current = focusBBoxKey;
+    setViewState(viewForBBox(focusBBox));
+  }, [focusBBox, focusBBoxKey, editing]);
   useEffect(() => { if (creating) { setDraft([]); setDraftHistory([]); setSelectedDraftVertex(null); setVertexMessage('Tap the map to add vertices.'); } }, [creating]);
   useEffect(() => { if (editing) { setEditDraft(openPolygonPoints(geometryPoints(area.feature.geojson))); setEditHistory([]); setSelectedEditVertex(null); setVertexMessage('Select a white vertex to delete it, or tap green midpoint dots to add vertices.'); } }, [editing, area.feature.geojson]);
   useEffect(() => {
